@@ -1,0 +1,9 @@
+ipykernel
+tensorflow
+tensorflow_probability
+tensorboard
+numpy
+scipy
+matplotlib
+tqdm
+bio
