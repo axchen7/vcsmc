@@ -1,5 +1,6 @@
 import tensorflow as tf
 from constants import DTYPE_FLOAT
+from type_utils import Tensor, tf_function
 
 
 class Markov(tf.Module):
@@ -7,10 +8,12 @@ class Markov(tf.Module):
     Continuous-time Markov chain.
     """
 
-    def Q(self):
+    @tf_function
+    def stat_probs(self) -> Tensor:
         raise NotImplementedError
 
-    def stat_probs(self):
+    @tf_function
+    def Q(self) -> Tensor:
         raise NotImplementedError
 
 
@@ -31,7 +34,7 @@ class DenseMarkov(Markov):
 
         self._Q = tf.Variable(tf.constant(0, DTYPE_FLOAT, [A, A]), name="_Q")
 
-    @tf.function
+    @tf_function
     def stat_probs(self):
         # one stationary probability can be fixed to match degrees of freedom
         stat_probs = tf.tensor_scatter_nd_update(
@@ -43,7 +46,7 @@ class DenseMarkov(Markov):
         stat_probs /= tf.reduce_sum(stat_probs)
         return stat_probs
 
-    @tf.function
+    @tf_function
     def Q(self):
         # first non-diagonal entry in each row can be fixed to match degrees of
         # freedom
@@ -85,7 +88,7 @@ class GT16Markov(Markov):
             tf.constant(0, DTYPE_FLOAT, [16]), name="_stat_probs"
         )
 
-    @tf.function
+    @tf_function
     def nucleotide_exchanges(self):
         # one exchangeability can be fixed to match degrees of freedom
         nucleotide_exchanges = tf.tensor_scatter_nd_update(
@@ -97,7 +100,7 @@ class GT16Markov(Markov):
         nucleotide_exchanges /= tf.reduce_mean(nucleotide_exchanges)
         return nucleotide_exchanges
 
-    @tf.function
+    @tf_function
     def stat_probs(self):
         # one stationary probability can be fixed to match degrees of freedom
         stat_probs = tf.tensor_scatter_nd_update(
@@ -109,7 +112,7 @@ class GT16Markov(Markov):
         stat_probs /= tf.reduce_sum(stat_probs)
         return stat_probs
 
-    @tf.function
+    @tf_function
     def Q(self):
         pi = self.nucleotide_exchanges()  # length 6
         pi8 = tf.repeat(pi, 8)

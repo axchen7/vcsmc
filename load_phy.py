@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from type_utils import Tensor
 
 # fmt: off
 
@@ -32,7 +33,7 @@ GT10_ALPHABET = {
 
 def load_phy(
     file: str, alphabet: dict[str, list[float]] = GT10_ALPHABET
-) -> tuple[int, int, int, list[str], tf.Tensor]:
+) -> tuple[int, int, int, list[str], Tensor]:
     """
     Returns:
         N: Number of taxa.

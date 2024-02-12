@@ -4,6 +4,7 @@ import constants
 from datetime import datetime
 import io
 import matplotlib.pyplot as plt
+from type_utils import Tensor
 
 
 def create_results_dir():
@@ -24,7 +25,7 @@ def create_results_dir():
     return cur_results_dir
 
 
-def cur_plt_to_tf_image() -> tf.Tensor:
+def cur_plt_to_tf_image() -> Tensor:
     """
     Converts the current matplotlib plot to a PNG image and returns it. The plot
     is closed and inaccessible after this call.
