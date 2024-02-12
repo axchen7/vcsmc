@@ -1,5 +1,6 @@
-import tensorflow as tf
 from typing import Any, Callable, TypeVar
+
+import tensorflow as tf
 
 _T = TypeVar("_T", bound=Callable)
 

@@ -1,8 +1,9 @@
+import io
+
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-import matplotlib.pyplot as plt
 from Bio import Phylo
-import io
 from tqdm import tqdm
 
 SAVE_PATH = "data/simulated.phy"

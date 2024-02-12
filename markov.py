@@ -1,4 +1,5 @@
 import tensorflow as tf
+
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 

@@ -1,7 +1,15 @@
 {
-  "python.analysis.typeCheckingMode": "basic",
+  "editor.formatOnSave": true,
+  "python.analysis.typeCheckingMode": "standard",
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.patterns": {
     "*.py": "_${capture}_*.ipynb, _${capture}.ipynb"
+  },
+  "isort.args": ["--profile", "black"],
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
   }
 }

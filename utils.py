@@ -1,9 +1,11 @@
-import tensorflow as tf
-import os
-import constants
-from datetime import datetime
 import io
+import os
+from datetime import datetime
+
 import matplotlib.pyplot as plt
+import tensorflow as tf
+
+import constants
 from type_utils import Tensor
 
 
