@@ -43,8 +43,7 @@ class Proposal(tf.Module):
             log_v_plus: Log probability of the returned proposal.
             log_v_minus: Log of the over-counting correction factor.
         Note:
-            Along dimension R, there are N elements, but only the first N-r >= 2
-            elements are used.
+            Along dimension R, there are N-r >= 2 elements.
         """
 
         raise NotImplementedError
@@ -74,7 +73,7 @@ class ExpBranchProposal(Proposal):
         branch_param2 = tf.exp(self._branch_params2_N2[r])  # type: ignore
         return branch_param1, branch_param2
 
-    @tf_function()
+    @tf_function(reduce_retracing=True)
     def __call__(self, r, leaf_counts_R, embeddings_RxD):
         # TODO vectorize across K
 
