@@ -67,14 +67,14 @@ class ExpBranchProposal(Proposal):
         self._branch_params1_N2 = tf.Variable(initial)
         self._branch_params2_N2 = tf.Variable(initial)
 
-    @tf_function
+    @tf_function()
     def branch_params(self, r):
         # use exp to ensure params are positive
         branch_param1 = tf.exp(self._branch_params1_N2[r])  # type: ignore
         branch_param2 = tf.exp(self._branch_params2_N2[r])  # type: ignore
         return branch_param1, branch_param2
 
-    @tf_function
+    @tf_function()
     def __call__(self, r, leaf_counts_R, embeddings_RxD):
         # TODO vectorize across K
 

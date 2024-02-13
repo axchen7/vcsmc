@@ -2,11 +2,14 @@ from typing import Any, Callable, TypeVar
 
 import tensorflow as tf
 
-_T = TypeVar("_T", bound=Callable)
 
+def tf_function(*args, **kwargs):
+    T = TypeVar("T", bound=Callable)
 
-def tf_function(f: _T) -> _T:
-    return tf.function(f)  # type: ignore
+    def decorator(func: T) -> T:
+        return tf.function(func, *args, **kwargs)  # type: ignore
+
+    return decorator
 
 
 Tensor = Any
