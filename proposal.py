@@ -12,7 +12,7 @@ class Proposal(tf.Module):
     Proposal distribution for selecting two nodes to merge and sampling branch.
     """
 
-    @tf.function
+    @tf_function()
     def embed(self, leaf_SxA: Tensor) -> Tensor:
         """
         Embeds a leaf node into the latent space.
