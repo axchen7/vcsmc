@@ -26,15 +26,15 @@ class Proposal(tf.Module):
         return tf.zeros([1], DTYPE_FLOAT)
 
     def __call__(
-        self, r: Tensor, leaf_counts_R: Tensor, embeddings_RxD: Tensor
+        self, r: Tensor, leaf_counts_t: Tensor, embeddings_txD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
         Args:
             r: The current merge step (0 <= r <= N-2).
-            leaf_counts_R: The number of leaf nodes in each subtree.
-            embeddings_RxD: Embeddings of each subtree.
+            leaf_counts_t: The number of leaf nodes in each subtree.
+            embeddings_txD: Embeddings of each subtree.
         Returns:
             idx1: Indices of the first node to merge.
             idx2: Indices of the second node to merge.
@@ -43,7 +43,7 @@ class Proposal(tf.Module):
             log_v_plus: Log probability of the returned proposal.
             log_v_minus: Log of the over-counting correction factor.
         Note:
-            Along dimension R, there are N-r >= 2 elements.
+            At each step r, there are t = N-r >= 2 trees in the forest.
         """
 
         raise NotImplementedError
@@ -74,7 +74,7 @@ class ExpBranchProposal(Proposal):
         return branch_param1, branch_param2
 
     @tf_function(reduce_retracing=True)
-    def __call__(self, r, leaf_counts_R, embeddings_RxD):
+    def __call__(self, r, leaf_counts_t, embeddings_txD):
         # TODO vectorize across K
 
         num_nodes = self.N - r
@@ -112,13 +112,13 @@ class ExpBranchProposal(Proposal):
         # ===== compute over-counting correction factor =====
 
         num_subtrees_with_one_leaf = tf.reduce_sum(
-            tf.cast(leaf_counts_R == 1, tf.int32)
+            tf.cast(leaf_counts_t == 1, tf.int32)
         )
 
         # exclude trees currently being merged from the count
-        if leaf_counts_R[idx1] == 1:
+        if leaf_counts_t[idx1] == 1:
             num_subtrees_with_one_leaf -= 1
-        if leaf_counts_R[idx2] == 1:
+        if leaf_counts_t[idx2] == 1:
             num_subtrees_with_one_leaf -= 1
 
         v_minus = self.N - num_subtrees_with_one_leaf
