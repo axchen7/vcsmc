@@ -36,8 +36,8 @@ class Proposal(tf.Module):
             idx2: Indices of the second node to merge.
             branch1: Branch lengths of the first node.
             branch2: Branch lengths of the second node.
-            v_plus: The probability of the returned proposal.
-            v_minus: The over-counting correction factor.
+            log_v_plus: Log probability of the returned proposal.
+            log_v_minus: Log of the over-counting correction factor.
         Note:
             Along dimension R, there are N elements, but only the first N-r >= 2
             elements are used.
