@@ -1,4 +1,7 @@
+import math
+
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
@@ -45,3 +48,83 @@ class Proposal(tf.Module):
         """
 
         raise NotImplementedError
+
+
+class ExpBranchProposal(Proposal):
+    """
+    Proposal where branch lengths are sampled from exponential distributions,
+    with a learnable parameter for each merge step.
+    """
+
+    def __init__(self, N: int, branch_prior: float = 1.0):
+        super().__init__()
+
+        self.N = N
+
+        initial = tf.constant(math.log(branch_prior), DTYPE_FLOAT, [N - 2])
+
+        # N2 -> N-2
+        self._branch_params1_N2 = tf.Variable(initial)
+        self._branch_params2_N2 = tf.Variable(initial)
+
+    @tf_function
+    def branch_params(self):
+        branch_params1_N2 = tf.exp(self._branch_params1_N2)
+        branch_params2_N2 = tf.exp(self._branch_params2_N2)
+        return branch_params1_N2, branch_params2_N2
+
+    @tf_function
+    def __call__(self, r, leaf_counts_R, _embeddings_RxD):
+        # TODO vectorize across K
+
+        num_nodes = self.N - r
+
+        # ===== uniformly sample 2 distinct nodes to merge =====
+
+        idx1 = tf.random.uniform([1], 0, num_nodes, tf.int32)
+        idx2 = tf.random.uniform([1], 0, num_nodes - 1, tf.int32)
+
+        if idx2 >= idx1:
+            idx2 += 1
+
+        # ===== sample branch lengths from exponential distributions =====
+
+        branch_param1 = self._branch_params1_N2[r]  # type: ignore
+        branch_param2 = self._branch_params2_N2[r]  # type: ignore
+
+        branch_dist1 = tfp.distributions.Exponential(branch_param1)
+        branch_dist2 = tfp.distributions.Exponential(branch_param2)
+
+        branch1 = branch_dist1.sample(1)[0]
+        branch2 = branch_dist2.sample(1)[0]
+
+        # ===== compute proposal probability =====
+
+        # log(num_nodes choose 2)
+        log_num_merge_choices = tf.math.log(num_nodes * (num_nodes - 1) / 2)
+        log_merge_prob = -log_num_merge_choices
+
+        log_v_plus = (
+            log_merge_prob
+            + branch_dist1.log_prob(branch1)
+            + branch_dist2.log_prob(branch2)
+        )
+
+        # ===== compute over-counting correction factor =====
+
+        num_subtrees_with_one_leaf = tf.reduce_sum(
+            tf.cast(leaf_counts_R == 1, tf.int32)
+        )
+
+        # exclude trees currently being merged from the count
+        if leaf_counts_R[idx1] == 1:
+            num_subtrees_with_one_leaf -= 1
+        if leaf_counts_R[idx2] == 1:
+            num_subtrees_with_one_leaf -= 1
+
+        v_minus = self.N - num_subtrees_with_one_leaf
+        log_v_minus = tf.math.log(tf.cast(v_minus, DTYPE_FLOAT))
+
+        # ===== return proposal =====
+
+        return idx1, idx2, branch1, branch2, log_v_plus, log_v_minus
