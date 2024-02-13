@@ -23,14 +23,15 @@ class Proposal(tf.Module):
         return tf.zeros([1], DTYPE_FLOAT)
 
     def __call__(
-        self, r: Tensor, embeddings_RxD: Tensor
+        self, r: Tensor, leaf_counts_R: Tensor, embeddings_RxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
         Args:
             r: The current merge step (0 <= r <= N-2).
-            embeddings_RxD: Embeddings of subtrees.
+            leaf_counts_R: The number of leaf nodes in each subtree.
+            embeddings_RxD: Embeddings of each subtree.
         Returns:
             idx1: Indices of the first node to merge.
             idx2: Indices of the second node to merge.
