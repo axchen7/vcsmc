@@ -9,11 +9,9 @@ class Markov(tf.Module):
     Continuous-time Markov chain.
     """
 
-    @tf_function
     def stat_probs(self) -> Tensor:
         raise NotImplementedError
 
-    @tf_function
     def Q(self) -> Tensor:
         raise NotImplementedError
 
