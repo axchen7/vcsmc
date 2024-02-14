@@ -16,8 +16,8 @@ def train(
     vcsmc: VCSMC,
     optimizer: keras.optimizers.Optimizer,
     data_NxSxA: Tensor,
-    root: str = "Healthy",
     *,
+    root: str = "Healthy",
     epochs: int,
     stat_probs_reg_lambda: float = 0,
 ):
