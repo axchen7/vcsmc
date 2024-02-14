@@ -60,15 +60,25 @@ class ExpBranchProposal(Proposal):
     """
 
     def __init__(self, *, N: int, initial_branch_len: float = 1.0):
+        """
+        Args:
+            N: The number of leaf nodes.
+            initial_branch_len: The initial expected value of the branch
+            lengths. The exponential distribution from which branch lengths are
+            sampled will initially have lambda = 1/initial_branch_len.
+        """
+
         super().__init__()
 
         self.N = N
 
-        initial = tf.constant(math.log(initial_branch_len), DTYPE_FLOAT, [N - 1])
+        initial_param = 1 / initial_branch_len
+        # value of variable is passed through exp() later
+        initial_log_param = tf.constant(math.log(initial_param), DTYPE_FLOAT, [N - 1])
 
         # N2 -> N-2
-        self._branch_params1_N2 = tf.Variable(initial)
-        self._branch_params2_N2 = tf.Variable(initial)
+        self._branch_params1_N2 = tf.Variable(initial_log_param)
+        self._branch_params2_N2 = tf.Variable(initial_log_param)
 
     @tf_function()
     def branch_params(self, r):
