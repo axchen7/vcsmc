@@ -28,7 +28,7 @@ class Proposal(tf.Module):
 
     def __call__(
         self, r: Tensor, leaf_counts_t: Tensor, embeddings_txD: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
@@ -44,6 +44,8 @@ class Proposal(tf.Module):
             embedding: The embedding of the merged subtree.
             log_v_plus: Log probability of the returned proposal.
             log_v_minus: Log of the over-counting correction factor.
+            log_branch1_prior: Log prior probability of branch1.
+            log_branch2_prior: Log prior probability of branch2.
         Note:
             At each step r, there are t = N-r >= 2 trees in the forest.
         """
@@ -105,11 +107,10 @@ class ExpBranchProposal(Proposal):
         log_num_merge_choices = tf.math.log(num_nodes * (num_nodes - 1) / 2)
         log_merge_prob = -log_num_merge_choices
 
-        log_v_plus = (
-            log_merge_prob
-            + branch_dist1.log_prob(branch1)
-            + branch_dist2.log_prob(branch2)
-        )
+        log_branch1_prior = branch_dist1.log_prob(branch1)
+        log_branch2_prior = branch_dist2.log_prob(branch2)
+
+        log_v_plus = log_merge_prob + log_branch1_prior + log_branch2_prior
 
         # ===== compute over-counting correction factor =====
 
@@ -131,4 +132,14 @@ class ExpBranchProposal(Proposal):
         # dummy embedding
         embedding = tf.zeros([1], DTYPE_FLOAT)
 
-        return idx1, idx2, branch1, branch2, embedding, log_v_plus, log_v_minus
+        return (
+            idx1,
+            idx2,
+            branch1,
+            branch2,
+            embedding,
+            log_v_plus,
+            log_v_minus,
+            log_branch1_prior,
+            log_branch2_prior,
+        )
