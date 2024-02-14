@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+from constants import DTYPE_FLOAT
 from type_utils import Tensor
 
 # fmt: off
@@ -41,7 +42,7 @@ def load_phy(
         S: Number of sites.
         A: Alphabet size.
         taxa: List of taxa names.
-        data_SxNxA: A tensor of shape (S, N, A).
+        data_NxSxA: Tensor of shape (N, S, A).
     """
 
     with open(file) as f:
@@ -57,10 +58,10 @@ def load_phy(
     S = len(genome_strings[0])
     A = len(alphabet[sample_char])
 
-    data_SxNxA = np.zeros((S, N, A))
+    data_NxSxA = np.zeros((N, S, A))
 
     for n in range(N):
         for s in range(S):
-            data_SxNxA[s, n, :] = alphabet[genome_strings[n][s]]
+            data_NxSxA[n, s, :] = alphabet[genome_strings[n][s]]
 
-    return N, S, A, taxa, tf.convert_to_tensor(data_SxNxA)
+    return N, S, A, taxa, tf.convert_to_tensor(data_NxSxA, DTYPE_FLOAT)
