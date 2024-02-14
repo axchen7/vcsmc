@@ -64,7 +64,7 @@ class ExpBranchProposal(Proposal):
 
         self.N = N
 
-        initial = tf.constant(math.log(branch_prior), DTYPE_FLOAT, [N - 2])
+        initial = tf.constant(math.log(branch_prior), DTYPE_FLOAT, [N - 1])
 
         # N2 -> N-2
         self._branch_params1_N2 = tf.Variable(initial)
@@ -85,8 +85,8 @@ class ExpBranchProposal(Proposal):
 
         # ===== uniformly sample 2 distinct nodes to merge =====
 
-        idx1 = tf.random.uniform([1], 0, num_nodes, tf.int32)
-        idx2 = tf.random.uniform([1], 0, num_nodes - 1, tf.int32)
+        idx1 = tf.random.uniform([1], 0, num_nodes, tf.int32)[0]
+        idx2 = tf.random.uniform([1], 0, num_nodes - 1, tf.int32)[0]
 
         if idx2 >= idx1:
             idx2 += 1

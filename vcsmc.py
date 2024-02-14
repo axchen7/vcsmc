@@ -121,7 +121,7 @@ class VCSMC(tf.Module):
             idx1, idx2 = idx2, idx1
 
         return tf.concat(
-            [arr[:idx1], arr[idx1 + 1 : idx2], arr[idx2 + 1 :], new_val],
+            [arr[:idx1], arr[idx1 + 1 : idx2], arr[idx2 + 1 :], [new_val]],
             0,
         )
 
