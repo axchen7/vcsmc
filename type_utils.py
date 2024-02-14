@@ -11,7 +11,6 @@ def tf_function(*args, **kwargs):
     T = TypeVar("T", bound=Callable)
 
     def decorator(func: T) -> T:
-        return func
         return tf.function(func, *args, **kwargs)  # type: ignore
 
     return decorator
