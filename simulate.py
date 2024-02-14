@@ -21,7 +21,7 @@ VALUES_TO_BASES = [
 class Node:
     def __init__(self, value: np.ndarray, parent: "Node | None"):
         """
-        value: length N array of ints
+        value: length S array of ints
         """
 
         self.name = ""
@@ -116,23 +116,23 @@ class Simulate_GT16:
         exchangeability: np.ndarray,
         stationary: np.ndarray,
         *,
-        N=500,
-        pool_size=20,
-        final_leaf_count=20,
-        child_sample_count=10,
+        S,
+        pool_size,
+        final_leaf_count,
+        child_sample_count,
+        sim_steps,
         dt=1,
-        sim_steps=10,
     ):
         """
         exchangeability: length 6
         stationary: length 16
-        N: number of sites
+        S: number of sites
         """
 
         self.cell_reader = cell_reader
         self.pi = exchangeability
         self.stat = stationary
-        self.N = N
+        self.S = S
         self.pool_size = pool_size
         self.final_leaf_count = final_leaf_count
         self.child_sample_count = child_sample_count
@@ -193,24 +193,24 @@ class Simulate_GT16:
 
     def probabilities_to_cell(self, probabilities: np.ndarray, parent: Node | None):
         """
-        probabilities: N x A
+        probabilities: S x A
         """
 
         sampled_value = np.apply_along_axis(self.sample, 1, probabilities)
         return Node(sampled_value, parent)
 
     def evolve_cell(self, cell: Node):
-        # expand length N array cell.value into N x A array of one-hot vectors
+        # expand length S array cell.value into S x A array of one-hot vectors
         value_one_hot = np.eye(self.A)[cell.value]
 
-        probabilities = scipy.linalg.expm(self.Q * self.dt) @ value_one_hot.T  # A x N
-        probabilities = probabilities.T  # N x A
+        probabilities = scipy.linalg.expm(self.Q * self.dt) @ value_one_hot.T  # A x S
+        probabilities = probabilities.T  # S x A
         return self.probabilities_to_cell(probabilities, cell)
 
     def simulate(self) -> tuple[Node, Node, list[Node]]:
-        probabilities_across_sites = np.tile(self.stat, (self.N, 1))
+        probabilities_across_sites = np.tile(self.stat, (self.S, 1))
 
-        dummy_root_cell = Node(np.zeros(self.N, dtype=int), None)
+        dummy_root_cell = Node(np.zeros(self.S, dtype=int), None)
 
         pool = [
             self.probabilities_to_cell(probabilities_across_sites, dummy_root_cell)
@@ -253,13 +253,22 @@ class Simulate_GT16:
         total_cells = self.final_leaf_count + 1  # including healthy cell
 
         with open(path, "w") as f:
-            f.write(f"{total_cells} {self.N}\n")
+            f.write(f"{total_cells} {self.S}\n")
 
             for cell in [self.healthy_cell] + self.leaf_cells:
                 f.write(f"{cell.name}    {cell.get_phy_value()}\n")
 
 
-def simulate(*, delta=0, epsilon=0):
+def simulate(
+    *,
+    S=500,
+    pool_size=20,
+    final_leaf_count=20,
+    child_sample_count=10,
+    sim_steps=10,
+    delta=0,
+    epsilon=0,
+):
     if delta > 0 or epsilon > 0:
         cell_reader = Cell_Reader(delta, epsilon)
     else:
@@ -275,7 +284,14 @@ def simulate(*, delta=0, epsilon=0):
     print(f"stationary: {stationary}")
 
     simulation = Simulate_GT16(
-        cell_reader, exchangeability, stationary, sim_steps=10, final_leaf_count=20
+        cell_reader,
+        exchangeability,
+        stationary,
+        S=S,
+        pool_size=pool_size,
+        final_leaf_count=final_leaf_count,
+        child_sample_count=child_sample_count,
+        sim_steps=sim_steps,
     )
 
     print(f"Newick tree: {simulation.newick_tree}")
