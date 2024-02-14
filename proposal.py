@@ -23,11 +23,12 @@ class Proposal(tf.Module):
             embedding_D: The embedding of the leaf node.
         """
 
+        # default to dummy embedding
         return tf.zeros([1], DTYPE_FLOAT)
 
     def __call__(
         self, r: Tensor, leaf_counts_t: Tensor, embeddings_txD: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
@@ -40,6 +41,7 @@ class Proposal(tf.Module):
             idx2: Indices of the second node to merge.
             branch1: Branch lengths of the first node.
             branch2: Branch lengths of the second node.
+            embedding: The embedding of the merged subtree.
             log_v_plus: Log probability of the returned proposal.
             log_v_minus: Log of the over-counting correction factor.
         Note:
@@ -126,4 +128,7 @@ class ExpBranchProposal(Proposal):
 
         # ===== return proposal =====
 
-        return idx1, idx2, branch1, branch2, log_v_plus, log_v_minus
+        # dummy embedding
+        embedding = tf.zeros([1], DTYPE_FLOAT)
+
+        return idx1, idx2, branch1, branch2, embedding, log_v_plus, log_v_minus
