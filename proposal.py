@@ -59,7 +59,7 @@ class ExpBranchProposal(Proposal):
     with a learnable parameter for each merge step.
     """
 
-    def __init__(self, N: int, branch_prior: float = 1.0):
+    def __init__(self, *, N: int, branch_prior: float = 1.0):
         super().__init__()
 
         self.N = N
