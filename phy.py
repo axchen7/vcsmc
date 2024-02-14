@@ -34,7 +34,7 @@ GT10_ALPHABET = {
 
 
 def load_phy(
-    file: str, alphabet: dict[str, list[float]] = GT10_ALPHABET
+    file: str, alphabet: dict[str, list[float]]
 ) -> tuple[int, int, int, Tensor, Tensor]:
     """
     Returns:
