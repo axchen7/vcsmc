@@ -8,11 +8,156 @@ from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 
 
+@tf_function()
+def compute_log_double_factorials_2N(N):
+    """
+    Pre-compute log double factorials that get baked into the TensorFlow
+    graph.
+
+    Returns: Tensor of log double factorials, where the nth entry is n!!,
+    for n in [0, 2N).
+    """
+
+    # log double factorials
+    even_values = [0.0]
+    odd_values = [0.0]
+
+    for i in range(1, N):
+        even_factor = 2 * i
+        odd_factor = 2 * i + 1
+
+        even_values.append(even_values[-1] + math.log(even_factor))
+        odd_values.append(odd_values[-1] + math.log(odd_factor))
+
+    all_values = []
+
+    for i in range(N):
+        all_values.append(even_values[i])
+        all_values.append(odd_values[i])
+
+    return tf.constant(all_values, DTYPE_FLOAT)
+
+
+@tf_function()
+def compute_felsenstein_likelihoods_SxA(
+    Q,
+    likelihoods1_SxA,
+    likelihoods2_SxA,
+    branch1,
+    branch2,
+):
+    P1_AxA = tf.linalg.expm(Q * branch1)
+    P2_AxA = tf.linalg.expm(Q * branch2)
+
+    prob1_SxA = tf.matmul(likelihoods1_SxA, P1_AxA)
+    prob2_SxA = tf.matmul(likelihoods2_SxA, P2_AxA)
+
+    return prob1_SxA * prob2_SxA
+
+
+@tf_function(reduce_retracing=True)
+def compute_log_likelihood_and_posterior(
+    stat_probs,
+    felsensteins_txSxA,
+    log_branch_prior,
+    leaf_counts_t,
+    log_double_factorials_2N,
+):
+    """
+    Dots Felsenstein probabilities with stationary probabilities and
+    multiplies across sites and subtrees, yielding likelihood
+    P(Y|forest,theta). Then multiplies by the prior over topologies and
+    branch lengths to add the P(forest|theta) factor, yielding the posterior
+    P(Y,forest|theta).
+
+    Returns:
+        log_likelihood: P(Y|forest,theta)
+        log_posterior: P(Y,forest|theta)
+    """
+    likelihoods_txS = tf.tensordot(felsensteins_txSxA, stat_probs, 1)
+    log_likelihoods_txS = tf.math.log(likelihoods_txS)
+    log_likelihood = tf.reduce_sum(log_likelihoods_txS)  # reduce along both axes
+
+    leaf_counts_2timesminus3 = 2 * leaf_counts_t - 3
+    leaf_counts_2timesminus3 = tf.maximum(leaf_counts_2timesminus3, 0)
+
+    leaf_log_double_factorials_t = tf.gather(
+        log_double_factorials_2N, leaf_counts_2timesminus3
+    )
+    log_topology_prior = tf.reduce_sum(-leaf_log_double_factorials_t)
+
+    log_posterior = log_likelihood + log_topology_prior + log_branch_prior
+    return log_likelihood, log_posterior
+
+
+@tf_function(reduce_retracing=True)
+def replace_with_merged(arr, idx1, idx2, new_val) -> Tensor:
+    """
+    Removes elements at idx1 and idx2, and appends new_val to the end.
+    Acts on axis=0.
+    """
+
+    # ensure idx1 < idx2
+    if idx1 > idx2:
+        idx1, idx2 = idx2, idx1
+
+    return tf.concat(
+        [arr[:idx1], arr[idx1 + 1 : idx2], arr[idx2 + 1 :], [new_val]],
+        0,
+    )
+
+
+@tf_function()
+def build_newick_tree(
+    taxa_N: Tensor, merge_indexes_N1x2: Tensor, branch_lengths_N1x2: Tensor
+):
+    """
+    Converts the merge indexes and branch lengths output by VCSMC into a Newick
+    tree.
+
+    Args:
+        taxa_N: Tensor of taxa names of shape (N,).
+        merge_indexes_N1x2: Tensor of merge indexes, where the nth entry is the
+            merge indexes at the nth merge step. Shape is (N-1, 2)
+        branch_lengths_N1x2: Tensor of branch lengths, where the nth entry is
+            the branch lengths at the nth merge step. Shape is (N-1, 2)
+
+    Returns: Tensor of the single Newick tree.
+    """
+
+    N = taxa_N.shape[0]
+
+    # At each step r, there are t = N-r trees in the forest.
+    # After N-1 steps, there is one tree left.
+    trees_t = taxa_N
+
+    for r in tf.range(N - 1):
+        tf.autograph.experimental.set_loop_options(
+            shape_invariants=[(trees_t, tf.TensorShape([None]))]
+        )
+
+        idx1 = merge_indexes_N1x2[r, 0]
+        idx2 = merge_indexes_N1x2[r, 1]
+        branch1 = tf.strings.as_string(branch_lengths_N1x2[r, 0])
+        branch2 = tf.strings.as_string(branch_lengths_N1x2[r, 1])
+
+        tree1 = trees_t[idx1]
+        tree2 = trees_t[idx2]
+
+        new_tree = "(" + tree1 + ":" + branch1 + "," + tree2 + ":" + branch2 + ")"
+
+        trees_t = replace_with_merged(trees_t, idx1, idx2, new_tree)
+
+    root_tree = trees_t[0] + ";"
+    return root_tree
+
+
 class VCSMC(tf.Module):
     def __init__(
         self,
         markov: markov.Markov,
         proposal: proposal.Proposal,
+        taxa_N: Tensor,
         *,
         K: int,
     ):
@@ -20,36 +165,8 @@ class VCSMC(tf.Module):
 
         self.markov = markov
         self.proposal = proposal
+        self.taxa_N = taxa_N
         self.K = K
-
-    @tf_function()
-    def compute_log_double_factorials_2N(self, N):
-        """
-        Pre-compute log double factorials that get baked into the TensorFlow
-        graph.
-
-        Returns: Tensor of log double factorials, where the nth entry is n!!,
-        for n in [0, 2N).
-        """
-
-        # log double factorials
-        even_values = [0.0]
-        odd_values = [0.0]
-
-        for i in range(1, N):
-            even_factor = 2 * i
-            odd_factor = 2 * i + 1
-
-            even_values.append(even_values[-1] + math.log(even_factor))
-            odd_values.append(odd_values[-1] + math.log(odd_factor))
-
-        all_values = []
-
-        for i in range(N):
-            all_values.append(even_values[i])
-            all_values.append(odd_values[i])
-
-        return tf.constant(all_values, DTYPE_FLOAT)
 
     @tf_function()
     def get_init_embeddings_KxtxD(self, data_NxSxA):
@@ -58,85 +175,18 @@ class VCSMC(tf.Module):
         return tf.repeat(embeddings_txD[tf.newaxis], self.K, axis=0)  # type: ignore
 
     @tf_function()
-    def compute_felsenstein_likelihoods_SxA(
-        self,
-        Q,
-        likelihoods1_SxA,
-        likelihoods2_SxA,
-        branch1,
-        branch2,
-    ):
-        P1_AxA = tf.linalg.expm(Q * branch1)
-        P2_AxA = tf.linalg.expm(Q * branch2)
-
-        prob1_SxA = tf.matmul(likelihoods1_SxA, P1_AxA)
-        prob2_SxA = tf.matmul(likelihoods2_SxA, P2_AxA)
-
-        return prob1_SxA * prob2_SxA
-
-    @tf_function(reduce_retracing=True)
-    def compute_log_likelihood_and_posterior(
-        self,
-        stat_probs,
-        felsensteins_txSxA,
-        log_branch_prior,
-        leaf_counts_t,
-        log_double_factorials_2N,
-    ):
-        """
-        Dots Felsenstein probabilities with stationary probabilities and
-        multiplies across sites and subtrees, yielding likelihood
-        P(Y|forest,theta). Then multiplies by the prior over topologies and
-        branch lengths to add the P(forest|theta) factor, yielding the posterior
-        P(Y,forest|theta).
-
-        Returns:
-            log_likelihood: P(Y|forest,theta)
-            log_posterior: P(Y,forest|theta)
-        """
-        likelihoods_txS = tf.tensordot(felsensteins_txSxA, stat_probs, 1)
-        log_likelihoods_txS = tf.math.log(likelihoods_txS)
-        log_likelihood = tf.reduce_sum(log_likelihoods_txS)  # reduce along both axes
-
-        leaf_counts_2timesminus3 = 2 * leaf_counts_t - 3
-        leaf_counts_2timesminus3 = tf.maximum(leaf_counts_2timesminus3, 0)
-
-        leaf_log_double_factorials_t = tf.gather(
-            log_double_factorials_2N, leaf_counts_2timesminus3
-        )
-        log_topology_prior = tf.reduce_sum(-leaf_log_double_factorials_t)
-
-        log_posterior = log_likelihood + log_topology_prior + log_branch_prior
-        return log_likelihood, log_posterior
-
-    @tf_function(reduce_retracing=True)
-    def replace_with_merged(self, arr, idx1, idx2, new_val):
-        """
-        Removes elements at idx1 and idx2, and appends new_val to the end.
-        Acts on axis=0.
-        """
-
-        # ensure idx1 < idx2
-        if idx1 > idx2:
-            idx1, idx2 = idx2, idx1
-
-        return tf.concat(
-            [arr[:idx1], arr[idx1 + 1 : idx2], arr[idx2 + 1 :], [new_val]],
-            0,
-        )
-
-    @tf_function()
     def __call__(self, data_NxSxA: Tensor) -> Tensor:
         """
         Returns:
             log_Z_SMC: lower bound to the likelihood; should set cost = -log_Z_SMC
             log_likelihoods_K: log likelihoods for each particle at the last merge step
+            best_newick_tree: Newick tree with the highest likelihood
         """
 
         N, S, A = data_NxSxA.shape
         K = self.K
 
-        log_double_factorials_2N = self.compute_log_double_factorials_2N(N)
+        log_double_factorials_2N = compute_log_double_factorials_2N(N)
         stat_probs = self.markov.stat_probs()
         Q = self.markov.Q()
 
@@ -151,14 +201,12 @@ class VCSMC(tf.Module):
 
             for k in tf.range(K):
 
-                log_likelihood, log_posterior = (
-                    self.compute_log_likelihood_and_posterior(
-                        stat_probs,
-                        felsensteins_KxtxSxA[k],
-                        log_branch_priors_K[k],
-                        leaf_counts_Kxt[k],
-                        log_double_factorials_2N,
-                    )
+                log_likelihood, log_posterior = compute_log_likelihood_and_posterior(
+                    stat_probs,
+                    felsensteins_KxtxSxA[k],
+                    log_branch_priors_K[k],
+                    leaf_counts_Kxt[k],
+                    log_double_factorials_2N,
                 )
 
                 log_likelihoods_K = log_likelihoods_K.write(k, log_likelihood)
@@ -251,7 +299,7 @@ class VCSMC(tf.Module):
 
                 # helper function
                 def merge(arr, new_val):
-                    return self.replace_with_merged(arr, idx1, idx2, new_val)
+                    return replace_with_merged(arr, idx1, idx2, new_val)
 
                 # ===== post-proposal bookkeeping =====
 
@@ -261,7 +309,7 @@ class VCSMC(tf.Module):
                 )
                 new_felsensteins_txSxA = merge(
                     felsensteins_KxtxSxA[k],
-                    self.compute_felsenstein_likelihoods_SxA(
+                    compute_felsenstein_likelihoods_SxA(
                         Q,
                         felsensteins_KxtxSxA[k, idx1],
                         felsensteins_KxtxSxA[k, idx2],
@@ -294,7 +342,7 @@ class VCSMC(tf.Module):
                 # ===== compute new posteriors and weights =====
 
                 new_log_likelihood, new_log_posterior = (
-                    self.compute_log_likelihood_and_posterior(
+                    compute_log_likelihood_and_posterior(
                         stat_probs,
                         new_felsensteins_txSxA,
                         new_branch_log_prior,
@@ -340,6 +388,15 @@ class VCSMC(tf.Module):
         log_sum_weights_r = tf.reduce_logsumexp(log_scaled_weights_rxK, axis=1)
         log_Z_SMC = tf.reduce_sum(log_sum_weights_r)
 
+        # ==== build best Newick tree ====
+
+        best_tree_idx = tf.math.argmax(log_likelihoods_K)
+        best_newick_tree = build_newick_tree(
+            self.taxa_N,
+            merge_indexes_Kxrx2[best_tree_idx],  # type: ignore
+            branch_lengths_Kxrx2[best_tree_idx],  # type: ignore
+        )
+
         # ===== return final results =====
 
-        return log_Z_SMC, log_likelihoods_K
+        return log_Z_SMC, log_likelihoods_K, best_newick_tree

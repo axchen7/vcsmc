@@ -8,15 +8,14 @@ from Bio import Phylo
 from tqdm import tqdm
 
 import utils
-import vcsmc
 from type_utils import Tensor, tf_function
+from vcsmc import VCSMC
 
 
 def train(
-    vcsmc: vcsmc.VCSMC,
+    vcsmc: VCSMC,
     optimizer: keras.optimizers.Optimizer,
     data_NxSxA: Tensor,
-    taxa: list[str],
     root: str = "Healthy",
     *,
     epochs: int,
@@ -25,7 +24,7 @@ def train(
     @tf_function()
     def train_step(batch_NxSxA: Tensor):
         with tf.GradientTape() as tape:
-            log_Z_SMC, log_likelihoods_K = vcsmc(batch_NxSxA)
+            log_Z_SMC, log_likelihoods_K, best_newick_tree = vcsmc(batch_NxSxA)
 
             cost = -log_Z_SMC
 
@@ -44,7 +43,7 @@ def train(
         grads = tape.gradient(cost, vcsmc.trainable_variables)
         optimizer.apply_gradients(zip(grads, vcsmc.trainable_variables))  # type: ignore
 
-        return log_Z_SMC, log_likelihoods_K
+        return log_Z_SMC, log_likelihoods_K, best_newick_tree
 
     N = data_NxSxA.shape[0]
 
@@ -55,11 +54,10 @@ def train(
     avg_log_likelihoods_across_epochs = []
 
     for epoch in tqdm(range(epochs)):
-        log_Z_SMC, log_likelihoods_K = train_step(data_NxSxA)
+        log_Z_SMC, log_likelihoods_K, best_newick_tree = train_step(data_NxSxA)
 
         log_likelihoods_avg = tf.math.reduce_mean(log_likelihoods_K)
         log_likelihoods_std_dev = tf.math.reduce_std(log_likelihoods_K)
-        # best_tree = newick_trees[tf.math.argmax(log_likelihoods_K)]
 
         avg_log_likelihoods_across_epochs.append(log_likelihoods_avg)
         log_likelihoods_across_epochs.append(log_likelihoods_K)
@@ -86,15 +84,17 @@ def train(
 
                 # tf.summary.image("Leaf embeddings", utils.cur_plt_to_tf_image())
 
-                # # ===== best tree =====
+                # ===== best tree =====
 
-                # _, axes = plt.subplots(figsize=(10, N * 0.2))
+                _, axes = plt.subplots(figsize=(10, N * 0.2))
 
-                # phylo_tree = Phylo.read(StringIO(best_tree.numpy().decode()), "newick")
-                # phylo_tree.root_with_outgroup(root)
-                # Phylo.draw(phylo_tree, axes=axes, do_show=False)
+                phylo_tree = Phylo.read(  # type: ignore
+                    StringIO(best_newick_tree.numpy().decode()), "newick"
+                )
+                phylo_tree.root_with_outgroup(root)
+                Phylo.draw(phylo_tree, axes=axes, do_show=False)  # type: ignore
 
-                # tf.summary.image("Best tree", utils.cur_plt_to_tf_image())
+                tf.summary.image("Best tree", utils.cur_plt_to_tf_image())
 
                 # ===== Q matrix =====
 

@@ -35,21 +35,24 @@ GT10_ALPHABET = {
 
 def load_phy(
     file: str, alphabet: dict[str, list[float]] = GT10_ALPHABET
-) -> tuple[int, int, int, list[str], Tensor]:
+) -> tuple[int, int, int, Tensor, Tensor]:
     """
     Returns:
         N: Number of taxa.
         S: Number of sites.
         A: Alphabet size.
-        taxa: List of taxa names.
         data_NxSxA: Tensor of shape (N, S, A).
+        taxa_N: Tensor of taxa names of shape (N,).
     """
 
     with open(file) as f:
         lines = f.readlines()
 
     genome_lines = lines[1:]
-    taxa = [line[: line.find(" ")].strip() for line in genome_lines]
+
+    taxa_N = [line[: line.find(" ")].strip() for line in genome_lines]
+    taxa_N = tf.convert_to_tensor(taxa_N, dtype=tf.string)
+
     genome_strings = [line[line.find(" ") :].strip() for line in genome_lines]
 
     sample_char = genome_strings[0][0]
@@ -64,4 +67,6 @@ def load_phy(
         for s in range(S):
             data_NxSxA[n, s, :] = alphabet[genome_strings[n][s]]
 
-    return N, S, A, taxa, tf.convert_to_tensor(data_NxSxA, DTYPE_FLOAT)
+    data_NxSxA = tf.convert_to_tensor(data_NxSxA, DTYPE_FLOAT)
+
+    return N, S, A, data_NxSxA, taxa_N
