@@ -190,10 +190,11 @@ class VCSMC(tf.Module):
         # must record all weights to compute Z_SMC
         log_weights_rxK = tf.TensorArray(DTYPE_FLOAT, N - 1)
 
+        # for setting shape_invariants
+        D = embeddings_KxtxD.shape[2]
+
         # iterate over merge steps
         for r in tf.range(N - 1):
-            D = embeddings_KxtxD.shape[2]
-
             tf.autograph.experimental.set_loop_options(
                 shape_invariants=[
                     (merge_indexes_Kxrx2, tf.TensorShape([K, None, 2])),
