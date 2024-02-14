@@ -59,12 +59,12 @@ class ExpBranchProposal(Proposal):
     with a learnable parameter for each merge step.
     """
 
-    def __init__(self, *, N: int, branch_prior: float = 1.0):
+    def __init__(self, *, N: int, initial_branch_len: float = 1.0):
         super().__init__()
 
         self.N = N
 
-        initial = tf.constant(math.log(branch_prior), DTYPE_FLOAT, [N - 1])
+        initial = tf.constant(math.log(initial_branch_len), DTYPE_FLOAT, [N - 1])
 
         # N2 -> N-2
         self._branch_params1_N2 = tf.Variable(initial)

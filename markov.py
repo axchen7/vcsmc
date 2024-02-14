@@ -22,7 +22,7 @@ class DenseMarkov(Markov):
     diagonal).
     """
 
-    def __init__(self, A: int):
+    def __init__(self, *, A: int):
         super().__init__()
 
         self.A = A
