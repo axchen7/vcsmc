@@ -63,6 +63,7 @@ def train(
         log_likelihoods_across_epochs.append(log_likelihoods_K)
 
         with summary_writer.as_default(step=epoch):
+            tf.summary.scalar("Elbo", log_Z_SMC)
             tf.summary.scalar("Log likelihood avg", log_likelihoods_avg)
             tf.summary.scalar("Log likelihoods std dev", log_likelihoods_std_dev)
             tf.summary.histogram("Log likelihoods", log_likelihoods_K)
