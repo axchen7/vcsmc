@@ -20,7 +20,6 @@ class Distance(tf.Module):
         """
         return tf.vectorized_map(self.project, x)
 
-    @tf_function()
     def __call__(self, x: Tensor, y: Tensor) -> Tensor:
         """
         Given two D-length tensors, return the distance between them.
@@ -29,7 +28,7 @@ class Distance(tf.Module):
 
 
 class Euclidean(Distance):
-    def __init__(self, *, initial_radius: float = 4.0):
+    def __init__(self, *, initial_radius: float = 1.0):
         super().__init__()
         # project leaf and inner embeddings onto a sphere of learnable radius
         self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
