@@ -308,7 +308,7 @@ class VCSMC(tf.Module):
                     idx2,
                     branch1,
                     branch2,
-                    embedding,
+                    embedding_D,
                     log_v_plus,
                     log_v_minus,
                 ) = self.proposal(r, leaf_counts_Kxt[k], embeddings_KxtxD[k])
@@ -346,7 +346,7 @@ class VCSMC(tf.Module):
                 new_leaf_counts_Kxt = new_leaf_counts_Kxt.write(k, new_leaf_counts_t)
                 new_embeddings_KxtxD = new_embeddings_KxtxD.write(
                     k,
-                    merge(embeddings_KxtxD[k], embedding),
+                    merge(embeddings_KxtxD[k], embedding_D),
                 )
                 new_felsensteins_KxtxSxA = new_felsensteins_KxtxSxA.write(
                     k, new_felsensteins_txSxA

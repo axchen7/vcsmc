@@ -1,8 +1,10 @@
 import math
 
+import keras
 import tensorflow as tf
 import tensorflow_probability as tfp
 
+import distances
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 
@@ -41,7 +43,7 @@ class Proposal(tf.Module):
             idx2: Indices of the second node to merge.
             branch1: Branch lengths of the first node.
             branch2: Branch lengths of the second node.
-            embedding: The embedding of the merged subtree.
+            embedding_D: The embedding of the merged subtree.
             log_v_plus: Log probability of the returned proposal.
             log_v_minus: Log of the over-counting correction factor.
         Note:
@@ -142,14 +144,180 @@ class ExpBranchProposal(Proposal):
         # ===== return proposal =====
 
         # dummy embedding
-        embedding = tf.zeros([1], DTYPE_FLOAT)
+        embedding_D = tf.zeros([1], DTYPE_FLOAT)
 
         return (
             idx1,
             idx2,
             branch1,
             branch2,
-            embedding,
+            embedding_D,
+            log_v_plus,
+            log_v_minus,
+        )
+
+
+class EmbeddingExpBranchProposal(Proposal):
+    """
+    Proposal where leaf nodes are embedded into D-dimensional space, and pairs
+    of child embeddings are re-embedded to produce merged embeddings. Embeddings
+    are performed using a multi-layered perceptron. Branch lengths are sampled
+    from exponential distributions parameterized by distance between embeddings.
+    """
+
+    def __init__(
+        self,
+        distance: distances.Distance,
+        *,
+        N: int,
+        S: int,
+        A: int,
+        D: int,
+        width: int,
+        depth: int,
+        noise_stddev: float = 1.0,
+    ):
+        """
+        Args:
+            distance: The distance function to use for embedding.
+            N: The number of leaf nodes.
+            S: Number of sites in input. All inputs must have this many sites.
+            A: Alphabet size.
+            D: Number of dimensions in output embedding.
+            width: Number of neurons in each layer.
+            depth: Number of hidden layers.
+            noise_stddev: amount of Gaussian noise to add to each child before computing merged embedding, to prevent overfitting.
+        """
+
+        super().__init__()
+
+        self.distance = distance
+        self.N = N
+        self.S = S
+        self.A = A
+        self.D = D
+        self.width = width
+        self.depth = depth
+        self.noise_stddev = tf.constant(noise_stddev, DTYPE_FLOAT)
+
+        self.leaf_mlp = self.create_leaf_mlp()
+        self.merge_mlp = self.create_merge_mlp()
+
+    def create_leaf_mlp(self):
+        mlp = keras.Sequential()
+        mlp.add(keras.layers.Input([self.S, self.A], dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Flatten())
+
+        for _ in range(self.depth):
+            mlp.add(
+                keras.layers.Dense(self.width, activation="relu", dtype=DTYPE_FLOAT)
+            )
+
+        mlp.add(keras.layers.Dense(self.D, dtype=DTYPE_FLOAT))
+        return mlp
+
+    def create_merge_mlp(self):
+        mlp = keras.Sequential()
+        mlp.add(keras.layers.Input([2 * self.D], dtype=DTYPE_FLOAT))
+
+        for _ in range(self.depth):
+            mlp.add(
+                keras.layers.Dense(self.width, activation="relu", dtype=DTYPE_FLOAT)
+            )
+
+        mlp.add(keras.layers.Dense(self.D, dtype=DTYPE_FLOAT))
+        return mlp
+
+    @tf_function()
+    def embed(self, leaf_SxA):
+        return self.leaf_mlp(tf.expand_dims(leaf_SxA, 0))[0]  # type: ignore
+
+    @tf_function()
+    def __call__(self, r, leaf_counts_t, embeddings_txD):
+        # TODO vectorize across K
+
+        num_nodes = self.N - r
+
+        # ===== uniformly sample 2 distinct nodes to merge =====
+
+        idx1 = tf.random.uniform([1], 0, num_nodes, tf.int32)[0]
+        idx2 = tf.random.uniform([1], 0, num_nodes - 1, tf.int32)[0]
+
+        if idx2 >= idx1:
+            idx2 += 1
+
+        # ===== get merged embedding =====
+
+        embedding1 = embeddings_txD[idx1]
+        embedding2 = embeddings_txD[idx2]
+
+        # add Gaussian noise to each child
+        noise_var = tf.square(self.noise_stddev)
+        per_axis_noise_var = noise_var / self.D
+        per_axis_noise_stddev = tf.sqrt(per_axis_noise_var)
+
+        embedding1 = embedding1 + tf.random.normal(
+            tf.shape(embedding1), stddev=per_axis_noise_stddev, dtype=DTYPE_FLOAT
+        )
+        embedding2 = embedding2 + tf.random.normal(
+            tf.shape(embedding2), stddev=per_axis_noise_stddev, dtype=DTYPE_FLOAT
+        )
+
+        concat_child_embeddings = tf.concat([embedding1, embedding2], axis=0)
+        embedding_D = self.merge_mlp(tf.expand_dims(concat_child_embeddings, 0))[0]  # type: ignore
+
+        # ===== compute branch distribution parameters =====
+
+        dist1 = self.distance(embedding1, embedding_D)
+        dist2 = self.distance(embedding2, embedding_D)
+
+        # sample from exponential distributions whose expectations are the
+        # distances between children and merged embeddings
+        branch_param1 = 1 / dist1
+        branch_param2 = 1 / dist2
+
+        # ===== sample branch lengths from exponential distributions =====
+
+        branch_dist1 = tfp.distributions.Exponential(branch_param1)
+        branch_dist2 = tfp.distributions.Exponential(branch_param2)
+
+        branch1 = branch_dist1.sample(1)[0]
+        branch2 = branch_dist2.sample(1)[0]
+
+        # ===== compute proposal probability =====
+
+        # log(num_nodes choose 2)
+        log_num_merge_choices = tf.math.log(num_nodes * (num_nodes - 1) / 2)
+        log_merge_prob = -log_num_merge_choices
+
+        log_branch1_prior = branch_dist1.log_prob(branch1)
+        log_branch2_prior = branch_dist2.log_prob(branch2)
+
+        log_v_plus = log_merge_prob + log_branch1_prior + log_branch2_prior
+
+        # ===== compute over-counting correction factor =====
+
+        num_subtrees_with_one_leaf = tf.reduce_sum(
+            tf.cast(leaf_counts_t == 1, tf.int32)
+        )
+
+        # exclude trees currently being merged from the count
+        if leaf_counts_t[idx1] == 1:
+            num_subtrees_with_one_leaf -= 1
+        if leaf_counts_t[idx2] == 1:
+            num_subtrees_with_one_leaf -= 1
+
+        v_minus = self.N - num_subtrees_with_one_leaf
+        log_v_minus = tf.math.log(tf.cast(v_minus, DTYPE_FLOAT))
+
+        # ===== return proposal =====
+
+        return (
+            idx1,
+            idx2,
+            branch1,
+            branch2,
+            embedding_D,
             log_v_plus,
             log_v_minus,
         )
