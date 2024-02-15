@@ -75,8 +75,12 @@ class ExpBranchProposal(Proposal):
         initial_log_param = tf.constant(math.log(initial_param), DTYPE_FLOAT, [N - 1])
 
         # N2 -> N-2
-        self._branch_params1_N2 = tf.Variable(initial_log_param)
-        self._branch_params2_N2 = tf.Variable(initial_log_param)
+        self._branch_params1_N2 = tf.Variable(
+            initial_log_param, name="_branch_params1_N2"
+        )
+        self._branch_params2_N2 = tf.Variable(
+            initial_log_param, name="_branch_params2_N2"
+        )
 
     @tf_function()
     def branch_params(self, r):
