@@ -58,9 +58,10 @@ def compute_felsenstein_likelihoods_SxA(
 @tf_function(reduce_retracing=True)
 def compute_log_likelihood_and_posterior(
     stat_probs,
-    felsensteins_txSxA,
-    log_branch_prior,
+    branch_lengths_rx2,
     leaf_counts_t,
+    felsensteins_txSxA,
+    prior_branch_len,
     log_double_factorials_2N,
 ):
     """
@@ -85,6 +86,13 @@ def compute_log_likelihood_and_posterior(
         log_double_factorials_2N, leaf_counts_2timesminus3
     )
     log_topology_prior = tf.reduce_sum(-leaf_log_double_factorials_t)
+
+    # compute probability of branches under exponential distribution with
+    # lambda=1 / (expected branch length)
+    branch_prior_param = 1 / prior_branch_len
+    log_branch_prior = tf.reduce_sum(
+        tf.math.log(branch_prior_param) - branch_prior_param * branch_lengths_rx2
+    )
 
     log_posterior = log_likelihood + log_topology_prior + log_branch_prior
     return log_likelihood, log_posterior
@@ -160,13 +168,24 @@ class VCSMC(tf.Module):
         taxa_N: Tensor,
         *,
         K: int,
+        prior_branch_len: float = 1.0,
     ):
+        """
+        Args:
+            markov: Markov object
+            proposal: Proposal object
+            taxa_N: Tensor of taxa names
+            K: Number of particles
+            prior_branch_len: Expected branch length under the prior
+        """
+
         super().__init__()
 
         self.markov = markov
         self.proposal = proposal
         self.taxa_N = taxa_N
         self.K = K
+        self.prior_branch_len = tf.constant(prior_branch_len, DTYPE_FLOAT)
 
     @tf_function()
     def get_init_embeddings_KxtxD(self, data_NxSxA):
@@ -192,7 +211,9 @@ class VCSMC(tf.Module):
 
         # helper function
         def compute_log_likelihoods_and_posteriors_K(
-            felsensteins_KxtxSxA, log_branch_priors_K, leaf_counts_Kxt
+            branch_lengths_Kxrx2,
+            leaf_counts_Kxt,
+            felsensteins_KxtxSxA,
         ):
             # TODO vectorize across K
 
@@ -203,9 +224,10 @@ class VCSMC(tf.Module):
 
                 log_likelihood, log_posterior = compute_log_likelihood_and_posterior(
                     stat_probs,
-                    felsensteins_KxtxSxA[k],
-                    log_branch_priors_K[k],
+                    branch_lengths_Kxrx2[k],
                     leaf_counts_Kxt[k],
+                    felsensteins_KxtxSxA[k],
+                    self.prior_branch_len,
                     log_double_factorials_2N,
                 )
 
@@ -225,11 +247,9 @@ class VCSMC(tf.Module):
         embeddings_KxtxD = self.get_init_embeddings_KxtxD(data_NxSxA)
         # Felsenstein probabilities for computing pi(s)
         felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
-        # across all branches in forest; for computing the overall prior P(forest|theta)
-        log_branch_priors_K = tf.zeros([K], dtype=DTYPE_FLOAT)
         # likelihoods is for returning at the end; forest posterior P(forest|Y,theta) is the pi(s) measure
         log_likelihoods_K, log_posteriors_K = compute_log_likelihoods_and_posteriors_K(
-            felsensteins_KxtxSxA, log_branch_priors_K, leaf_counts_Kxt
+            branch_lengths_Kxrx2, leaf_counts_Kxt, felsensteins_KxtxSxA
         )
 
         # for computing empirical measure pi_rk(s)
@@ -263,7 +283,6 @@ class VCSMC(tf.Module):
             leaf_counts_Kxt = tf.gather(leaf_counts_Kxt, indexes)
             embeddings_KxtxD = tf.gather(embeddings_KxtxD, indexes)
             felsensteins_KxtxSxA = tf.gather(felsensteins_KxtxSxA, indexes)
-            log_branch_priors_K = tf.gather(log_branch_priors_K, indexes)
             log_likelihoods_K = tf.gather(log_likelihoods_K, indexes)
             log_posteriors_K = tf.gather(log_posteriors_K, indexes)
             log_weights_K = tf.gather(log_weights_K, indexes)
@@ -277,7 +296,6 @@ class VCSMC(tf.Module):
             new_leaf_counts_Kxt = tf.TensorArray(tf.int32, K)
             new_embeddings_KxtxD = tf.TensorArray(DTYPE_FLOAT, K)
             new_felsensteins_KxtxSxA = tf.TensorArray(DTYPE_FLOAT, K)
-            new_log_branch_priors_K = tf.TensorArray(DTYPE_FLOAT, K)
             new_log_likelihoods_K = tf.TensorArray(DTYPE_FLOAT, K)
             new_log_posteriors_K = tf.TensorArray(DTYPE_FLOAT, K)
             new_log_weights_K = tf.TensorArray(DTYPE_FLOAT, K)
@@ -293,8 +311,6 @@ class VCSMC(tf.Module):
                     embedding,
                     log_v_plus,
                     log_v_minus,
-                    log_branch1_prior,
-                    log_branch2_prior,
                 ) = self.proposal(r, leaf_counts_Kxt[k], embeddings_KxtxD[k])
 
                 # helper function
@@ -303,6 +319,9 @@ class VCSMC(tf.Module):
 
                 # ===== post-proposal bookkeeping =====
 
+                new_branch_lengths_rx2 = tf.concat(
+                    [branch_lengths_Kxrx2[k], [[branch1, branch2]]], 0
+                )
                 new_leaf_counts_t = merge(
                     leaf_counts_Kxt[k],
                     leaf_counts_Kxt[k, idx1] + leaf_counts_Kxt[k, idx2],
@@ -317,15 +336,12 @@ class VCSMC(tf.Module):
                         branch2,
                     ),
                 )
-                new_branch_log_prior = (
-                    log_branch_priors_K[k] + log_branch1_prior + log_branch2_prior
-                )
 
                 new_merge_indexes_Kxrx2 = new_merge_indexes_Kxrx2.write(
                     k, tf.concat([merge_indexes_Kxrx2[k], [[idx1, idx2]]], 0)
                 )
                 new_branch_lengths_Kxrx2 = new_branch_lengths_Kxrx2.write(
-                    k, tf.concat([branch_lengths_Kxrx2[k], [[branch1, branch2]]], 0)
+                    k, new_branch_lengths_rx2
                 )
                 new_leaf_counts_Kxt = new_leaf_counts_Kxt.write(k, new_leaf_counts_t)
                 new_embeddings_KxtxD = new_embeddings_KxtxD.write(
@@ -335,18 +351,16 @@ class VCSMC(tf.Module):
                 new_felsensteins_KxtxSxA = new_felsensteins_KxtxSxA.write(
                     k, new_felsensteins_txSxA
                 )
-                new_log_branch_priors_K = new_log_branch_priors_K.write(
-                    k, new_branch_log_prior
-                )
 
                 # ===== compute new posteriors and weights =====
 
                 new_log_likelihood, new_log_posterior = (
                     compute_log_likelihood_and_posterior(
                         stat_probs,
-                        new_felsensteins_txSxA,
-                        new_branch_log_prior,
+                        new_branch_lengths_rx2,
                         new_leaf_counts_t,
+                        new_felsensteins_txSxA,
+                        self.prior_branch_len,
                         log_double_factorials_2N,
                     )
                 )
@@ -369,7 +383,6 @@ class VCSMC(tf.Module):
             leaf_counts_Kxt = new_leaf_counts_Kxt.stack()
             embeddings_KxtxD = new_embeddings_KxtxD.stack()
             felsensteins_KxtxSxA = new_felsensteins_KxtxSxA.stack()
-            log_branch_priors_K = new_log_branch_priors_K.stack()
             log_likelihoods_K = new_log_likelihoods_K.stack()
             log_posteriors_K = new_log_posteriors_K.stack()
             log_weights_K = new_log_weights_K.stack()

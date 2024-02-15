@@ -28,7 +28,7 @@ class Proposal(tf.Module):
 
     def __call__(
         self, r: Tensor, leaf_counts_t: Tensor, embeddings_txD: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
@@ -44,8 +44,6 @@ class Proposal(tf.Module):
             embedding: The embedding of the merged subtree.
             log_v_plus: Log probability of the returned proposal.
             log_v_minus: Log of the over-counting correction factor.
-            log_branch1_prior: Log prior probability of branch1.
-            log_branch2_prior: Log prior probability of branch2.
         Note:
             At each step r, there are t = N-r >= 2 trees in the forest.
         """
@@ -150,6 +148,4 @@ class ExpBranchProposal(Proposal):
             embedding,
             log_v_plus,
             log_v_minus,
-            log_branch1_prior,
-            log_branch2_prior,
         )
