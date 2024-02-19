@@ -208,33 +208,6 @@ class VCSMC(tf.Module):
         stat_probs = self.markov.stat_probs()
         Q = self.markov.Q()
 
-        # helper function
-        def compute_log_likelihoods_and_pis_K(
-            branch_lengths_Kxrx2,
-            leaf_counts_Kxt,
-            felsensteins_KxtxSxA,
-        ):
-            # TODO vectorize across K
-
-            log_likelihoods_K = tf.TensorArray(DTYPE_FLOAT, K)
-            log_pis_K = tf.TensorArray(DTYPE_FLOAT, K)
-
-            for k in tf.range(K):
-
-                log_likelihood, log_pi = compute_log_likelihood_and_pi(
-                    stat_probs,
-                    branch_lengths_Kxrx2[k],
-                    leaf_counts_Kxt[k],
-                    felsensteins_KxtxSxA[k],
-                    self.prior_branch_len,
-                    log_double_factorials_2N,
-                )
-
-                log_likelihoods_K = log_likelihoods_K.write(k, log_likelihood)
-                log_pis_K = log_pis_K.write(k, log_pi)
-
-            return log_likelihoods_K.stack(), log_pis_K.stack()
-
         # at each step r, there are t = N-r >= 2 trees in the forest.
         # initially, r = 0 and t = N
 
@@ -246,16 +219,16 @@ class VCSMC(tf.Module):
         embeddings_KxtxD = self.get_init_embeddings_KxtxD(data_NxSxA)
         # Felsenstein probabilities for computing pi(s)
         felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
-        # likelihoods is for returning at the end
-        log_likelihoods_K, log_pis_K = compute_log_likelihoods_and_pis_K(
-            branch_lengths_Kxrx2, leaf_counts_Kxt, felsensteins_KxtxSxA
-        )
+        log_pis_K = tf.zeros(K, DTYPE_FLOAT)
 
         # for computing empirical measure pi_rk(s)
         log_weights_K = tf.zeros(K, DTYPE_FLOAT)
 
         # must record all weights to compute Z_SMC
         log_weights_rxK = tf.TensorArray(DTYPE_FLOAT, N - 1)
+
+        # for displaying at the end
+        log_likelihoods_K = tf.zeros(K, DTYPE_FLOAT)  # initial value isn't used
 
         # for setting shape_invariants
         D = embeddings_KxtxD.shape[2]
@@ -282,7 +255,6 @@ class VCSMC(tf.Module):
             leaf_counts_Kxt = tf.gather(leaf_counts_Kxt, indexes)
             embeddings_KxtxD = tf.gather(embeddings_KxtxD, indexes)
             felsensteins_KxtxSxA = tf.gather(felsensteins_KxtxSxA, indexes)
-            log_likelihoods_K = tf.gather(log_likelihoods_K, indexes)
             log_pis_K = tf.gather(log_pis_K, indexes)
             log_weights_K = tf.gather(log_weights_K, indexes)
 
