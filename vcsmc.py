@@ -56,7 +56,7 @@ def compute_felsenstein_likelihoods_SxA(
 
 
 @tf_function(reduce_retracing=True)
-def compute_log_likelihood_and_posterior(
+def compute_log_likelihood_and_pi(
     stat_probs,
     branch_lengths_rx2,
     leaf_counts_t,
@@ -65,15 +65,14 @@ def compute_log_likelihood_and_posterior(
     log_double_factorials_2N,
 ):
     """
-    Dots Felsenstein probabilities with stationary probabilities and
-    multiplies across sites and subtrees, yielding likelihood
-    P(Y|forest,theta). Then multiplies by the prior over topologies and
-    branch lengths to add the P(forest|theta) factor, yielding the posterior
-    P(Y,forest|theta).
+    Dots Felsenstein probabilities with stationary probabilities and multiplies
+    across sites and subtrees, yielding likelihood P(Y|forest,theta). Then
+    multiplies by the prior over topologies and branch lengths to add the
+    P(forest|theta) factor, yielding the measure pi(forest) = P(Y,forest|theta).
 
     Returns:
-        log_likelihood: P(Y|forest,theta)
-        log_posterior: P(Y,forest|theta)
+        log_likelihood: log P(Y|forest,theta)
+        log_pi: log P(Y,forest|theta)
     """
     likelihoods_txS = tf.tensordot(felsensteins_txSxA, stat_probs, 1)
     log_likelihoods_txS = tf.math.log(likelihoods_txS)
@@ -94,8 +93,8 @@ def compute_log_likelihood_and_posterior(
         tf.math.log(branch_prior_param) - branch_prior_param * branch_lengths_rx2
     )
 
-    log_posterior = log_likelihood + log_topology_prior + log_branch_prior
-    return log_likelihood, log_posterior
+    log_pi = log_likelihood + log_topology_prior + log_branch_prior
+    return log_likelihood, log_pi
 
 
 @tf_function(reduce_retracing=True)
@@ -210,7 +209,7 @@ class VCSMC(tf.Module):
         Q = self.markov.Q()
 
         # helper function
-        def compute_log_likelihoods_and_posteriors_K(
+        def compute_log_likelihoods_and_pis_K(
             branch_lengths_Kxrx2,
             leaf_counts_Kxt,
             felsensteins_KxtxSxA,
@@ -218,11 +217,11 @@ class VCSMC(tf.Module):
             # TODO vectorize across K
 
             log_likelihoods_K = tf.TensorArray(DTYPE_FLOAT, K)
-            log_posteriors_K = tf.TensorArray(DTYPE_FLOAT, K)
+            log_pis_K = tf.TensorArray(DTYPE_FLOAT, K)
 
             for k in tf.range(K):
 
-                log_likelihood, log_posterior = compute_log_likelihood_and_posterior(
+                log_likelihood, log_pi = compute_log_likelihood_and_pi(
                     stat_probs,
                     branch_lengths_Kxrx2[k],
                     leaf_counts_Kxt[k],
@@ -232,9 +231,9 @@ class VCSMC(tf.Module):
                 )
 
                 log_likelihoods_K = log_likelihoods_K.write(k, log_likelihood)
-                log_posteriors_K = log_posteriors_K.write(k, log_posterior)
+                log_pis_K = log_pis_K.write(k, log_pi)
 
-            return log_likelihoods_K.stack(), log_posteriors_K.stack()
+            return log_likelihoods_K.stack(), log_pis_K.stack()
 
         # at each step r, there are t = N-r >= 2 trees in the forest.
         # initially, r = 0 and t = N
@@ -247,8 +246,8 @@ class VCSMC(tf.Module):
         embeddings_KxtxD = self.get_init_embeddings_KxtxD(data_NxSxA)
         # Felsenstein probabilities for computing pi(s)
         felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
-        # likelihoods is for returning at the end; forest posterior P(forest|Y,theta) is the pi(s) measure
-        log_likelihoods_K, log_posteriors_K = compute_log_likelihoods_and_posteriors_K(
+        # likelihoods is for returning at the end
+        log_likelihoods_K, log_pis_K = compute_log_likelihoods_and_pis_K(
             branch_lengths_Kxrx2, leaf_counts_Kxt, felsensteins_KxtxSxA
         )
 
@@ -284,7 +283,7 @@ class VCSMC(tf.Module):
             embeddings_KxtxD = tf.gather(embeddings_KxtxD, indexes)
             felsensteins_KxtxSxA = tf.gather(felsensteins_KxtxSxA, indexes)
             log_likelihoods_K = tf.gather(log_likelihoods_K, indexes)
-            log_posteriors_K = tf.gather(log_posteriors_K, indexes)
+            log_pis_K = tf.gather(log_pis_K, indexes)
             log_weights_K = tf.gather(log_weights_K, indexes)
 
             # ===== extend partial states using proposal =====
@@ -297,7 +296,7 @@ class VCSMC(tf.Module):
             new_embeddings_KxtxD = tf.TensorArray(DTYPE_FLOAT, K)
             new_felsensteins_KxtxSxA = tf.TensorArray(DTYPE_FLOAT, K)
             new_log_likelihoods_K = tf.TensorArray(DTYPE_FLOAT, K)
-            new_log_posteriors_K = tf.TensorArray(DTYPE_FLOAT, K)
+            new_log_pis_K = tf.TensorArray(DTYPE_FLOAT, K)
             new_log_weights_K = tf.TensorArray(DTYPE_FLOAT, K)
 
             # iterate over particles
@@ -352,28 +351,24 @@ class VCSMC(tf.Module):
                     k, new_felsensteins_txSxA
                 )
 
-                # ===== compute new posteriors and weights =====
+                # ===== compute new likelihoods, pis, and weights =====
 
-                new_log_likelihood, new_log_posterior = (
-                    compute_log_likelihood_and_posterior(
-                        stat_probs,
-                        new_branch_lengths_rx2,
-                        new_leaf_counts_t,
-                        new_felsensteins_txSxA,
-                        self.prior_branch_len,
-                        log_double_factorials_2N,
-                    )
+                new_log_likelihood, new_log_pi = compute_log_likelihood_and_pi(
+                    stat_probs,
+                    new_branch_lengths_rx2,
+                    new_leaf_counts_t,
+                    new_felsensteins_txSxA,
+                    self.prior_branch_len,
+                    log_double_factorials_2N,
                 )
 
                 # equation (7) in the VCSMC paper
-                new_log_weight = (
-                    new_log_posterior - log_posteriors_K[k] + log_v_minus - log_v_plus
-                )
+                new_log_weight = new_log_pi - log_pis_K[k] + log_v_minus - log_v_plus
 
                 new_log_likelihoods_K = new_log_likelihoods_K.write(
                     k, new_log_likelihood
                 )
-                new_log_posteriors_K = new_log_posteriors_K.write(k, new_log_posterior)
+                new_log_pis_K = new_log_pis_K.write(k, new_log_pi)
                 new_log_weights_K = new_log_weights_K.write(k, new_log_weight)
 
             # ===== update states =====
@@ -384,7 +379,7 @@ class VCSMC(tf.Module):
             embeddings_KxtxD = new_embeddings_KxtxD.stack()
             felsensteins_KxtxSxA = new_felsensteins_KxtxSxA.stack()
             log_likelihoods_K = new_log_likelihoods_K.stack()
-            log_posteriors_K = new_log_posteriors_K.stack()
+            log_pis_K = new_log_pis_K.stack()
             log_weights_K = new_log_weights_K.stack()
 
             log_weights_rxK = log_weights_rxK.write(r, log_weights_K)
