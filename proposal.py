@@ -95,12 +95,12 @@ class ExpBranchProposal(Proposal):
     def __call__(self, r, leaf_counts_t, embeddings_txD):
         # TODO vectorize across K
 
-        num_nodes = self.N - r
+        t = self.N - r  # number of subtrees
 
         # ===== uniformly sample 2 distinct nodes to merge =====
 
-        idx1 = tf.random.uniform([1], 0, num_nodes, tf.int32)[0]
-        idx2 = tf.random.uniform([1], 0, num_nodes - 1, tf.int32)[0]
+        idx1 = tf.random.uniform([1], 0, t, tf.int32)[0]
+        idx2 = tf.random.uniform([1], 0, t - 1, tf.int32)[0]
 
         if idx2 >= idx1:
             idx2 += 1
@@ -117,8 +117,8 @@ class ExpBranchProposal(Proposal):
 
         # ===== compute proposal probability =====
 
-        # log(num_nodes choose 2)
-        log_num_merge_choices = tf.math.log(num_nodes * (num_nodes - 1) / 2)
+        # log(t choose 2)
+        log_num_merge_choices = tf.math.log(t * (t - 1) / 2)
         log_merge_prob = -log_num_merge_choices
 
         log_branch1_prior = branch_dist1.log_prob(branch1)
