@@ -175,7 +175,7 @@ class EmbeddingExpBranchProposal(Proposal):
         D: int,
         width: int,
         depth: int,
-        noise_stddev: float = 1.0,
+        noise_stddev: float = 0.0,
     ):
         """
         Args:
@@ -186,7 +186,8 @@ class EmbeddingExpBranchProposal(Proposal):
             D: Number of dimensions in output embedding.
             width: Number of neurons in each layer.
             depth: Number of hidden layers.
-            noise_stddev: amount of Gaussian noise to add to each child before computing merged embedding, to prevent overfitting.
+            noise_stddev: amount of Gaussian noise to add along each dimension to
+                each child before computing merged embedding, to prevent overfitting.
         """
 
         super().__init__()
@@ -252,15 +253,11 @@ class EmbeddingExpBranchProposal(Proposal):
         embedding2 = embeddings_txD[idx2]
 
         # add Gaussian noise to each child
-        noise_var = tf.square(self.noise_stddev)
-        per_axis_noise_var = noise_var / self.D
-        per_axis_noise_stddev = tf.sqrt(per_axis_noise_var)
-
         embedding1 = embedding1 + tf.random.normal(
-            tf.shape(embedding1), stddev=per_axis_noise_stddev, dtype=DTYPE_FLOAT
+            tf.shape(embedding1), stddev=self.noise_stddev, dtype=DTYPE_FLOAT  # type: ignore
         )
         embedding2 = embedding2 + tf.random.normal(
-            tf.shape(embedding2), stddev=per_axis_noise_stddev, dtype=DTYPE_FLOAT
+            tf.shape(embedding2), stddev=self.noise_stddev, dtype=DTYPE_FLOAT  # type: ignore
         )
 
         concat_child_embeddings = tf.concat([embedding1, embedding2], axis=0)
