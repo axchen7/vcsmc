@@ -175,6 +175,7 @@ class EmbeddingExpBranchProposal(Proposal):
         D: int,
         width: int,
         depth: int,
+        sample_temp: float = 1.0,
         noise_stddev: float = 0.0,
     ):
         """
@@ -186,8 +187,12 @@ class EmbeddingExpBranchProposal(Proposal):
             D: Number of dimensions in output embedding.
             width: Number of neurons in each layer.
             depth: Number of hidden layers.
-            noise_stddev: amount of Gaussian noise to add along each dimension to
-                each child before computing merged embedding, to prevent overfitting.
+            sample_temp: Temperature to use for sampling a pair of nodes to merge.
+                Negative pairwise node distances divided by `sample_temp` are used log weights.
+                Set to a large value to effectively sample nodes uniformly.
+            noise_stddev: Amount of Gaussian noise to add to each child embedding.
+                This noise is added along each dimension to each child before computing
+                the merged embedding, to prevent overfitting.
         """
 
         super().__init__()
@@ -199,6 +204,7 @@ class EmbeddingExpBranchProposal(Proposal):
         self.D = D
         self.width = width
         self.depth = depth
+        self.sample_temp = tf.constant(sample_temp, DTYPE_FLOAT)
         self.noise_stddev = tf.constant(noise_stddev, DTYPE_FLOAT)
 
         self.leaf_mlp = self.create_leaf_mlp()
@@ -237,15 +243,33 @@ class EmbeddingExpBranchProposal(Proposal):
     def __call__(self, r, leaf_counts_t, embeddings_txD):
         # TODO vectorize across K
 
-        num_nodes = self.N - r
+        t = self.N - r  # number of subtrees
 
-        # ===== uniformly sample 2 distinct nodes to merge =====
+        # ===== sample 2 distinct nodes to merge =====
 
-        idx1 = tf.random.uniform([1], 0, num_nodes, tf.int32)[0]
-        idx2 = tf.random.uniform([1], 0, num_nodes - 1, tf.int32)[0]
+        # randomly select two subtrees to merge, using pairwise distances as
+        # negative log probabilities, and incorporating the sample
+        # temperature
 
-        if idx2 >= idx1:
-            idx2 += 1
+        pairwise_distances_txt = tf.vectorized_map(
+            lambda x: tf.vectorized_map(lambda y: self.distance(x, y), embeddings_txD),
+            embeddings_txD,
+        )
+        merge_log_weights_txt = -pairwise_distances_txt / self.sample_temp  # type: ignore
+
+        # set diagonal entries to -inf to prevent self-merges
+        merge_log_weights_txt = tf.linalg.set_diag(
+            merge_log_weights_txt,
+            tf.fill([t], tf.constant(-math.inf, DTYPE_FLOAT)),
+        )
+
+        # sample a single pair of subtrees
+        flattened_sample_tt = tf.random.categorical(
+            [tf.reshape(merge_log_weights_txt, [-1])], 1, t.dtype
+        )[0][0]
+        idx1 = flattened_sample_tt // t
+        idx2 = flattened_sample_tt % t
+        tf.assert_equal(idx1 == idx2, False, message="subtrees are equal")
 
         # ===== get merged embedding =====
 
@@ -283,9 +307,14 @@ class EmbeddingExpBranchProposal(Proposal):
 
         # ===== compute proposal probability =====
 
-        # log(num_nodes choose 2)
-        log_num_merge_choices = tf.math.log(num_nodes * (num_nodes - 1) / 2)
-        log_merge_prob = -log_num_merge_choices
+        # merge prob = merge weight * 2 / sum of all weights
+
+        # the factor of 2 is because merging (idx1, idx2) is equivalent to
+        # merging (idx2, idx1)
+
+        log_merge_prob = merge_log_weights_txt[idx1, idx2]
+        log_merge_prob += tf.math.log(tf.constant(2, DTYPE_FLOAT))
+        log_merge_prob -= tf.math.reduce_logsumexp(merge_log_weights_txt)
 
         log_branch1_prior = branch_dist1.log_prob(branch1)
         log_branch2_prior = branch_dist2.log_prob(branch2)
