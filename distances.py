@@ -60,9 +60,13 @@ class Hyperbolic(Distance):
         x = self.project(x)
         y = self.project(y)
 
+        # see https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance
+        # acosh version causes NaNs, but asinh version works
+
         xy_norm_sq = tf.reduce_sum(tf.square(x - y))
         one_minus_x_norm_sq = 1 - tf.reduce_sum(tf.square(x))
         one_minus_y_norm_sq = 1 - tf.reduce_sum(tf.square(y))
-        return tf.acosh(
-            1 + 2 * xy_norm_sq / (one_minus_x_norm_sq * one_minus_y_norm_sq)
+
+        return 2 * tf.asinh(
+            tf.sqrt(xy_norm_sq / (one_minus_x_norm_sq * one_minus_y_norm_sq))
         )
