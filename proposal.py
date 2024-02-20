@@ -262,6 +262,7 @@ class EmbeddingExpBranchProposal(Proposal):
         flattened_sample_tt = tf.random.categorical(
             [tf.reshape(merge_log_weights_txt, [-1])], 1, tf.int32
         )[0][0]
+        tf.assert_less(flattened_sample_tt, t * t, message="sample out of range")
         idx1 = flattened_sample_tt // t
         idx2 = flattened_sample_tt % t
         tf.assert_equal(idx1 == idx2, False, message="subtrees are equal")
