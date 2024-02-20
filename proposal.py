@@ -265,7 +265,7 @@ class EmbeddingExpBranchProposal(Proposal):
 
         # sample a single pair of subtrees
         flattened_sample_tt = tf.random.categorical(
-            [tf.reshape(merge_log_weights_txt, [-1])], 1, t.dtype
+            [tf.reshape(merge_log_weights_txt, [-1])], 1, tf.int32
         )[0][0]
         idx1 = flattened_sample_tt // t
         idx2 = flattened_sample_tt % t
