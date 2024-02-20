@@ -176,7 +176,6 @@ class EmbeddingExpBranchProposal(Proposal):
         width: int,
         depth: int,
         sample_temp: float = 1.0,
-        noise_stddev: float = 0.0,
     ):
         """
         Args:
@@ -190,9 +189,6 @@ class EmbeddingExpBranchProposal(Proposal):
             sample_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly.
-            noise_stddev: Amount of Gaussian noise to add to each child embedding.
-                This noise is added along each dimension to each child before computing
-                the merged embedding, to prevent overfitting.
         """
 
         super().__init__()
@@ -205,7 +201,6 @@ class EmbeddingExpBranchProposal(Proposal):
         self.width = width
         self.depth = depth
         self.sample_temp = tf.constant(sample_temp, DTYPE_FLOAT)
-        self.noise_stddev = tf.constant(noise_stddev, DTYPE_FLOAT)
 
         self.leaf_mlp = self.create_leaf_mlp()
         self.merge_mlp = self.create_merge_mlp()
@@ -275,14 +270,6 @@ class EmbeddingExpBranchProposal(Proposal):
 
         embedding1 = embeddings_txD[idx1]
         embedding2 = embeddings_txD[idx2]
-
-        # add Gaussian noise to each child
-        embedding1 = embedding1 + tf.random.normal(
-            tf.shape(embedding1), stddev=self.noise_stddev, dtype=DTYPE_FLOAT  # type: ignore
-        )
-        embedding2 = embedding2 + tf.random.normal(
-            tf.shape(embedding2), stddev=self.noise_stddev, dtype=DTYPE_FLOAT  # type: ignore
-        )
 
         concat_child_embeddings = tf.concat([embedding1, embedding2], axis=0)
         embedding_D = self.merge_mlp(tf.expand_dims(concat_child_embeddings, 0))[0]  # type: ignore
