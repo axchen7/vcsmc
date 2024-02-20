@@ -54,15 +54,15 @@ def train(
     avg_log_likelihoods_across_epochs = []
 
     for epoch in tqdm(range(epochs)):
-        log_Z_SMC, log_likelihoods_K, best_newick_tree = train_step(data_NxSxA)
-
-        log_likelihoods_avg = tf.math.reduce_mean(log_likelihoods_K)
-        log_likelihoods_std_dev = tf.math.reduce_std(log_likelihoods_K)
-
-        avg_log_likelihoods_across_epochs.append(log_likelihoods_avg)
-        log_likelihoods_across_epochs.append(log_likelihoods_K)
-
         with summary_writer.as_default(step=epoch):
+            log_Z_SMC, log_likelihoods_K, best_newick_tree = train_step(data_NxSxA)
+
+            log_likelihoods_avg = tf.math.reduce_mean(log_likelihoods_K)
+            log_likelihoods_std_dev = tf.math.reduce_std(log_likelihoods_K)
+
+            avg_log_likelihoods_across_epochs.append(log_likelihoods_avg)
+            log_likelihoods_across_epochs.append(log_likelihoods_K)
+
             tf.summary.scalar("Elbo", log_Z_SMC)
             tf.summary.scalar("Log likelihood avg", log_likelihoods_avg)
             tf.summary.scalar("Log likelihoods std dev", log_likelihoods_std_dev)
