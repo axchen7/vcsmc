@@ -27,17 +27,17 @@ class DenseMarkov(Markov):
 
         self.A = A
 
-        self._stat_probs = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [A]), name="_stat_probs"
+        self.log_stat_probs = tf.Variable(
+            tf.constant(0, DTYPE_FLOAT, [A]), name="log_stat_probs"
         )
 
-        self._Q = tf.Variable(tf.constant(0, DTYPE_FLOAT, [A, A]), name="_Q")
+        self.log_Q = tf.Variable(tf.constant(0, DTYPE_FLOAT, [A, A]), name="log_Q")
 
     @tf_function()
     def stat_probs(self):
         # one stationary probability can be fixed to match degrees of freedom
         stat_probs = tf.tensor_scatter_nd_update(
-            self._stat_probs, [[0]], [tf.constant(0, DTYPE_FLOAT)]
+            self.log_stat_probs, [[0]], [tf.constant(0, DTYPE_FLOAT)]
         )
         # use softmax to ensure all entries are positive
         stat_probs = tf.exp(stat_probs)
@@ -50,7 +50,7 @@ class DenseMarkov(Markov):
         # first non-diagonal entry in each row can be fixed to match degrees of
         # freedom
         Q = tf.tensor_scatter_nd_update(
-            self._Q,
+            self.log_Q,
             [[i, (i + 1) % self.A] for i in range(self.A)],
             [tf.constant(0, DTYPE_FLOAT)] * self.A,
         )
@@ -80,18 +80,18 @@ class GT16Markov(Markov):
     def __init__(self):
         super().__init__()
 
-        self._nucleotide_exchanges = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [6]), name="_nucleotide_exchanges"
+        self.log_nucleotide_exchanges = tf.Variable(
+            tf.constant(0, DTYPE_FLOAT, [6]), name="log_nucleotide_exchanges"
         )
-        self._stat_probs = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [16]), name="_stat_probs"
+        self.log_stat_probs = tf.Variable(
+            tf.constant(0, DTYPE_FLOAT, [16]), name="log_stat_probs"
         )
 
     @tf_function()
     def nucleotide_exchanges(self):
         # one exchangeability can be fixed to match degrees of freedom
         nucleotide_exchanges = tf.tensor_scatter_nd_update(
-            self._nucleotide_exchanges, [[0]], [tf.constant(0, DTYPE_FLOAT)]
+            self.log_nucleotide_exchanges, [[0]], [tf.constant(0, DTYPE_FLOAT)]
         )
         # use exp to ensure all entries are positive
         nucleotide_exchanges = tf.exp(nucleotide_exchanges)
@@ -103,7 +103,7 @@ class GT16Markov(Markov):
     def stat_probs(self):
         # one stationary probability can be fixed to match degrees of freedom
         stat_probs = tf.tensor_scatter_nd_update(
-            self._stat_probs, [[0]], [tf.constant(0, DTYPE_FLOAT)]
+            self.log_stat_probs, [[0]], [tf.constant(0, DTYPE_FLOAT)]
         )
         # use softmax to ensure all entries are positive
         stat_probs = tf.exp(stat_probs)
@@ -134,8 +134,8 @@ class GT16Markov(Markov):
         R = tf.scatter_nd(updates, pi8, [16, 16])
         R = R + tf.transpose(R)
 
-        y_q = tf.matmul(R, tf.linalg.diag(self.stat_probs()))
-        hyphens = tf.reduce_sum(y_q, 1)
+        ylog_Q = tf.matmul(R, tf.linalg.diag(self.stat_probs()))
+        hyphens = tf.reduce_sum(ylog_Q, 1)
 
-        Q = tf.linalg.set_diag(y_q, -hyphens)
+        Q = tf.linalg.set_diag(ylog_Q, -hyphens)
         return Q
