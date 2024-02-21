@@ -19,6 +19,7 @@ def train(
     *,
     root: str = "Healthy",
     epochs: int,
+    start_epoch: int = 0,
     stat_probs_reg_lambda: float = 0,
 ):
     @tf_function()
@@ -54,7 +55,7 @@ def train(
     avg_log_likelihoods_across_epochs = []
 
     for epoch in tqdm(range(epochs)):
-        with summary_writer.as_default(step=epoch):
+        with summary_writer.as_default(step=epoch + start_epoch):
             log_Z_SMC, log_likelihoods_K, best_newick_tree = train_step(data_NxSxA)
 
             log_likelihoods_avg = tf.math.reduce_mean(log_likelihoods_K)
