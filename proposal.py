@@ -173,8 +173,10 @@ class EmbeddingExpBranchProposal(Proposal):
         S: int,
         A: int,
         D: int,
-        width: int,
-        depth: int,
+        leaf_mlp_width: int,
+        leaf_mlp_depth: int,
+        merge_mlp_width: int,
+        merge_mlp_depth: int,
         sample_temp: float = 1.0,
     ):
         """
@@ -184,8 +186,10 @@ class EmbeddingExpBranchProposal(Proposal):
             S: Number of sites in input. All inputs must have this many sites.
             A: Alphabet size.
             D: Number of dimensions in output embedding.
-            width: Number of neurons in each layer.
-            depth: Number of hidden layers.
+            leaf_mlp_width: Width of each layer of the leaf MLP.
+            leaf_mlp_depth: Number of hidden layers in the leaf MLP.
+            merge_mlp_width: Width of each layer of the merge MLP.
+            merge_mlp_depth: Number of hidden layers in the merge MLP.
             sample_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly.
@@ -198,8 +202,10 @@ class EmbeddingExpBranchProposal(Proposal):
         self.S = S
         self.A = A
         self.D = D
-        self.width = width
-        self.depth = depth
+        self.leaf_mlp_width = leaf_mlp_width
+        self.leaf_mlp_depth = leaf_mlp_depth
+        self.merge_mlp_width = merge_mlp_width
+        self.merge_mlp_depth = merge_mlp_depth
         self.sample_temp = tf.constant(sample_temp, DTYPE_FLOAT)
 
         self.leaf_mlp = self.create_leaf_mlp()
@@ -210,9 +216,11 @@ class EmbeddingExpBranchProposal(Proposal):
         mlp.add(keras.layers.Input([self.S, self.A], dtype=DTYPE_FLOAT))
         mlp.add(keras.layers.Flatten())
 
-        for _ in range(self.depth):
+        for _ in range(self.leaf_mlp_depth):
             mlp.add(
-                keras.layers.Dense(self.width, activation="relu", dtype=DTYPE_FLOAT)
+                keras.layers.Dense(
+                    self.leaf_mlp_width, activation="relu", dtype=DTYPE_FLOAT
+                )
             )
 
         mlp.add(keras.layers.Dense(self.D, dtype=DTYPE_FLOAT))
@@ -222,9 +230,11 @@ class EmbeddingExpBranchProposal(Proposal):
         mlp = keras.Sequential()
         mlp.add(keras.layers.Input([2 * self.D], dtype=DTYPE_FLOAT))
 
-        for _ in range(self.depth):
+        for _ in range(self.merge_mlp_depth):
             mlp.add(
-                keras.layers.Dense(self.width, activation="relu", dtype=DTYPE_FLOAT)
+                keras.layers.Dense(
+                    self.merge_mlp_width, activation="relu", dtype=DTYPE_FLOAT
+                )
             )
 
         mlp.add(keras.layers.Dense(self.D, dtype=DTYPE_FLOAT))
