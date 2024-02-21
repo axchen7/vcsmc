@@ -157,12 +157,13 @@ class ExpBranchProposal(Proposal):
         )
 
 
-class EmbeddingExpBranchProposal(Proposal):
+class EmbeddingBranchProposal(Proposal):
     """
     Proposal where leaf nodes are embedded into D-dimensional space, and pairs
     of child embeddings are re-embedded to produce merged embeddings. Embeddings
-    are performed using a multi-layered perceptron. Branch lengths are sampled
-    from exponential distributions parameterized by distance between embeddings.
+    are performed using a multi-layered perceptron. Branch lengths are
+    optionally sampled from exponential distributions parameterized by distance
+    between embeddings.
     """
 
     def __init__(
@@ -177,7 +178,8 @@ class EmbeddingExpBranchProposal(Proposal):
         leaf_mlp_depth: int,
         merge_mlp_width: int,
         merge_mlp_depth: int,
-        sample_temp: float = 1.0,
+        sample_merge_temp: float = 1.0,
+        sample_branches: bool = False,
     ):
         """
         Args:
@@ -190,9 +192,11 @@ class EmbeddingExpBranchProposal(Proposal):
             leaf_mlp_depth: Number of hidden layers in the leaf MLP.
             merge_mlp_width: Width of each layer of the merge MLP.
             merge_mlp_depth: Number of hidden layers in the merge MLP.
-            sample_temp: Temperature to use for sampling a pair of nodes to merge.
+            sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly.
+            sample_branches: Whether to sample branch lengths from an exponential distribution.
+                If false, simply use the distance between embeddings as the branch length.
         """
 
         super().__init__()
@@ -206,7 +210,8 @@ class EmbeddingExpBranchProposal(Proposal):
         self.leaf_mlp_depth = leaf_mlp_depth
         self.merge_mlp_width = merge_mlp_width
         self.merge_mlp_depth = merge_mlp_depth
-        self.sample_temp = tf.constant(sample_temp, DTYPE_FLOAT)
+        self.sample_temp = tf.constant(sample_merge_temp, DTYPE_FLOAT)
+        self.sample_branches = sample_branches
 
         self.leaf_mlp = self.create_leaf_mlp()
         self.merge_mlp = self.create_merge_mlp()
@@ -268,6 +273,11 @@ class EmbeddingExpBranchProposal(Proposal):
             tf.fill([t], tf.constant(-math.inf, DTYPE_FLOAT)),
         )
 
+        if t == self.N:
+            log_weights = tf.exp(merge_log_weights_txt[0])
+            log_weights /= tf.reduce_sum(log_weights)
+            tf.summary.histogram("merge weights", log_weights)
+
         # sample a single pair of subtrees
         flattened_sample_tt = tf.random.categorical(
             [tf.reshape(merge_log_weights_txt, [-1])], 1, tf.int32
@@ -285,23 +295,33 @@ class EmbeddingExpBranchProposal(Proposal):
         concat_child_embeddings = tf.concat([embedding1, embedding2], axis=0)
         embedding_D = self.merge_mlp(tf.expand_dims(concat_child_embeddings, 0))[0]  # type: ignore
 
-        # ===== compute branch distribution parameters =====
+        # ===== sample/get branches parameters =====
 
-        dist1 = self.distance(embedding1, embedding_D)
-        dist2 = self.distance(embedding2, embedding_D)
+        if self.sample_branches:
+            dist1 = self.distance(embedding1, embedding_D)
+            dist2 = self.distance(embedding2, embedding_D)
 
-        # sample from exponential distributions whose expectations are the
-        # distances between children and merged embeddings
-        branch_param1 = 1 / dist1
-        branch_param2 = 1 / dist2
+            # sample from exponential distributions whose expectations are the
+            # distances between children and merged embeddings
+            branch_param1 = 1 / dist1
+            branch_param2 = 1 / dist2
 
-        # ===== sample branch lengths from exponential distributions =====
+            # ===== sample branch lengths from exponential distributions =====
 
-        branch_dist1 = tfp.distributions.Exponential(branch_param1)
-        branch_dist2 = tfp.distributions.Exponential(branch_param2)
+            branch_dist1 = tfp.distributions.Exponential(branch_param1)
+            branch_dist2 = tfp.distributions.Exponential(branch_param2)
 
-        branch1 = branch_dist1.sample(1)[0]
-        branch2 = branch_dist2.sample(1)[0]
+            branch1 = branch_dist1.sample(1)[0]
+            branch2 = branch_dist2.sample(1)[0]
+
+            log_branch1_prior = branch_dist1.log_prob(branch1)
+            log_branch2_prior = branch_dist2.log_prob(branch2)
+        else:
+            branch1 = self.distance(embedding1, embedding_D)
+            branch2 = self.distance(embedding2, embedding_D)
+
+            log_branch1_prior = 0
+            log_branch2_prior = 0
 
         # ===== compute proposal probability =====
 
@@ -313,9 +333,6 @@ class EmbeddingExpBranchProposal(Proposal):
         log_merge_prob = merge_log_weights_txt[idx1, idx2]
         log_merge_prob += tf.math.log(tf.constant(2, DTYPE_FLOAT))
         log_merge_prob -= tf.math.reduce_logsumexp(merge_log_weights_txt)
-
-        log_branch1_prior = branch_dist1.log_prob(branch1)
-        log_branch2_prior = branch_dist2.log_prob(branch2)
 
         log_v_plus = log_merge_prob + log_branch1_prior + log_branch2_prior
 
