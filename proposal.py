@@ -249,7 +249,7 @@ class EmbeddingBranchProposal(Proposal):
     def embed(self, leaf_SxA):
         return self.leaf_mlp(tf.expand_dims(leaf_SxA, 0))[0]  # type: ignore
 
-    @tf_function()
+    @tf_function(reduce_retracing=True)
     def __call__(self, r, leaf_counts_t, embeddings_txD):
         # TODO vectorize across K
 
