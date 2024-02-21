@@ -41,8 +41,9 @@ def train(
 
             cost += total_reg
 
-        grads = tape.gradient(cost, vcsmc.trainable_variables)
-        optimizer.apply_gradients(zip(grads, vcsmc.trainable_variables))  # type: ignore
+        variables = tape.watched_variables()
+        grads = tape.gradient(cost, variables)
+        optimizer.apply_gradients(zip(grads, variables))  # type: ignore
 
         return log_Z_SMC, log_likelihoods_K, best_newick_tree
 
