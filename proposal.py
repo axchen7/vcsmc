@@ -286,10 +286,9 @@ class EmbeddingProposal(Proposal):
 
         # for debugging
         if t == self.N:
-            # TODO show histogram of full Kxtxt matrix
             log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
             log_weights /= tf.reduce_sum(log_weights)
-            tf.summary.histogram("merge weights", log_weights)
+            tf.summary.histogram("Merge weights", log_weights)
 
         flattened_log_weights_Kxtt = tf.reshape(merge_log_weights_Kxtxt, [K, t * t])
 
