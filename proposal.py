@@ -58,7 +58,8 @@ class Proposal(tf.Module):
 class ExpBranchProposal(Proposal):
     """
     Proposal where branch lengths are sampled from exponential distributions,
-    with a learnable parameter for each merge step.
+    with a learnable parameter for each merge step. Merge pairs are sampled
+    uniformly.
     """
 
     def __init__(self, *, N: int, initial_branch_len: float = 1.0):
@@ -163,13 +164,13 @@ class ExpBranchProposal(Proposal):
         )
 
 
-class EmbeddingBranchProposal(Proposal):
+class EmbeddingProposal(Proposal):
     """
     Proposal where leaf nodes are embedded into D-dimensional space, and pairs
     of child embeddings are re-embedded to produce merged embeddings. Embeddings
     are performed using a multi-layered perceptron. Branch lengths are
     optionally sampled from exponential distributions parameterized by distance
-    between embeddings.
+    between embeddings. Merge pairs are sampled using distances.
     """
 
     def __init__(
