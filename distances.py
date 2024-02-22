@@ -16,9 +16,18 @@ class Distance(tf.Module):
     @tf_function()
     def project_many(self, x: Tensor) -> Tensor:
         """
-        Given a tensor of shape (?, D), call project on each row.
+        Given a tensor of shape (?, D), call `project()` on each row. Returns a
+        tensor of shape (?, D).
         """
         return tf.vectorized_map(self.project, x)
+
+    @tf_function()
+    def many(self, x: Tensor, y: Tensor) -> Tensor:
+        """
+        Given two tensors of shape (?, D), call `__call__()` on each pair of
+        rows. Returns a tensor of shape (?,).
+        """
+        return tf.vectorized_map(lambda xy: self(xy[0], xy[1]), (x, y))
 
     def __call__(self, x: Tensor, y: Tensor) -> Tensor:
         """

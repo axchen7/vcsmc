@@ -25,7 +25,7 @@ def train(
     @tf_function()
     def train_step(batch_NxSxA: Tensor):
         with tf.GradientTape() as tape:
-            log_Z_SMC, log_likelihoods_K, best_newick_tree = vcsmc(batch_NxSxA)
+            log_Z_SMC, log_likelihood_K, best_newick_tree = vcsmc(batch_NxSxA)
 
             cost = -log_Z_SMC
 
@@ -45,7 +45,7 @@ def train(
         grads = tape.gradient(cost, variables)
         optimizer.apply_gradients(zip(grads, variables))  # type: ignore
 
-        return log_Z_SMC, log_likelihoods_K, best_newick_tree
+        return log_Z_SMC, log_likelihood_K, best_newick_tree
 
     N = data_NxSxA.shape[0]
 
@@ -57,18 +57,18 @@ def train(
 
     for epoch in tqdm(range(epochs)):
         with summary_writer.as_default(step=epoch + start_epoch):
-            log_Z_SMC, log_likelihoods_K, best_newick_tree = train_step(data_NxSxA)
+            log_Z_SMC, log_likelihood_K, best_newick_tree = train_step(data_NxSxA)
 
-            log_likelihoods_avg = tf.math.reduce_mean(log_likelihoods_K)
-            log_likelihoods_std_dev = tf.math.reduce_std(log_likelihoods_K)
+            log_likelihoods_avg = tf.math.reduce_mean(log_likelihood_K)
+            log_likelihoods_std_dev = tf.math.reduce_std(log_likelihood_K)
 
             avg_log_likelihoods_across_epochs.append(log_likelihoods_avg)
-            log_likelihoods_across_epochs.append(log_likelihoods_K)
+            log_likelihoods_across_epochs.append(log_likelihood_K)
 
             tf.summary.scalar("Elbo", log_Z_SMC)
             tf.summary.scalar("Log likelihood avg", log_likelihoods_avg)
             tf.summary.scalar("Log likelihoods std dev", log_likelihoods_std_dev)
-            tf.summary.histogram("Log likelihoods", log_likelihoods_K)
+            tf.summary.histogram("Log likelihoods", log_likelihood_K)
 
             if (epoch + 1) % 4 == 0:
                 # # ===== leaf embeddings =====
