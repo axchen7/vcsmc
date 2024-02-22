@@ -314,34 +314,31 @@ class EmbeddingProposal(Proposal):
         # ===== sample/get branches parameters =====
 
         if self.sample_branches:
-            # dist1_K = self.distance.many(embedding1_K, embedding_KxD)
-            # dist2_K = self.distance.many(embedding2_K, embedding_KxD)
+            dist1_K = self.distance.many(embedding1_KxD, embedding_KxD)
+            dist2_K = self.distance.many(embedding2_KxD, embedding_KxD)
 
-            # # sample from exponential distributions whose expectations are the
-            # # distances between children and merged embeddings
-            # branch_param1_K = 1 / dist1_K
-            # branch_param2_K = 1 / dist2_K
+            # sample from exponential distributions whose expectations are the
+            # distances between children and merged embeddings
+            branch_param1_K = 1 / dist1_K
+            branch_param2_K = 1 / dist2_K
 
             # ===== sample branch lengths from exponential distributions =====
 
-            # TODO sample from multiple different distributions
+            uniform1_K = tf.random.uniform([K], 0, 1, dtype=DTYPE_FLOAT)
+            uniform2_K = tf.random.uniform([K], 0, 1, dtype=DTYPE_FLOAT)
 
-            # branch_dist1 = tfp.distributions.Exponential(branch_param1)
-            # branch_dist2 = tfp.distributions.Exponential(branch_param2)
+            # use uniform sample + inverse CDF to sample from exponential
+            # distribution
+            branch1_K = -tf.math.log(uniform1_K) / branch_param1_K
+            branch2_K = -tf.math.log(uniform2_K) / branch_param2_K
 
-            # branch1 = branch_dist1.sample(1)[0]
-            # branch2 = branch_dist2.sample(1)[0]
-
-            # log_branch1_prior = branch_dist1.log_prob(branch1)
-            # log_branch2_prior = branch_dist2.log_prob(branch2)
-
-            # TODO (using else logic for now...)
-
-            branch1_K = self.distance.many(embedding1_KxD, embedding_KxD)
-            branch2_K = self.distance.many(embedding2_KxD, embedding_KxD)
-
-            log_branch1_prior_K = 0
-            log_branch2_prior_K = 0
+            # plug samples back into log exponential PDF
+            log_branch1_prior_K = (
+                tf.math.log(branch_param1_K) - branch_param1_K * branch1_K
+            )
+            log_branch2_prior_K = (
+                tf.math.log(branch_param2_K) - branch_param2_K * branch2_K
+            )
         else:
             branch1_K = self.distance.many(embedding1_KxD, embedding_KxD)
             branch2_K = self.distance.many(embedding2_KxD, embedding_KxD)
