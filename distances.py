@@ -57,14 +57,24 @@ class Euclidean(Distance):
 
 
 class Hyperbolic(Distance):
-    def __init__(self, *, initial_radius: float = 0.5):
+    def __init__(self):
         super().__init__()
-        # project embeddings onto a sphere of learnable radius
-        self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
+        # cap the radius of vectors to avoid NaNs
+        self.logit_max_radius = tf.Variable(
+            0, name="logit_max_radius", dtype=DTYPE_FLOAT
+        )
 
     @tf_function()
     def project_single(self, x):
-        return x * self.radius / tf.norm(x)
+        """
+        Treats the tanh of the first coordinate as the radius and projects the
+        remaining coordinates onto the hypersphere of that radius. Radius is
+        capped to avoid NaNs. Returns a vector of length D-1.
+        """
+        max_radius = tf.sigmoid(self.logit_max_radius) * 0.99  # cap again at 0.99
+        radius = tf.tanh(x[0]) * max_radius
+        rest = x[1:]
+        return radius * rest / tf.norm(rest)
 
     @tf_function()
     def distance_single(self, x, y):
