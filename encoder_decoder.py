@@ -188,7 +188,8 @@ class MLPDecoder(Decoder):
             A: Alphabet size.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
-            baseline: Baseline probability for each of the A letters.
+            baseline: Baseline probability for each of the A letters, from 0 to 1.
+                Take this much of the probability mass from the uniform distribution 1/A.
                 Helps prevent the model from converging to a degenerate solution.
         """
 
