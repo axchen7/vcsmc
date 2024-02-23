@@ -5,6 +5,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 
 import distances
+import encoder_decoder
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 from vcsmc_utils import gather_K, gather_K2
@@ -12,31 +13,22 @@ from vcsmc_utils import gather_K, gather_K2
 
 class Proposal(tf.Module):
     """
-    Proposal distribution for selecting two nodes to merge and sampling branch.
+    Proposal distribution for selecting two nodes to merge and sampling branch lengths.
     """
 
-    @tf_function()
-    def embed(self, leaves_NxSxA: Tensor) -> Tensor:
-        """
-        Embeds leaf nodes into the latent space.
+    def __init__(self, seq_encoder: encoder_decoder.SequenceEncoder):
+        super().__init__()
 
-        Args:
-            leaves_NxSxA: The leaf nodes.
-        Returns:
-            embedding_NxD: The embedding of the leaf nodes.
-        """
-
-        # default to dummy embedding
-        N = leaves_NxSxA.shape[0]
-        return tf.zeros([N, 1], DTYPE_FLOAT)
+        self.seq_encoder = seq_encoder
 
     def __call__(
-        self, r: Tensor, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self, N: int, r: Tensor, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
         Args:
+            N: The number of leaf nodes.
             r: The current merge step (0 <= r <= N-2).
             leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
@@ -59,21 +51,27 @@ class ExpBranchProposal(Proposal):
     """
     Proposal where branch lengths are sampled from exponential distributions,
     with a learnable parameter for each merge step. Merge pairs are sampled
-    uniformly.
+    uniformly. Returns dummy embeddings. Only works for a fixed number of leaf
+    nodes because there is exactly one parameter for each merge step.
     """
 
-    def __init__(self, *, N: int, initial_branch_len: float = 1.0):
+    def __init__(
+        self,
+        seq_encoder: encoder_decoder.SequenceEncoder,
+        *,
+        N: int,
+        initial_branch_len: float = 1.0,
+    ):
         """
         Args:
+            seq_encoder: Sequence encoder.
             N: The number of leaf nodes.
-            initial_branch_len: The initial expected value of the branch
-            lengths. The exponential distribution from which branch lengths are
-            sampled will initially have lambda = 1/initial_branch_len.
+            initial_branch_len: The initial expected value of the branch lengths.
+                The exponential distribution from which branch lengths are
+                sampled will initially have lambda = 1/initial_branch_len.
         """
 
-        super().__init__()
-
-        self.N = N
+        super().__init__(seq_encoder)
 
         initial_param = 1 / initial_branch_len
         # value of variable is passed through exp() later
@@ -95,9 +93,9 @@ class ExpBranchProposal(Proposal):
         return branch_param1, branch_param2
 
     @tf_function(reduce_retracing=True)
-    def __call__(self, r, leaf_counts_Kxt, embeddings_KxtxD):
+    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD):
         K = leaf_counts_Kxt.shape[0]
-        t = self.N - r  # number of subtrees
+        t = N - r  # number of subtrees
 
         # ===== uniformly sample 2 distinct nodes to merge =====
 
@@ -145,13 +143,13 @@ class ExpBranchProposal(Proposal):
             gather_K(leaf_counts_Kxt, idx2_K) == 1, tf.int32
         )
 
-        v_minus_K = self.N - num_subtrees_with_one_leaf_K
+        v_minus_K = N - num_subtrees_with_one_leaf_K
         log_v_minus_K = tf.math.log(tf.cast(v_minus_K, DTYPE_FLOAT))
 
         # ===== return proposal =====
 
         # dummy embedding
-        embedding_KxD = tf.zeros([K, 1], DTYPE_FLOAT)
+        embedding_KxD = tf.zeros([K, 0], DTYPE_FLOAT)
 
         return (
             idx1_K,
@@ -176,29 +174,17 @@ class EmbeddingProposal(Proposal):
     def __init__(
         self,
         distance: distances.Distance,
+        seq_encoder: encoder_decoder.SequenceEncoder,
+        merge_encoder: encoder_decoder.MergeEncoder,
         *,
-        N: int,
-        S: int,
-        A: int,
-        D: int,
-        leaf_mlp_width: int,
-        leaf_mlp_depth: int,
-        merge_mlp_width: int,
-        merge_mlp_depth: int,
         sample_merge_temp: float = 1.0,
         sample_branches: bool = False,
     ):
         """
         Args:
             distance: The distance function to use for embedding.
-            N: The number of leaf nodes.
-            S: Number of sites in input. All inputs must have this many sites.
-            A: Alphabet size.
-            D: Number of dimensions in output embedding.
-            leaf_mlp_width: Width of each layer of the leaf MLP.
-            leaf_mlp_depth: Number of hidden layers in the leaf MLP.
-            merge_mlp_width: Width of each layer of the merge MLP.
-            merge_mlp_depth: Number of hidden layers in the merge MLP.
+            seq_encoder: Sequence encoder.
+            merge_encoder: Merge encoder.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly.
@@ -206,60 +192,17 @@ class EmbeddingProposal(Proposal):
                 If false, simply use the distance between embeddings as the branch length.
         """
 
-        super().__init__()
+        super().__init__(seq_encoder)
 
         self.distance = distance
-        self.N = N
-        self.S = S
-        self.A = A
-        self.D = D
-        self.leaf_mlp_width = leaf_mlp_width
-        self.leaf_mlp_depth = leaf_mlp_depth
-        self.merge_mlp_width = merge_mlp_width
-        self.merge_mlp_depth = merge_mlp_depth
+        self.merge_encoder = merge_encoder
         self.sample_temp = tf.constant(sample_merge_temp, DTYPE_FLOAT)
         self.sample_branches = sample_branches
 
-        self.leaf_mlp = self.create_leaf_mlp()
-        self.merge_mlp = self.create_merge_mlp()
-
-    def create_leaf_mlp(self):
-        mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([self.S, self.A], dtype=DTYPE_FLOAT))
-        mlp.add(keras.layers.Flatten())
-
-        for _ in range(self.leaf_mlp_depth):
-            mlp.add(
-                keras.layers.Dense(
-                    self.leaf_mlp_width, activation="relu", dtype=DTYPE_FLOAT
-                )
-            )
-
-        mlp.add(keras.layers.Dense(self.D, dtype=DTYPE_FLOAT))
-        return mlp
-
-    def create_merge_mlp(self):
-        mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([2 * self.D], dtype=DTYPE_FLOAT))
-
-        for _ in range(self.merge_mlp_depth):
-            mlp.add(
-                keras.layers.Dense(
-                    self.merge_mlp_width, activation="relu", dtype=DTYPE_FLOAT
-                )
-            )
-
-        mlp.add(keras.layers.Dense(self.D, dtype=DTYPE_FLOAT))
-        return mlp
-
-    @tf_function()
-    def embed(self, leaves_NxSxA):
-        return self.leaf_mlp(leaves_NxSxA)
-
     @tf_function(reduce_retracing=True)
-    def __call__(self, r, leaf_counts_Kxt, embeddings_KxtxD):
+    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD):
         K = leaf_counts_Kxt.shape[0]
-        t = self.N - r  # number of subtrees
+        t = N - r  # number of subtrees
 
         # ===== sample 2 distinct nodes to merge =====
 
@@ -285,7 +228,7 @@ class EmbeddingProposal(Proposal):
         )
 
         # for debugging
-        if t == self.N:
+        if t == N:
             log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
             log_weights /= tf.reduce_sum(log_weights)
             tf.summary.histogram("Merge weights", log_weights)
@@ -305,17 +248,16 @@ class EmbeddingProposal(Proposal):
 
         # ===== get merged embedding =====
 
-        embedding1_KxD = gather_K(embeddings_KxtxD, idx1_K)
-        embedding2_KxD = gather_K(embeddings_KxtxD, idx2_K)
+        child1_KxD = gather_K(embeddings_KxtxD, idx1_K)
+        child2_KxD = gather_K(embeddings_KxtxD, idx2_K)
 
-        concat_child_embeddings_KxD = tf.concat([embedding1_KxD, embedding2_KxD], 1)
-        embedding_KxD = self.merge_mlp(concat_child_embeddings_KxD)
+        embedding_KxD = self.merge_encoder(child1_KxD, child2_KxD)
 
         # ===== sample/get branches parameters =====
 
         if self.sample_branches:
-            dist1_K = self.distance.many(embedding1_KxD, embedding_KxD)
-            dist2_K = self.distance.many(embedding2_KxD, embedding_KxD)
+            dist1_K = self.distance.many(child1_KxD, embedding_KxD)
+            dist2_K = self.distance.many(child2_KxD, embedding_KxD)
 
             # sample from exponential distributions whose expectations are the
             # distances between children and merged embeddings
@@ -340,8 +282,8 @@ class EmbeddingProposal(Proposal):
                 tf.math.log(branch_param2_K) - branch_param2_K * branch2_K
             )
         else:
-            branch1_K = self.distance.many(embedding1_KxD, embedding_KxD)
-            branch2_K = self.distance.many(embedding2_KxD, embedding_KxD)
+            branch1_K = self.distance.many(child1_KxD, embedding_KxD)
+            branch2_K = self.distance.many(child2_KxD, embedding_KxD)
 
             log_branch1_prior_K = 0
             log_branch2_prior_K = 0
@@ -373,7 +315,7 @@ class EmbeddingProposal(Proposal):
             gather_K(leaf_counts_Kxt, idx2_K) == 1, tf.int32
         )
 
-        v_minus_K = self.N - num_subtrees_with_one_leaf_K
+        v_minus_K = N - num_subtrees_with_one_leaf_K
         log_v_minus_K = tf.math.log(tf.cast(v_minus_K, DTYPE_FLOAT))
 
         # ===== return proposal =====

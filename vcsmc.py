@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+import encoder_decoder
 import proposal
 import q_matrix
 from constants import DTYPE_FLOAT
@@ -18,8 +19,9 @@ from vcsmc_utils import (
 class VCSMC(tf.Module):
     def __init__(
         self,
-        markov: q_matrix.QMatrix,
+        q_matrix: q_matrix.QMatrix,
         proposal: proposal.Proposal,
+        decoder: encoder_decoder.Decoder,
         taxa_N: Tensor,
         *,
         K: int,
@@ -27,7 +29,7 @@ class VCSMC(tf.Module):
     ):
         """
         Args:
-            markov: Markov object
+            q_matrix: QMatrix object
             proposal: Proposal object
             taxa_N: Tensor of taxa names
             K: Number of particles
@@ -36,8 +38,9 @@ class VCSMC(tf.Module):
 
         super().__init__()
 
-        self.markov = markov
+        self.q_matrix = q_matrix
         self.proposal = proposal
+        self.decoder = decoder
         self.taxa_N = taxa_N
         self.K = K
         self.prior_branch_len = tf.constant(prior_branch_len, DTYPE_FLOAT)
@@ -45,7 +48,7 @@ class VCSMC(tf.Module):
     @tf_function()
     def get_init_embeddings_KxNxD(self, data_NxSxA):
         """Sets the embedding for all K particles to the same initial value."""
-        embeddings_NxD = self.proposal.embed(data_NxSxA)
+        embeddings_NxD = self.proposal.seq_encoder(data_NxSxA)
         return tf.repeat(embeddings_NxD[tf.newaxis], self.K, axis=0)  # type: ignore
 
     @tf_function()
@@ -61,8 +64,7 @@ class VCSMC(tf.Module):
         K = self.K
 
         log_double_factorials_2N = compute_log_double_factorials_2N(N)
-        stat_probs = self.markov.stat_probs()
-        Q = self.markov.Q()
+        Q = self.q_matrix()
 
         # at each step r, there are t = N-r >= 2 trees in the forest.
         # initially, r = 0 and t = N
@@ -79,7 +81,7 @@ class VCSMC(tf.Module):
         felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
 
         # difference of current and last iteration's values are used to compute weights
-        log_pi_K = tf.zeros(K, DTYPE_FLOAT)
+        log_pi_K = tf.zeros(K, DTYPE_FLOAT)  # TODO init to data * embeddings
         # for computing empirical measure pi_rk(s)
         log_weight_K = tf.zeros(K, DTYPE_FLOAT)
 
@@ -132,7 +134,7 @@ class VCSMC(tf.Module):
                 embedding_KxD,
                 log_v_plus_K,
                 log_v_minus_K,
-            ) = self.proposal(r, leaf_counts_Kxt, embeddings_KxtxD)
+            ) = self.proposal(N, r, leaf_counts_Kxt, embeddings_KxtxD)
 
             # helper function
             def merge_K(arr_K, new_val_K):
@@ -172,12 +174,16 @@ class VCSMC(tf.Module):
 
             prev_log_pi_K = log_pi_K
 
+            decoded_embeddings_KxtxSxA = tf.vectorized_map(
+                self.decoder, embeddings_KxtxD
+            )
+
             log_likelihood_K, log_pi_K = compute_log_likelihood_and_pi_K(
-                stat_probs,
                 branch1_lengths_Kxr,
                 branch2_lengths_Kxr,
                 leaf_counts_Kxt,
                 felsensteins_KxtxSxA,
+                decoded_embeddings_KxtxSxA,
                 self.prior_branch_len,
                 log_double_factorials_2N,
             )

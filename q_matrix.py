@@ -5,10 +5,8 @@ from type_utils import Tensor, tf_function
 
 
 class QMatrix(tf.Module):
-    def stat_probs(self) -> Tensor:
-        raise NotImplementedError
-
-    def Q(self) -> Tensor:
+    def __call__(self) -> Tensor:
+        """Returns the Q matrix."""
         raise NotImplementedError
 
 
@@ -22,27 +20,10 @@ class DenseQMatrix(QMatrix):
         super().__init__()
 
         self.A = A
-
-        self.log_stat_probs = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [A]), name="log_stat_probs"
-        )
-
         self.log_Q = tf.Variable(tf.constant(0, DTYPE_FLOAT, [A, A]), name="log_Q")
 
     @tf_function()
-    def stat_probs(self):
-        # one stationary probability can be fixed to match degrees of freedom
-        stat_probs = tf.tensor_scatter_nd_update(
-            self.log_stat_probs, [[0]], [tf.constant(0, DTYPE_FLOAT)]
-        )
-        # use softmax to ensure all entries are positive
-        stat_probs = tf.exp(stat_probs)
-        # normalize to ensure sum is 1
-        stat_probs /= tf.reduce_sum(stat_probs)
-        return stat_probs
-
-    @tf_function()
-    def Q(self):
+    def __call__(self):
         # first non-diagonal entry in each row can be fixed to match degrees of
         # freedom
         Q = tf.tensor_scatter_nd_update(
@@ -108,7 +89,7 @@ class GT16QMatrix(QMatrix):
         return stat_probs
 
     @tf_function()
-    def Q(self):
+    def __call__(self):
         pi = self.nucleotide_exchanges()  # length 6
         pi8 = tf.repeat(pi, 8)
 

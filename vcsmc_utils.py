@@ -58,16 +58,16 @@ def compute_felsenstein_likelihoods_KxSxA(
 
 @tf_function(reduce_retracing=True)
 def compute_log_likelihood_and_pi_K(
-    stat_probs,
     branch1_lengths_Kxr,
     branch2_lengths_Kxr,
     leaf_counts_Kxt,
     felsensteins_KxtxSxA,
+    decoded_embeddings_KxtxSxA,
     prior_branch_len,
     log_double_factorials_2N,
 ) -> Tensor:
     """
-    Dots Felsenstein probabilities with stationary probabilities and multiplies
+    Dots Felsenstein probabilities with decoded embeddings and multiplies
     across sites and subtrees, yielding likelihood P(Y|forest,theta). Then
     multiplies by the prior over topologies and branch lengths to add the
     P(forest|theta) factor, yielding the measure pi(forest) = P(Y,forest|theta).
@@ -78,7 +78,10 @@ def compute_log_likelihood_and_pi_K(
         log_pi_K: log P(Y,forest|theta)
     """
 
-    likelihoods_KxtxS = tf.tensordot(felsensteins_KxtxSxA, stat_probs, 1)
+    # dot Felsenstein probabilities with decoded embeddings (along axis A)
+    likelihoods_KxtxS = tf.reduce_sum(
+        decoded_embeddings_KxtxSxA * felsensteins_KxtxSxA, 3
+    )
     log_likelihoods_KxtxS = tf.math.log(likelihoods_KxtxS)
     log_likelihood_K = tf.reduce_sum(log_likelihoods_KxtxS, [1, 2])
 

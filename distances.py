@@ -13,7 +13,7 @@ class Distance(tf.Module):
         """
         return x
 
-    @tf_function()
+    @tf_function(reduce_retracing=True)
     def project_many(self, x: Tensor) -> Tensor:
         """
         Given a tensor of shape (?, D), call `project()` on each row. Returns a
@@ -21,7 +21,7 @@ class Distance(tf.Module):
         """
         return tf.vectorized_map(self.project, x)
 
-    @tf_function()
+    @tf_function(reduce_retracing=True)
     def many(self, x: Tensor, y: Tensor) -> Tensor:
         """
         Given two tensors of shape (?, D), call `__call__()` on each pair of
@@ -39,7 +39,7 @@ class Distance(tf.Module):
 class Euclidean(Distance):
     def __init__(self, *, initial_radius: float = 1.0):
         super().__init__()
-        # project leaf and inner embeddings onto a sphere of learnable radius
+        # project embeddings onto a sphere of learnable radius
         self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
 
     @tf_function()
@@ -57,7 +57,7 @@ class Euclidean(Distance):
 class Hyperbolic(Distance):
     def __init__(self, *, initial_radius: float = 0.5):
         super().__init__()
-        # project leaf and inner embeddings onto a sphere of learnable radius
+        # project embeddings onto a sphere of learnable radius
         self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
 
     @tf_function()

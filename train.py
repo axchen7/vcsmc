@@ -26,20 +26,7 @@ def train(
     def train_step(batch_NxSxA: Tensor):
         with tf.GradientTape() as tape:
             log_Z_SMC, log_likelihood_K, best_newick_tree = vcsmc(batch_NxSxA)
-
             cost = -log_Z_SMC
-
-            # encourage uniform stationary probabilities
-            stat_probs = vcsmc.markov.stat_probs()
-            stat_probs_reg = tf.math.reduce_sum(tf.math.square(stat_probs))
-
-            # tally up regularization cost
-            total_reg = stat_probs_reg * stat_probs_reg_lambda
-
-            # weight by batch size
-            total_reg *= batch_NxSxA.shape[0]
-
-            cost += total_reg
 
         variables = tape.watched_variables()
         grads = tape.gradient(cost, variables)
@@ -101,7 +88,7 @@ def train(
 
                 # ===== Q matrix =====
 
-                Q = vcsmc.markov.Q()
+                Q = vcsmc.q_matrix()
                 plt.imshow(Q)
 
                 tf.summary.image("Q matrix", utils.cur_plt_to_tf_image())
