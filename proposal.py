@@ -210,15 +210,17 @@ class EmbeddingProposal(Proposal):
         # negative log probabilities, and incorporating the sample
         # temperature
 
-        pairwise_distances_Kxtxt = tf.vectorized_map(
-            lambda embeddings_txD: tf.vectorized_map(
-                lambda x: tf.vectorized_map(
-                    lambda y: self.distance(x, y), embeddings_txD
-                ),
-                embeddings_txD,
-            ),
-            embeddings_KxtxD,
+        flat_embeddings1_KttxD = tf.reshape(  # repeat like 123123123...
+            tf.tile(embeddings_KxtxD, [1, t, 1]), [K * t * t, -1]
         )
+        flat_embeddings2_KttxD = tf.reshape(  # repeat like 111222333...
+            tf.tile(embeddings_KxtxD, [1, 1, t]), [K * t * t, -1]
+        )
+
+        pairwise_distances_Ktt = self.distance.many(
+            flat_embeddings1_KttxD, flat_embeddings2_KttxD
+        )
+        pairwise_distances_Kxtxt = tf.reshape(pairwise_distances_Ktt, [K, t, t])
         merge_log_weights_Kxtxt = -pairwise_distances_Kxtxt / self.sample_temp  # type: ignore
 
         # set diagonal entries to -inf to prevent self-merges
