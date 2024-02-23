@@ -81,7 +81,7 @@ class VCSMC(tf.Module):
         felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
 
         # difference of current and last iteration's values are used to compute weights
-        log_pi_K = tf.zeros(K, DTYPE_FLOAT)  # TODO init to data * embeddings
+        log_pi_K = tf.zeros(K, DTYPE_FLOAT)
         # for computing empirical measure pi_rk(s)
         log_weight_K = tf.zeros(K, DTYPE_FLOAT)
 
