@@ -25,7 +25,11 @@ def train(
     @tf_function()
     def train_step(batch_NxSxA: Tensor):
         with tf.GradientTape() as tape:
-            log_Z_SMC, log_likelihood_K, best_newick_tree = vcsmc(batch_NxSxA)
+            result = vcsmc(batch_NxSxA)
+            log_Z_SMC = result["log_Z_SMC"]
+            log_likelihood_K = result["log_likelihood_K"]
+            best_newick_tree = result["best_newick_tree"]
+
             cost = -log_Z_SMC
 
         variables = tape.watched_variables()

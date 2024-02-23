@@ -54,10 +54,14 @@ class VCSMC(tf.Module):
     @tf_function()
     def __call__(self, data_NxSxA: Tensor) -> Tensor:
         """
-        Returns:
+        Returns a dict containing:
             log_Z_SMC: lower bound to the likelihood; should set cost = -log_Z_SMC
-            log_likelihoods_K: log likelihoods for each particle at the last merge step
+            log_likelihood_K: log likelihoods for each particle at the last merge step
             best_newick_tree: Newick tree with the highest likelihood
+            best_merge1_indexes_r: left node merge indexes for the best tree
+            best_merge2_indexes_r: right node merge indexes for the best tree
+            best_branch1_lengths_r: left branch lengths for the best tree
+            best_branch2_lengths_r: right branch lengths for the best tree
         """
 
         N, S, A = data_NxSxA.shape
@@ -218,4 +222,12 @@ class VCSMC(tf.Module):
 
         # ===== return final results =====
 
-        return log_Z_SMC, log_likelihood_K, best_newick_tree
+        return {
+            "log_Z_SMC": log_Z_SMC,
+            "log_likelihood_K": log_likelihood_K,
+            "best_newick_tree": best_newick_tree,
+            "best_merge1_indexes_r": merge1_indexes_Kxr[best_tree_idx],
+            "best_merge2_indexes_r": merge2_indexes_Kxr[best_tree_idx],
+            "best_branch1_lengths_r": branch1_lengths_Kxr[best_tree_idx],
+            "best_branch2_lengths_r": branch2_lengths_Kxr[best_tree_idx],
+        }
