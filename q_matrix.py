@@ -4,11 +4,7 @@ from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 
 
-class Markov(tf.Module):
-    """
-    Continuous-time Markov chain.
-    """
-
+class QMatrix(tf.Module):
     def stat_probs(self) -> Tensor:
         raise NotImplementedError
 
@@ -16,7 +12,7 @@ class Markov(tf.Module):
         raise NotImplementedError
 
 
-class DenseMarkov(Markov):
+class DenseQMatrix(QMatrix):
     """
     Use a trainable variable for every entry in the Q matrix (except the
     diagonal).
@@ -72,7 +68,7 @@ class DenseMarkov(Markov):
         return Q
 
 
-class GT16Markov(Markov):
+class GT16QMatrix(QMatrix):
     """
     Assumes A=16. Uses the CellPhy GT16 model.
     """

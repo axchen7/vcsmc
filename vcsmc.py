@@ -1,7 +1,7 @@
 import tensorflow as tf
 
-import markov
 import proposal
+import q_matrix
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 from vcsmc_utils import (
@@ -18,7 +18,7 @@ from vcsmc_utils import (
 class VCSMC(tf.Module):
     def __init__(
         self,
-        markov: markov.Markov,
+        markov: q_matrix.QMatrix,
         proposal: proposal.Proposal,
         taxa_N: Tensor,
         *,
