@@ -6,34 +6,36 @@ from type_utils import Tensor, tf_function
 
 class Distance(tf.Module):
     @tf_function()
-    def project(self, x: Tensor) -> Tensor:
+    def project_single(self, x: Tensor) -> Tensor:
         """
-        Given a D-length tensor, return the projected tensor actually used for
-        the distance calculation.
+        Given a D-length vector, return the projected vector actually used for
+        the distance calculation. The projected vector may have a different shape.
         """
         return x
 
     @tf_function(reduce_retracing=True)
-    def project_many(self, x: Tensor) -> Tensor:
+    def project(self, vectors: Tensor) -> Tensor:
         """
-        Given a tensor of shape (?, D), call `project()` on each row. Returns a
-        tensor of shape (?, D).
+        Given a tensor of shape (V, D), call `project_single()` on each row. Returns a
+        tensor of shape (V, ?).
         """
-        return tf.vectorized_map(self.project, x)
+        return tf.vectorized_map(self.project_single, vectors)
 
-    @tf_function(reduce_retracing=True)
-    def many(self, x: Tensor, y: Tensor) -> Tensor:
+    def distance_single(self, x: Tensor, y: Tensor) -> Tensor:
         """
-        Given two tensors of shape (?, D), call `__call__()` on each pair of
-        rows. Returns a tensor of shape (?,).
-        """
-        return tf.vectorized_map(lambda xy: self(xy[0], xy[1]), (x, y))
-
-    def __call__(self, x: Tensor, y: Tensor) -> Tensor:
-        """
-        Given two D-length tensors, return the distance between them.
+        Given two D-length vectors, return the distance between them.
         """
         raise NotImplementedError
+
+    @tf_function(reduce_retracing=True)
+    def __call__(self, vectors1: Tensor, vectors2: Tensor) -> Tensor:
+        """
+        Given two tensors of shape (V, D), call `distance_single()` on each pair of
+        rows. Returns a tensor of shape (V,).
+        """
+        return tf.vectorized_map(
+            lambda xy: self.distance_single(xy[0], xy[1]), (vectors1, vectors2)
+        )
 
 
 class Euclidean(Distance):
@@ -43,13 +45,13 @@ class Euclidean(Distance):
         self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
 
     @tf_function()
-    def project(self, x):
+    def project_single(self, x):
         return x * self.radius / tf.norm(x)
 
     @tf_function()
-    def __call__(self, x, y):
-        x = self.project(x)
-        y = self.project(y)
+    def distance_single(self, x, y):
+        x = self.project_single(x)
+        y = self.project_single(y)
 
         return tf.sqrt(tf.reduce_sum(tf.square(x - y)))
 
@@ -61,13 +63,13 @@ class Hyperbolic(Distance):
         self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
 
     @tf_function()
-    def project(self, x):
+    def project_single(self, x):
         return x * self.radius / tf.norm(x)
 
     @tf_function()
-    def __call__(self, x, y):
-        x = self.project(x)
-        y = self.project(y)
+    def distance_single(self, x, y):
+        x = self.project_single(x)
+        y = self.project_single(y)
 
         # see https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance
         # acosh version causes NaNs, but asinh version works

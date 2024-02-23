@@ -217,7 +217,7 @@ class EmbeddingProposal(Proposal):
             tf.tile(embeddings_KxtxD, [1, 1, t]), [K * t * t, -1]
         )
 
-        pairwise_distances_Ktt = self.distance.many(
+        pairwise_distances_Ktt = self.distance(
             flat_embeddings1_KttxD, flat_embeddings2_KttxD
         )
         pairwise_distances_Kxtxt = tf.reshape(pairwise_distances_Ktt, [K, t, t])
@@ -258,8 +258,8 @@ class EmbeddingProposal(Proposal):
         # ===== sample/get branches parameters =====
 
         if self.sample_branches:
-            dist1_K = self.distance.many(child1_KxD, embedding_KxD)
-            dist2_K = self.distance.many(child2_KxD, embedding_KxD)
+            dist1_K = self.distance(child1_KxD, embedding_KxD)
+            dist2_K = self.distance(child2_KxD, embedding_KxD)
 
             # sample from exponential distributions whose expectations are the
             # distances between children and merged embeddings
@@ -284,8 +284,8 @@ class EmbeddingProposal(Proposal):
                 tf.math.log(branch_param2_K) - branch_param2_K * branch2_K
             )
         else:
-            branch1_K = self.distance.many(child1_KxD, embedding_KxD)
-            branch2_K = self.distance.many(child2_KxD, embedding_KxD)
+            branch1_K = self.distance(child1_KxD, embedding_KxD)
+            branch2_K = self.distance(child2_KxD, embedding_KxD)
 
             log_branch1_prior_K = 0
             log_branch2_prior_K = 0
