@@ -45,16 +45,16 @@ def render_poincare(
 
         unpack = lambda x: (float(x[0]), float(x[1]))
 
-        emb1_proj = unpack(proposal.distance.project_single(emb1_D))
-        emb2_proj = unpack(proposal.distance.project_single(emb2_D))
-        parent_embed_proj = unpack(proposal.distance.project_single(parent_emb_D))
+        emb1 = unpack(emb1_D)
+        emb2 = unpack(emb2_D)
+        parent_embed = unpack(parent_emb_D)
 
         label1 = str(labels_t[idx1].numpy())[2:-1]
         label2 = str(labels_t[idx2].numpy())[2:-1]
 
-        p1 = poincare.Point(emb1_proj[0], emb1_proj[1])
-        p2 = poincare.Point(emb2_proj[0], emb2_proj[1])
-        p3 = poincare.Point(parent_embed_proj[0], parent_embed_proj[1])
+        p1 = poincare.Point(emb1[0], emb1[1])
+        p2 = poincare.Point(emb2[0], emb2[1])
+        p3 = poincare.Point(parent_embed[0], parent_embed[1])
         points.extend([p1, p2, p3])
 
         l1 = poincare.Line.from_points(*p1, *p3, segment=True)
@@ -62,16 +62,16 @@ def render_poincare(
         lines.extend([l1, l2])
 
         if label1 != "":
-            t1 = Text(label1, 0.001, emb1_proj[0], emb1_proj[1], fill="black")
+            t1 = Text(label1, 0.001, emb1[0], emb1[1], fill="black")
             texts.append(t1)
         if label2 != "":
-            t2 = Text(label2, 0.001, emb2_proj[0], emb2_proj[1], fill="black")
+            t2 = Text(label2, 0.001, emb2[0], emb2[1], fill="black")
             texts.append(t2)
 
-        min_x = min(min_x, emb1_proj[0], emb2_proj[0], parent_embed_proj[0])
-        max_x = max(max_x, emb1_proj[0], emb2_proj[0], parent_embed_proj[0])
-        min_y = min(min_y, emb1_proj[1], emb2_proj[1], parent_embed_proj[1])
-        max_y = max(max_y, emb1_proj[1], emb2_proj[1], parent_embed_proj[1])
+        min_x = min(min_x, emb1[0], emb2[0], parent_embed[0])
+        max_x = max(max_x, emb1[0], emb2[0], parent_embed[0])
+        min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
+        max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
 
         embeddings_txD = replace_with_merged(embeddings_txD, idx1, idx2, parent_emb_D)
         labels_t = replace_with_merged(labels_t, idx1, idx2, tf.constant(""))

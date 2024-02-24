@@ -2,6 +2,7 @@ import keras
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
+from distances import Distance
 from type_utils import Tensor, tf_function
 
 
@@ -16,12 +17,19 @@ def mlp_add_hidden_layers(
 class SequenceEncoder(tf.Module):
     """Encodes sequences into embeddings."""
 
+    def __init__(self, distance: Distance):
+        """
+        Args:
+            distance: Used to normalize the embeddings.
+        """
+        self.distance = distance
+
     def __call__(self, sequences_VxSxA: Tensor) -> Tensor:
         """
         Args:
             sequences_VxSxA: Sequences to encode.
         Returns:
-            embeddings_VxD: Encoded sequences.
+            embeddings_VxD: Encoded sequences, normalized.
         """
         raise NotImplementedError
 
@@ -38,15 +46,16 @@ class DummySequenceEncoder(SequenceEncoder):
 class MLPSequenceEncoder(SequenceEncoder):
     """Uses a multi-layer perceptron."""
 
-    def __init__(self, *, D: int, width: int, depth: int):
+    def __init__(self, distance: Distance, *, D: int, width: int, depth: int):
         """
         Args:
+            distance: Used to normalize the embeddings.
             D: Number of dimensions in output embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
         """
 
-        super().__init__()
+        super().__init__(distance)
 
         self.D = D
         self.width = width
@@ -69,11 +78,18 @@ class MLPSequenceEncoder(SequenceEncoder):
             A = sequences_VxSxA.shape[2]
             self.mlp = self.create_mlp(S, A)
 
-        return self.mlp(sequences_VxSxA)
+        return self.distance.normalize(self.mlp(sequences_VxSxA))
 
 
 class MergeEncoder(tf.Module):
     """Encodes a pair of child embeddings into a parent embedding."""
+
+    def __init__(self, distance: Distance):
+        """
+        Args:
+            distance: Used to normalize the embeddings.
+        """
+        self.distance = distance
 
     def __call__(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
         """
@@ -81,21 +97,22 @@ class MergeEncoder(tf.Module):
             children1_VxD: First child embeddings.
             children2_VxD: Second child embeddings.
         Returns:
-            embeddings_VxD: Encoded parents.
+            embeddings_VxD: Encoded parents, normalized.
         """
         raise NotImplementedError
 
 
 class MLPMergeEncoder(MergeEncoder):
-    def __init__(self, *, width: int, depth: int):
+    def __init__(self, distance: Distance, *, width: int, depth: int):
         """
         Args:
+            distance: Used to normalize the embeddings.
             D: Number of dimensions in input and output embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
         """
 
-        super().__init__()
+        super().__init__(distance)
 
         self.width = width
         self.depth = depth
@@ -115,7 +132,9 @@ class MLPMergeEncoder(MergeEncoder):
             D = children1_VxD.shape[1]
             self.mlp = self.create_mlp(D)
 
-        return self.mlp(tf.concat([children1_VxD, children2_VxD], axis=1))
+        return self.distance.normalize(
+            self.mlp(tf.concat([children1_VxD, children2_VxD], axis=1))
+        )
 
 
 class Decoder(tf.Module):
