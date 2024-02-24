@@ -5,6 +5,11 @@ from type_utils import Tensor, tf_function
 
 
 class QMatrix(tf.Module):
+    @tf_function()
+    def regularization(self) -> Tensor:
+        """Add to cost."""
+        return tf.constant(0, DTYPE_FLOAT)
+
     def __call__(self) -> Tensor:
         """Returns the Q matrix."""
         raise NotImplementedError
@@ -54,8 +59,15 @@ class GT16QMatrix(QMatrix):
     Assumes A=16. Uses the CellPhy GT16 model.
     """
 
-    def __init__(self):
+    def __init__(self, *, reg_lambda: float = 0.0):
+        """
+        Args:
+            reg_lambda: Stationary probability regularization coefficient.
+        """
+
         super().__init__()
+
+        self.reg_lambda = tf.constant(reg_lambda, DTYPE_FLOAT)
 
         self.log_nucleotide_exchanges = tf.Variable(
             tf.constant(0, DTYPE_FLOAT, [6]), name="log_nucleotide_exchanges"
@@ -87,6 +99,11 @@ class GT16QMatrix(QMatrix):
         # normalize to ensure sum is 1
         stat_probs /= tf.reduce_sum(stat_probs)
         return stat_probs
+
+    @tf_function()
+    def regularization(self):
+        stat_probs_norm_squared = tf.reduce_sum(tf.math.square(self.stat_probs()))
+        return self.reg_lambda * stat_probs_norm_squared
 
     @tf_function()
     def __call__(self):

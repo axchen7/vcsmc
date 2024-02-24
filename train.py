@@ -20,7 +20,6 @@ def train(
     root: str = "Healthy",
     epochs: int,
     start_epoch: int = 0,
-    stat_probs_reg_lambda: float = 0,
 ):
     @tf_function()
     def train_step(batch_NxSxA: Tensor):
@@ -31,6 +30,7 @@ def train(
             best_newick_tree = result["best_newick_tree"]
 
             cost = -log_Z_SMC
+            cost += vcsmc.q_matrix.regularization()  # scale by N and S?
 
         variables = tape.watched_variables()
         grads = tape.gradient(cost, variables)
