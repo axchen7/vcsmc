@@ -196,6 +196,7 @@ def build_newick_tree(
 
         idx1 = merge1_indexes_N1[r]
         idx2 = merge2_indexes_N1[r]
+
         branch1 = tf.strings.as_string(branch1_lengths_N1[r])
         branch2 = tf.strings.as_string(branch2_lengths_N1[r])
 

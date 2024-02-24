@@ -1,9 +1,9 @@
 import tensorflow as tf
 
-import encoder_decoder
-import proposal
-import q_matrix
 from constants import DTYPE_FLOAT
+from encoder_decoder import Decoder
+from proposal import Proposal
+from q_matrix import QMatrix
 from type_utils import Tensor, tf_function
 from vcsmc_utils import (
     build_newick_tree,
@@ -19,9 +19,9 @@ from vcsmc_utils import (
 class VCSMC(tf.Module):
     def __init__(
         self,
-        q_matrix: q_matrix.QMatrix,
-        proposal: proposal.Proposal,
-        decoder: encoder_decoder.Decoder,
+        q_matrix: QMatrix,
+        proposal: Proposal,
+        decoder: Decoder,
         taxa_N: Tensor,
         *,
         K: int,
@@ -226,8 +226,8 @@ class VCSMC(tf.Module):
             "log_Z_SMC": log_Z_SMC,
             "log_likelihood_K": log_likelihood_K,
             "best_newick_tree": best_newick_tree,
-            "best_merge1_indexes_r": merge1_indexes_Kxr[best_tree_idx],
-            "best_merge2_indexes_r": merge2_indexes_Kxr[best_tree_idx],
-            "best_branch1_lengths_r": branch1_lengths_Kxr[best_tree_idx],
-            "best_branch2_lengths_r": branch2_lengths_Kxr[best_tree_idx],
+            "best_merge1_indexes_N1": merge1_indexes_Kxr[best_tree_idx],
+            "best_merge2_indexes_N1": merge2_indexes_Kxr[best_tree_idx],
+            "best_branch1_lengths_N1": branch1_lengths_Kxr[best_tree_idx],
+            "best_branch2_lengths_N1": branch2_lengths_Kxr[best_tree_idx],
         }
