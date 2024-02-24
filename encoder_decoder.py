@@ -124,6 +124,53 @@ class MLPMergeEncoder(MergeEncoder):
         )
 
 
+class HyperbolicMLPMergeEncoder(MergeEncoder):
+    def __init__(self, *, width: int, depth: int):
+        """
+        Args:
+            width: Width of each hidden layer.
+            depth: Number of hidden layers.
+        """
+
+        super().__init__()
+
+        self.width = width
+        self.depth = depth
+
+        self.mlp = None
+
+    def create_mlp(self, D: int):
+        mlp = keras.Sequential()
+        mlp.add(keras.layers.Input([2 * D], dtype=DTYPE_FLOAT))
+        mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
+        mlp.add(keras.layers.Dense(2, dtype=DTYPE_FLOAT))
+        return mlp
+
+    @tf_function(reduce_retracing=True)
+    def __call__(self, children1_VxD, children2_VxD):
+        if self.mlp is None:
+            D = children1_VxD.shape[1]
+            self.mlp = self.create_mlp(D)
+
+        # mlp output is alpha and beta (see definitions below)
+        alpha_beta_Vx2 = self.mlp(tf.concat([children1_VxD, children2_VxD], axis=1))
+
+        # the fractional position between children1 (alpha=0) and children2 (alpha=1)
+        alpha_V = alpha_beta_Vx2[:, 0]  # type: ignore
+        alpha_V = tf.sigmoid(alpha_V)  # squash to (0, 1)
+
+        # the point a distance alpha on the line between children1 and children2
+        mid_V = children1_VxD + alpha_V[:, tf.newaxis] * (children2_VxD - children1_VxD)
+
+        # the fractional distance between the origin (beta=0) and the point mid (beta=1)
+        beta_V = alpha_beta_Vx2[:, 1]  # type: ignore
+        beta_V = tf.sigmoid(beta_V)  # squash to (0, 1)
+
+        # the point a distance beta on the line between the origin and mid
+        parent_VxD = mid_V * beta_V[:, tf.newaxis]  # type: ignore
+        return parent_VxD
+
+
 class Decoder(tf.Module):
     """
     Decodes an embedding into a sequence.
