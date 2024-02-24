@@ -17,13 +17,6 @@ def mlp_add_hidden_layers(
 class SequenceEncoder(tf.Module):
     """Encodes sequences into embeddings."""
 
-    def __init__(self, distance: Distance):
-        """
-        Args:
-            distance: Used to normalize the embeddings.
-        """
-        self.distance = distance
-
     def __call__(self, sequences_VxSxA: Tensor) -> Tensor:
         """
         Args:
@@ -55,8 +48,9 @@ class MLPSequenceEncoder(SequenceEncoder):
             depth: Number of hidden layers.
         """
 
-        super().__init__(distance)
+        super().__init__()
 
+        self.distance = distance
         self.D = D
         self.width = width
         self.depth = depth
@@ -84,13 +78,6 @@ class MLPSequenceEncoder(SequenceEncoder):
 class MergeEncoder(tf.Module):
     """Encodes a pair of child embeddings into a parent embedding."""
 
-    def __init__(self, distance: Distance):
-        """
-        Args:
-            distance: Used to normalize the embeddings.
-        """
-        self.distance = distance
-
     def __call__(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
         """
         Args:
@@ -107,13 +94,13 @@ class MLPMergeEncoder(MergeEncoder):
         """
         Args:
             distance: Used to normalize the embeddings.
-            D: Number of dimensions in input and output embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
         """
 
-        super().__init__(distance)
+        super().__init__()
 
+        self.distance = distance
         self.width = width
         self.depth = depth
 
