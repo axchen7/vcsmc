@@ -5,53 +5,27 @@ from type_utils import Tensor, tf_function
 
 
 class Distance(tf.Module):
-    @tf_function()
-    def normalize_single(self, x: Tensor) -> Tensor:
-        """
-        Given a D-length vector, return a normalized version suitable for use in
-        distance calculations.
-        """
-        return x
-
     @tf_function(reduce_retracing=True)
-    def normalize(self, vectors: Tensor) -> Tensor:
+    def normalize(self, vectors_VxD: Tensor) -> Tensor:
         """
-        Given a tensor of shape (V, D), call `normalize_single()` on each row. Returns a
-        tensor of shape (V, D).
+        Given a tensor of shape (V, D), normalizes each row so that it is
+        suitable for use in distance calculations. Returns a tensor of shape (V,
+        D).
         """
-        return tf.vectorized_map(self.normalize_single, vectors)
+        return vectors_VxD
 
-    def distance_single(self, x: Tensor, y: Tensor) -> Tensor:
+    def __call__(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
         """
-        Given two normalized D-length vectors, return the distance between them.
+        Given two tensors of shape (V, D) containing normalized vectors,returns
+        the distance between each pair of rows. Returns a tensor of shape (V,).
         """
         raise NotImplementedError
 
-    @tf_function(reduce_retracing=True)
-    def __call__(self, vectors1: Tensor, vectors2: Tensor) -> Tensor:
-        """
-        Given two tensors of shape (V, D) containing normalized vectors, call
-        `distance_single()` on each pair of rows. Returns a tensor of shape
-        (V,).
-        """
-        return tf.vectorized_map(
-            lambda xy: self.distance_single(xy[0], xy[1]), (vectors1, vectors2)
-        )
-
 
 class Euclidean(Distance):
-    def __init__(self, *, initial_radius: float = 1.0):
-        super().__init__()
-        # project embeddings onto a sphere of learnable radius
-        self.radius = tf.Variable(initial_radius, name="radius", dtype=DTYPE_FLOAT)
-
     @tf_function()
-    def normalize_single(self, x):
-        return x * self.radius / tf.norm(x)
-
-    @tf_function()
-    def distance_single(self, x, y):
-        return tf.sqrt(tf.reduce_sum(tf.square(x - y)))
+    def __call__(self, vectors1_VxD, vectors2_VxD):
+        return tf.norm(vectors1_VxD - vectors2_VxD, axis=-1)
 
 
 class Hyperbolic(Distance):
@@ -63,27 +37,27 @@ class Hyperbolic(Distance):
         )
 
     @tf_function()
-    def normalize_single(self, x):
-        """
-        Returns a vector with the same direction but with the norm passed
-        through tanh().
-        """
+    def normalize(self, vectors_VxD):
+        # return a vector with the same direction but with the norm passed
+        # through tanh()
+
         max_radius = tf.sigmoid(self.logit_max_radius) * 0.99  # cap again at 0.99
 
-        norm = tf.norm(x)
-        unit = x / norm
-        new_norm = tf.tanh(norm) * max_radius
-        return new_norm * unit
+        norms_V = tf.norm(vectors_VxD, axis=-1)
+        new_norms_V = tf.tanh(norms_V) * max_radius
+
+        unit_vectors_VxD = vectors_VxD / norms_V[:, tf.newaxis]
+        return unit_vectors_VxD * new_norms_V[:, tf.newaxis]
 
     @tf_function()
-    def distance_single(self, x, y):
+    def __call__(self, vectors1_VxD, vectors2_VxD):
         # see https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance
         # acosh version causes NaNs, but asinh version works
 
-        xy_norm_sq = tf.reduce_sum(tf.square(x - y))
-        one_minus_x_norm_sq = 1 - tf.reduce_sum(tf.square(x))
-        one_minus_y_norm_sq = 1 - tf.reduce_sum(tf.square(y))
+        xy_norm_sq_V = tf.reduce_sum(tf.square(vectors1_VxD - vectors2_VxD), axis=-1)
+        one_minus_x_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors1_VxD), axis=-1)
+        one_minus_y_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors2_VxD), axis=-1)
 
         return 2 * tf.asinh(
-            tf.sqrt(xy_norm_sq / (one_minus_x_norm_sq * one_minus_y_norm_sq))
+            tf.sqrt(xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V))
         )
