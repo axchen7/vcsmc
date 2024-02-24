@@ -17,7 +17,7 @@ class Distance(tf.Module):
     def project(self, vectors: Tensor) -> Tensor:
         """
         Given a tensor of shape (V, D), call `project_single()` on each row. Returns a
-        tensor of shape (V, ?).
+        tensor of shape (V, D).
         """
         return tf.vectorized_map(self.project_single, vectors)
 
@@ -67,14 +67,15 @@ class Hyperbolic(Distance):
     @tf_function()
     def project_single(self, x):
         """
-        Treats the tanh of the first coordinate as the radius and projects the
-        remaining coordinates onto the hypersphere of that radius. Radius is
-        capped to avoid NaNs. Returns a vector of length D-1.
+        Returns a vector with the same direction but with the norm passed
+        through tanh().
         """
         max_radius = tf.sigmoid(self.logit_max_radius) * 0.99  # cap again at 0.99
-        radius = tf.tanh(x[0]) * max_radius
-        rest = x[1:]
-        return radius * rest / tf.norm(rest)
+
+        norm = tf.norm(x)
+        unit = x / norm
+        new_norm = tf.tanh(norm) * max_radius
+        return new_norm * unit
 
     @tf_function()
     def distance_single(self, x, y):
