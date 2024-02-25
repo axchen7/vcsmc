@@ -1,6 +1,7 @@
 import math
 
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
@@ -94,15 +95,13 @@ def compute_log_likelihood_and_pi_K(
     )
     log_topology_prior_K = tf.reduce_sum(-leaf_log_double_factorials_Kxt, 1)  # type: ignore
 
-    # compute probability of branches under exponential distribution with
-    # lambda = 1 / (expected branch length)
-    branch_prior_param = 1 / prior_branch_len
-    log_branch1_prior_K = tf.reduce_sum(
-        tf.math.log(branch_prior_param) - branch_prior_param * branch1_lengths_Kxr, 1
+    # compute probability of branches under gamma a gamma distribution
+    # with a mean of prior_branch_len
+    branch_prior_dist = tfp.distributions.Gamma(
+        concentration=2.0, rate=2.0 / prior_branch_len
     )
-    log_branch2_prior_K = tf.reduce_sum(
-        tf.math.log(branch_prior_param) - branch_prior_param * branch2_lengths_Kxr, 1
-    )
+    log_branch1_prior_K = tf.reduce_sum(branch_prior_dist.log_prob(branch1_lengths_Kxr))
+    log_branch2_prior_K = tf.reduce_sum(branch_prior_dist.log_prob(branch2_lengths_Kxr))
 
     log_pi_K = (
         log_likelihood_K
