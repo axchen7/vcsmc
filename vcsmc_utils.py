@@ -1,4 +1,5 @@
 import math
+from typing import Literal
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -64,6 +65,7 @@ def compute_log_likelihood_and_pi_K(
     leaf_counts_Kxt,
     felsensteins_KxtxSxA,
     decoded_embeddings_KxtxSxA,
+    prior_dist: Literal["gamma", "exp"],
     prior_branch_len,
     log_double_factorials_2N,
 ) -> Tensor:
@@ -95,11 +97,17 @@ def compute_log_likelihood_and_pi_K(
     )
     log_topology_prior_K = tf.reduce_sum(-leaf_log_double_factorials_Kxt, 1)  # type: ignore
 
-    # compute probability of branches under gamma a gamma distribution
-    # with a mean of prior_branch_len
-    branch_prior_dist = tfp.distributions.Gamma(
-        concentration=2.0, rate=2.0 / prior_branch_len
-    )
+    if prior_dist == "exp":
+        # distribution has a mean of prior_branch_len
+        branch_prior_dist = tfp.distributions.Exponential(rate=1.0 / prior_branch_len)
+    elif prior_dist == "gamma":
+        # distribution has a mean of prior_branch_len
+        branch_prior_dist = tfp.distributions.Gamma(
+            concentration=2.0, rate=2.0 / prior_branch_len
+        )
+    else:
+        raise ValueError
+
     log_branch1_prior_K = tf.reduce_sum(branch_prior_dist.log_prob(branch1_lengths_Kxr))
     log_branch2_prior_K = tf.reduce_sum(branch_prior_dist.log_prob(branch2_lengths_Kxr))
 

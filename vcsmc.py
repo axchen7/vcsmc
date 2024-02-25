@@ -1,3 +1,5 @@
+from typing import Literal
+
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
@@ -25,6 +27,7 @@ class VCSMC(tf.Module):
         taxa_N: Tensor,
         *,
         K: int,
+        prior_dist: Literal["gamma", "exp"] = "exp",
         prior_branch_len: float = 1.0,
     ):
         """
@@ -33,6 +36,7 @@ class VCSMC(tf.Module):
             proposal: Proposal object
             taxa_N: Tensor of taxa names
             K: Number of particles
+            prior_dist: Prior distribution for branch lengths
             prior_branch_len: Expected branch length under the prior
         """
 
@@ -43,6 +47,7 @@ class VCSMC(tf.Module):
         self.decoder = decoder
         self.taxa_N = taxa_N
         self.K = K
+        self.prior_dist: Literal["gamma", "exp"] = prior_dist
         self.prior_branch_len = tf.constant(prior_branch_len, DTYPE_FLOAT)
 
     @tf_function()
@@ -188,6 +193,7 @@ class VCSMC(tf.Module):
                 leaf_counts_Kxt,
                 felsensteins_KxtxSxA,
                 decoded_embeddings_KxtxSxA,
+                self.prior_dist,
                 self.prior_branch_len,
                 log_double_factorials_2N,
             )
