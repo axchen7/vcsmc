@@ -43,7 +43,8 @@ def render_poincare(
         emb2_D = embeddings_txD[idx2]
         parent_emb_D = proposal.merge_encoder(emb1_D[tf.newaxis], emb2_D[tf.newaxis])[0]
 
-        unpack = lambda x: (float(x[0]), float(x[1]))
+        # flip y coordinate to match matplotlib display orientation
+        unpack = lambda x: (float(x[0]), -float(x[1]))
 
         emb1 = unpack(emb1_D)
         emb2 = unpack(emb2_D)
@@ -62,10 +63,10 @@ def render_poincare(
         lines.extend([l1, l2])
 
         if label1 != "":
-            t1 = Text(label1, 0.001, emb1[0], emb1[1], fill="black")
+            t1 = (label1, emb1[0], emb1[1])
             texts.append(t1)
         if label2 != "":
-            t2 = Text(label2, 0.001, emb2[0], emb2[1], fill="black")
+            t2 = (label2, emb2[0], emb2[1])
             texts.append(t2)
 
         min_x = min(min_x, emb1[0], emb2[0], parent_embed[0])
@@ -86,6 +87,7 @@ def render_poincare(
 
     stroke_width = size / 500
     radius = 2 * stroke_width
+    text_size = size / 100
 
     d = Drawing(size, size, origin=(origin_x, origin_y))
     d.draw(euclid.Circle(0, 0, 1), fill="silver")
@@ -97,7 +99,7 @@ def render_poincare(
         d.draw(p, radius=radius, fill="orange")
 
     for t in texts:
-        d.draw(t)
+        d.draw(Text(t[0], text_size, t[1], t[2], fill="black"))
 
     d.set_render_size(w=800)
     return d
