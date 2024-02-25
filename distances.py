@@ -31,17 +31,18 @@ class Euclidean(Distance):
 class Hyperbolic(Distance):
     def __init__(self):
         super().__init__()
-        # cap the radius of vectors to avoid NaNs
+
         self.logit_max_radius = tf.Variable(
             0, name="logit_max_radius", dtype=DTYPE_FLOAT
         )
+        self.log_scale = tf.Variable(0.0, dtype=DTYPE_FLOAT, name="log_scale")
 
     @tf_function()
     def normalize(self, vectors_VxD):
         # return a vector with the same direction but with the norm passed
         # through tanh()
 
-        max_radius = tf.sigmoid(self.logit_max_radius) * 0.99  # cap again at 0.99
+        max_radius = tf.sigmoid(self.logit_max_radius)
 
         norms_V = tf.norm(vectors_VxD, axis=-1)
         new_norms_V = tf.tanh(norms_V) * max_radius
@@ -58,6 +59,9 @@ class Hyperbolic(Distance):
         one_minus_x_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors1_VxD), axis=-1)
         one_minus_y_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors2_VxD), axis=-1)
 
-        return 2 * tf.asinh(
+        distance_V = 2 * tf.asinh(
             tf.sqrt(xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V))
         )
+
+        scale = tf.exp(self.log_scale)
+        return distance_V * scale
