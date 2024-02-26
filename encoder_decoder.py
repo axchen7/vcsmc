@@ -150,10 +150,19 @@ class HyperbolicMLPMergeEncoder(MergeEncoder):
     def __call__(self, children1_VxD, children2_VxD):
         if self.mlp is None:
             D = children1_VxD.shape[1]
-            self.mlp = self.create_mlp(D)
+            self.mlp = self.create_mlp(D + 1)  # add 1 dimension for the squared norm
+
+        # append squared norm as a feature, which captures the vector's distance
+        # from the Poincaré disk's center
+
+        squared_norms1_V = tf.reduce_sum(tf.square(children1_VxD), -1)
+        squared_norms2_V = tf.reduce_sum(tf.square(children2_VxD), -1)
+
+        expanded1_VxD1 = tf.concat([children1_VxD, squared_norms1_V[:, tf.newaxis]], -1)
+        expanded2_VxD1 = tf.concat([children2_VxD, squared_norms2_V[:, tf.newaxis]], -1)
 
         # mlp output is alpha and beta (see definitions below)
-        alpha_beta_Vx2 = self.mlp(tf.concat([children1_VxD, children2_VxD], axis=1))
+        alpha_beta_Vx2 = self.mlp(tf.concat([expanded1_VxD1, expanded2_VxD1], -1))
 
         # the fractional position between children1 (alpha=0) and children2 (alpha=1)
         alpha_V = alpha_beta_Vx2[:, 0]  # type: ignore
