@@ -57,8 +57,11 @@ class VCSMC(tf.Module):
         return tf.repeat(embeddings_NxD[tf.newaxis], self.K, axis=0)  # type: ignore
 
     @tf_function()
-    def __call__(self, data_NxSxA: Tensor) -> Tensor:
+    def __call__(self, data_NxSxA: Tensor, *, log=False) -> Tensor:
         """
+        Args:
+            data_NxSxA: Tensor of N sequences.
+            log: Whether to log to TensorBoard. Must be in a summary writer context.
         Returns a dict containing:
             log_Z_SMC: lower bound to the likelihood; should set cost = -log_Z_SMC
             log_likelihood_K: log likelihoods for each particle at the last merge step
@@ -143,7 +146,7 @@ class VCSMC(tf.Module):
                 embedding_KxD,
                 log_v_plus_K,
                 log_v_minus_K,
-            ) = self.proposal(N, r, leaf_counts_Kxt, embeddings_KxtxD)
+            ) = self.proposal(N, r, leaf_counts_Kxt, embeddings_KxtxD, log)
 
             # helper function
             def merge_K(arr_K, new_val_K):

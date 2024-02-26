@@ -21,7 +21,12 @@ class Proposal(tf.Module):
         self.seq_encoder = seq_encoder
 
     def __call__(
-        self, N: int, r: Tensor, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self,
+        N: int,
+        r: Tensor,
+        leaf_counts_Kxt: Tensor,
+        embeddings_KxtxD: Tensor,
+        log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
@@ -31,6 +36,7 @@ class Proposal(tf.Module):
             r: The current merge step (0 <= r <= N-2).
             leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
+            log: Whether to log to TensorBoard. Must be in a summary writer context.
         Returns:
             idx1_K: Indices of the first node to merge.
             idx2_K: Indices of the second node to merge.
@@ -92,7 +98,7 @@ class ExpBranchProposal(Proposal):
         return branch_param1, branch_param2
 
     @tf_function(reduce_retracing=True)
-    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD):
+    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD, log):
         K = leaf_counts_Kxt.shape[0]
         t = N - r  # number of subtrees
 
@@ -199,7 +205,7 @@ class EmbeddingProposal(Proposal):
         self.sample_branches = sample_branches
 
     @tf_function(reduce_retracing=True)
-    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD):
+    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD, log):
         K = leaf_counts_Kxt.shape[0]
         t = N - r  # number of subtrees
 
@@ -229,10 +235,11 @@ class EmbeddingProposal(Proposal):
         )
 
         # for debugging
-        # if t == N:
-        #     log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
-        #     log_weights /= tf.reduce_sum(log_weights)
-        #     tf.summary.histogram("Merge weights", log_weights)
+        if log:
+            if t == N:
+                log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
+                log_weights /= tf.reduce_sum(log_weights)
+                tf.summary.histogram("Merge weights", log_weights)
 
         flattened_log_weights_Kxtt = tf.reshape(merge_log_weights_Kxtxt, [K, t * t])
 
