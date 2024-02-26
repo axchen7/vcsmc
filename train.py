@@ -20,6 +20,7 @@ def train(
     root: str = "Healthy",
     epochs: int,
     start_epoch: int = 0,
+    graph_and_profile: bool = False,
 ):
     @tf_function()
     def train_step(batch_NxSxA: Tensor):
@@ -42,6 +43,16 @@ def train(
 
     results_dir = utils.create_results_dir()
     summary_writer = tf.summary.create_file_writer(results_dir)  # type: ignore
+
+    # ===== generate graph and profile =====
+
+    if graph_and_profile:
+        tf.summary.trace_on(graph=True, profiler=True)  # type: ignore
+        vcsmc(data_NxSxA)
+        with summary_writer.as_default():
+            tf.summary.trace_export(name="vcsmc", step=0, profiler_outdir=results_dir)  # type: ignore
+
+    # ===== train =====
 
     log_likelihoods_across_epochs = []
     avg_log_likelihoods_across_epochs = []
