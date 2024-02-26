@@ -2,6 +2,7 @@ ipykernel
 tensorflow
 tensorflow_probability
 tensorboard
+tensorboard-plugin-profile
 numpy
 scipy
 matplotlib
