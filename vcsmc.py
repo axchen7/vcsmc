@@ -3,9 +3,9 @@ from typing import Literal
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
-from encoder_decoder import Decoder
+from encoders import Decoder
 from proposal import Proposal
-from q_matrix import QMatrix
+from q_matrix_decoders import QMatrix
 from type_utils import Tensor, tf_function
 from vcsmc_utils import (
     build_newick_tree,

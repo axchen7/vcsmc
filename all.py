@@ -5,10 +5,10 @@ Imports everything relevant for training the model.
 import keras
 
 from distances import *
-from encoder_decoder import *
+from encoders import *
 from phy import *
 from poincare_utils import *
 from proposal import *
-from q_matrix import *
+from q_matrix_decoders import *
 from train import *
 from vcsmc import *

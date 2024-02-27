@@ -4,7 +4,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 
 import distances
-import encoder_decoder
+import encoders
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 from vcsmc_utils import gather_K, gather_K2
@@ -15,7 +15,7 @@ class Proposal(tf.Module):
     Proposal distribution for selecting two nodes to merge and sampling branch lengths.
     """
 
-    def __init__(self, seq_encoder: encoder_decoder.SequenceEncoder):
+    def __init__(self, seq_encoder: encoders.SequenceEncoder):
         super().__init__()
 
         self.seq_encoder = seq_encoder
@@ -62,7 +62,7 @@ class ExpBranchProposal(Proposal):
 
     def __init__(
         self,
-        seq_encoder: encoder_decoder.SequenceEncoder,
+        seq_encoder: encoders.SequenceEncoder,
         *,
         N: int,
         initial_branch_len: float = 1.0,
@@ -179,8 +179,8 @@ class EmbeddingProposal(Proposal):
     def __init__(
         self,
         distance: distances.Distance,
-        seq_encoder: encoder_decoder.SequenceEncoder,
-        merge_encoder: encoder_decoder.MergeEncoder,
+        seq_encoder: encoders.SequenceEncoder,
+        merge_encoder: encoders.MergeEncoder,
         *,
         sample_merge_temp: float = 1.0,
         sample_branches: bool = False,
