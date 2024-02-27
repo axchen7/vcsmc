@@ -4,7 +4,7 @@ import tensorflow as tf
 from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
 
-from proposal import EmbeddingProposal
+from proposals import EmbeddingProposal
 from type_utils import Tensor
 from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged

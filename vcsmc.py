@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from constants import DTYPE_FLOAT
 from encoders import Decoder
-from proposal import Proposal
+from proposals import Proposal
 from q_matrix_decoders import QMatrix
 from type_utils import Tensor, tf_function
 from vcsmc_utils import (
