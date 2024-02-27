@@ -45,11 +45,10 @@ class DenseQMatrix(QMatrix):
 
         # normalize off-diagonal entries within each row
         denom = tf.reduce_sum(Q, 1, True)
-        denom = tf.repeat(denom, self.A, 1)
         Q /= denom
 
-        # set diagonal to negative sum of off-diagonal entries
-        hyphens = tf.reduce_sum(Q, 1)
+        # set diagonal to -1 (sum of off-diagonal entries)
+        hyphens = tf.ones(self.A, DTYPE_FLOAT)
         Q = tf.linalg.set_diag(Q, -hyphens)
         return Q
 
