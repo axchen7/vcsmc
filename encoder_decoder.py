@@ -106,26 +106,31 @@ class MLPMergeEncoder(MergeEncoder):
 
         self.mlp = None
 
-    def create_mlp(self, D: int):
+    def create_mlp(self, D: int, D1: int):
         mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([2 * D], dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Input([2 * D1], dtype=DTYPE_FLOAT))
         mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
         mlp.add(keras.layers.Dense(D, dtype=DTYPE_FLOAT))
         return mlp
 
     @tf_function(reduce_retracing=True)
     def __call__(self, children1_VxD, children2_VxD):
+        # D1 is the dimensionality of the expanded children
+        expanded1_VxD1 = self.distance.feature_expand(children1_VxD)
+        expanded2_VxD1 = self.distance.feature_expand(children2_VxD)
+
         if self.mlp is None:
             D = children1_VxD.shape[1]
-            self.mlp = self.create_mlp(D)
+            D1 = expanded1_VxD1.shape[1]
+            self.mlp = self.create_mlp(D, D1)
 
         return self.distance.normalize(
-            self.mlp(tf.concat([children1_VxD, children2_VxD], axis=1))
+            self.mlp(tf.concat([expanded1_VxD1, expanded2_VxD1], axis=1))
         )
 
 
 class HyperbolicMLPMergeEncoder(MergeEncoder):
-    def __init__(self, *, width: int, depth: int):
+    def __init__(self, distance: Distance, *, width: int, depth: int):
         """
         Args:
             width: Width of each hidden layer.
@@ -134,32 +139,28 @@ class HyperbolicMLPMergeEncoder(MergeEncoder):
 
         super().__init__()
 
+        self.distance = distance
         self.width = width
         self.depth = depth
 
         self.mlp = None
 
-    def create_mlp(self, D: int):
+    def create_mlp(self, D1: int):
         mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([2 * D], dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Input([2 * D1], dtype=DTYPE_FLOAT))
         mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
         mlp.add(keras.layers.Dense(2, dtype=DTYPE_FLOAT))
         return mlp
 
     @tf_function(reduce_retracing=True)
     def __call__(self, children1_VxD, children2_VxD):
+        # D1 is the dimensionality of the expanded children
+        expanded1_VxD1 = self.distance.feature_expand(children1_VxD)
+        expanded2_VxD1 = self.distance.feature_expand(children2_VxD)
+
         if self.mlp is None:
-            D = children1_VxD.shape[1]
-            self.mlp = self.create_mlp(D + 1)  # add 1 dimension for the squared norm
-
-        # append squared norm as a feature, which captures the vector's distance
-        # from the Poincaré disk's center
-
-        squared_norms1_V = tf.reduce_sum(tf.square(children1_VxD), -1)
-        squared_norms2_V = tf.reduce_sum(tf.square(children2_VxD), -1)
-
-        expanded1_VxD1 = tf.concat([children1_VxD, squared_norms1_V[:, tf.newaxis]], -1)
-        expanded2_VxD1 = tf.concat([children2_VxD, squared_norms2_V[:, tf.newaxis]], -1)
+            D1 = expanded1_VxD1.shape[1]
+            self.mlp = self.create_mlp(D1)
 
         # mlp output is alpha and beta (see definitions below)
         alpha_beta_Vx2 = self.mlp(tf.concat([expanded1_VxD1, expanded2_VxD1], -1))

@@ -14,6 +14,14 @@ class Distance(tf.Module):
         """
         return vectors_VxD
 
+    @tf_function(reduce_retracing=True)
+    def feature_expand(self, vectors_VxD: Tensor) -> Tensor:
+        """
+        Given a tensor of shape (V, D), expands it to a tensor of shape (V, ?),
+        making each vector suitable as inputs to an encoder.
+        """
+        return vectors_VxD
+
     def __call__(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
         """
         Given two tensors of shape (V, D) containing normalized vectors,returns
@@ -49,6 +57,19 @@ class Hyperbolic(Distance):
 
         unit_vectors_VxD = vectors_VxD / norms_V[:, tf.newaxis]
         return unit_vectors_VxD * new_norms_V[:, tf.newaxis]
+
+    @tf_function()
+    def feature_expand(self, vectors_VxD):
+        # return a normalized vector with the norm appended as a feature, which
+        # captures the vector's distance from the Poincaré disk's center
+
+        # the norm is passed through atanh() to expand it from [0, 1]
+        # to [0, inf]
+
+        norms_V = tf.norm(vectors_VxD, axis=-1)
+        new_norms_V = tf.atanh(norms_V)
+        unit_vectors_VxD = vectors_VxD / norms_V[:, tf.newaxis]
+        return tf.concat([unit_vectors_VxD, new_norms_V[:, tf.newaxis]], axis=-1)
 
     @tf_function()
     def __call__(self, vectors1_VxD, vectors2_VxD):
