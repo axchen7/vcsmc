@@ -10,6 +10,10 @@ class QMatrix(tf.Module):
         """Add to cost."""
         return tf.constant(0, DTYPE_FLOAT)
 
+    def stat_probs(self) -> Tensor:
+        """Returns the stationary probabilities."""
+        raise NotImplementedError
+
     def __call__(self) -> Tensor:
         """Returns the Q matrix."""
         raise NotImplementedError
@@ -26,6 +30,13 @@ class DenseQMatrix(QMatrix):
 
         self.A = A
         self.log_Q = tf.Variable(tf.constant(0, DTYPE_FLOAT, [A, A]), name="log_Q")
+
+    @tf_function()
+    def stat_probs(self):
+        # find e^(Qt) as t -> inf; then, stationary distribution is in every row
+        Q = self()
+        expm_limit = tf.linalg.expm(Q * 1e3)
+        return expm_limit[0]  # type: ignore
 
     @tf_function()
     def __call__(self):
