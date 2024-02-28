@@ -1,6 +1,8 @@
+import keras
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
+from encoders import mlp_add_hidden_layers
 from type_utils import Tensor, tf_function
 
 
@@ -75,6 +77,85 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         # return only shape (1,1,A,A), but assume broadcasting rules apply...
         Q_matrix_1x1xAxA = Q_matrix_AxA[tf.newaxis, tf.newaxis]
         return Q_matrix_1x1xAxA
+
+    @tf_function(reduce_retracing=True)
+    def stat_probs_VxSxA(self, embeddings_VxD):
+        # find e^(Qt) as t -> inf; then, stationary distribution is in every row
+        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD)
+        expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * self.t_inf)
+        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]  # type: ignore
+        return stat_probs_VxSxA
+
+
+class DenseMLPQMatrixDecoder(QMatrixDecoder):
+    """
+    Use a multi-layer perceptron to learn every entry in the Q matrix (except
+    the diagonal).
+    """
+
+    def __init__(
+        self,
+        *,
+        A: int,
+        width: int,
+        depth: int,
+        baseline: float = 0.1,
+        t_inf: float = 1e3,
+    ):
+        """
+        Args:
+            A: Alphabet size.
+            width: Width of each hidden layer.
+            depth: Number of hidden layers.
+            baseline: Baseline probability for each of the A letters, from 0 to 1.
+                Take this much of the probability mass from the uniform distribution 1/A.
+                Helps prevent the model from converging to a degenerate solution.
+            t_inf: Large t value used to approximate the stationary distribution.
+        """
+
+        super().__init__()
+
+        self.A = A
+        self.width = width
+        self.depth = depth
+        self.baseline = tf.constant(baseline, dtype=DTYPE_FLOAT)
+        self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
+
+        self.mlp = None
+
+    def create_mlp(self, D: int):
+        mlp = keras.Sequential()
+        mlp.add(keras.layers.Input([D], dtype=DTYPE_FLOAT))
+        mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
+        mlp.add(keras.layers.Dense(self.A * (self.A - 1), dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Reshape([self.A, self.A - 1]))
+        mlp.add(keras.layers.Softmax(-1, dtype=DTYPE_FLOAT))
+        return mlp
+
+    @tf_function(reduce_retracing=True)
+    def Q_matrix_VxSxAxA(self, embeddings_VxD):
+        if self.mlp is None:
+            D = embeddings_VxD.shape[1]
+            self.mlp = self.create_mlp(D)
+
+        V = tf.shape(embeddings_VxD)[0]  # type: ignore
+
+        # get off-diagonal entries
+        Q_matrix_VxAxA1 = self.mlp(embeddings_VxD)
+
+        # expand diagonal entries into new column at the end
+        diag_VxA1 = tf.linalg.diag_part(Q_matrix_VxAxA1)
+        diag_VxA = tf.concat([diag_VxA1, tf.zeros([V, 1], DTYPE_FLOAT)], -1)
+        diag_VxAx1 = tf.expand_dims(diag_VxA, -1)
+        Q_matrix_VxAxA = tf.concat([Q_matrix_VxAxA1, diag_VxAx1], -1)
+
+        # set diagonal to -1 (sum of off-diagonal entries)
+        hyphens_VxA = tf.ones([V, self.A], DTYPE_FLOAT)
+        Q_matrix_VxAxA = tf.linalg.set_diag(Q_matrix_VxAxA, -hyphens_VxA)
+
+        # return only shape (V,1,A,A), but assume broadcasting rules apply...
+        Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, tf.newaxis]
+        return Q_matrix_Vx1xAxA
 
     @tf_function(reduce_retracing=True)
     def stat_probs_VxSxA(self, embeddings_VxD):
