@@ -2,6 +2,7 @@ import keras
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
+from distances import Distance
 from encoders import mlp_add_hidden_layers
 from type_utils import Tensor, tf_function
 
@@ -95,6 +96,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
     def __init__(
         self,
+        distance: Distance,
         *,
         A: int,
         width: int,
@@ -115,6 +117,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
         super().__init__()
 
+        self.distance = distance
         self.A = A
         self.width = width
         self.depth = depth
@@ -123,9 +126,9 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
         self.mlp = None
 
-    def create_mlp(self, D: int):
+    def create_mlp(self, D1: int):
         mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([D], dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Input([D1], dtype=DTYPE_FLOAT))
         mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
         mlp.add(keras.layers.Dense(self.A * (self.A - 1), dtype=DTYPE_FLOAT))
         mlp.add(keras.layers.Reshape([self.A, self.A - 1]))
@@ -134,14 +137,16 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
     @tf_function(reduce_retracing=True)
     def Q_matrix_VxSxAxA(self, embeddings_VxD):
-        if self.mlp is None:
-            D = embeddings_VxD.shape[1]
-            self.mlp = self.create_mlp(D)
-
         V = tf.shape(embeddings_VxD)[0]  # type: ignore
 
+        expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
+
+        if self.mlp is None:
+            D1 = expanded_VxD1.shape[1]
+            self.mlp = self.create_mlp(D1)
+
         # get off-diagonal entries
-        Q_matrix_VxAxA1 = self.mlp(embeddings_VxD)
+        Q_matrix_VxAxA1 = self.mlp(expanded_VxD1)
 
         # expand diagonal entries into new column at the end
         diag_VxA1 = tf.linalg.diag_part(Q_matrix_VxAxA1)
