@@ -40,20 +40,27 @@ def compute_log_double_factorials_2N(N) -> Tensor:
 
 @tf_function()
 def compute_felsenstein_likelihoods_KxSxA(
-    Q,
+    Q_matrix_KxSxAxA,
     likelihoods1_KxSxA,
     likelihoods2_KxSxA,
     branch1_K,
     branch2_K,
 ) -> Tensor:
-    Qbranch1_KxAxA = tf.tensordot(branch1_K, Q, 0)
-    Qbranch2_KxAxA = tf.tensordot(branch2_K, Q, 0)
+    NA = tf.newaxis  # shorthand
+    Qbranch1_KxSxAxA = Q_matrix_KxSxAxA * branch1_K[:, NA, NA, NA]
+    Qbranch2_KxSxAxA = Q_matrix_KxSxAxA * branch2_K[:, NA, NA, NA]
 
-    P1_KxAxA = tf.linalg.expm(Qbranch1_KxAxA)
-    P2_KxAxA = tf.linalg.expm(Qbranch2_KxAxA)
+    P1_KxSxAxA = tf.linalg.expm(Qbranch1_KxSxAxA)
+    P2_KxSxAxA = tf.linalg.expm(Qbranch2_KxSxAxA)
 
-    prob1_KxSxA = tf.matmul(likelihoods1_KxSxA, P1_KxAxA)
-    prob2_KxSxA = tf.matmul(likelihoods2_KxSxA, P2_KxAxA)
+    likelihoods1_KxSxAx1 = likelihoods1_KxSxA[:, :, :, NA]
+    likelihoods2_KxSxAx1 = likelihoods2_KxSxA[:, :, :, NA]
+
+    prob1_KxSxAx1 = tf.matmul(P1_KxSxAxA, likelihoods1_KxSxAx1)
+    prob2_KxSxAx1 = tf.matmul(P2_KxSxAxA, likelihoods2_KxSxAx1)
+
+    prob1_KxSxA = tf.squeeze(prob1_KxSxAx1, -1)
+    prob2_KxSxA = tf.squeeze(prob2_KxSxAx1, -1)
 
     return prob1_KxSxA * prob2_KxSxA
 
@@ -64,13 +71,13 @@ def compute_log_likelihood_and_pi_K(
     branch2_lengths_Kxr,
     leaf_counts_Kxt,
     felsensteins_KxtxSxA,
-    decoded_embeddings_KxtxSxA,
+    stat_probs_KxtxSxA,
     prior_dist: Literal["gamma", "exp"],
     prior_branch_len,
     log_double_factorials_2N,
 ) -> Tensor:
     """
-    Dots Felsenstein probabilities with decoded embeddings and multiplies
+    Dots Felsenstein probabilities with stationary probabilities and multiplies
     across sites and subtrees, yielding likelihood P(Y|forest,theta). Then
     multiplies by the prior over topologies and branch lengths to add the
     P(forest|theta) factor, yielding the measure pi(forest) = P(Y,forest|theta).
@@ -81,10 +88,8 @@ def compute_log_likelihood_and_pi_K(
         log_pi_K: log P(Y,forest|theta)
     """
 
-    # dot Felsenstein probabilities with decoded embeddings (along axis A)
-    likelihoods_KxtxS = tf.reduce_sum(
-        decoded_embeddings_KxtxSxA * felsensteins_KxtxSxA, 3
-    )
+    # dot Felsenstein probabilities with stationary probabilities (along axis A)
+    likelihoods_KxtxS = tf.reduce_sum(felsensteins_KxtxSxA * stat_probs_KxtxSxA, 3)
     log_likelihoods_KxtxS = tf.math.log(likelihoods_KxtxS)
     log_likelihood_K = tf.reduce_sum(log_likelihoods_KxtxS, [1, 2])
 

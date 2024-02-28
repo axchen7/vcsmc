@@ -15,6 +15,7 @@ from vcsmc import VCSMC
 def train(
     vcsmc: VCSMC,
     optimizer: keras.optimizers.Optimizer,
+    taxa_N: Tensor,
     data_NxSxA: Tensor,
     *,
     root: str = "Healthy",
@@ -31,13 +32,26 @@ def train(
             best_newick_tree = result["best_newick_tree"]
 
             cost = -log_Z_SMC
-            cost += vcsmc.q_matrix.regularization()  # scale by N and S?
+            cost += vcsmc.q_matrix_decoder.regularization()  # scale by N and S?
 
         variables = tape.watched_variables()
         grads = tape.gradient(cost, variables)
         optimizer.apply_gradients(zip(grads, variables))  # type: ignore
 
         return log_Z_SMC, log_likelihood_K, best_newick_tree
+
+    @tf_function()
+    def get_avg_root_Q_matrix_AxA():
+        root_idx = tf.argmax(taxa_N == root)
+
+        root_embedding_1xD = vcsmc.proposal.seq_encoder(
+            tf.expand_dims(data_NxSxA[root_idx], 0)
+        )
+        root_Q_SxAxA = tf.squeeze(
+            vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(root_embedding_1xD), 0
+        )
+        avg_root_Q_AxA = tf.reduce_mean(root_Q_SxAxA, 0)
+        return avg_root_Q_AxA
 
     N = data_NxSxA.shape[0]
 
@@ -103,10 +117,10 @@ def train(
 
                 # ===== Q matrix =====
 
-                Q = vcsmc.q_matrix()
-                plt.imshow(Q)
-
-                tf.summary.image("Q matrix", utils.cur_plt_to_tf_image())
+                plt.imshow(get_avg_root_Q_matrix_AxA())
+                tf.summary.image(
+                    "Root Q matrix (average across sites)", utils.cur_plt_to_tf_image()
+                )
 
     # ===== done training! =====
 

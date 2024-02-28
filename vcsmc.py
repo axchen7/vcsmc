@@ -3,9 +3,8 @@ from typing import Literal
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
-from encoders import Decoder
 from proposals import Proposal
-from q_matrix_decoders import QMatrix
+from q_matrix_decoders import QMatrixDecoder
 from type_utils import Tensor, tf_function
 from vcsmc_utils import (
     build_newick_tree,
@@ -21,9 +20,8 @@ from vcsmc_utils import (
 class VCSMC(tf.Module):
     def __init__(
         self,
-        q_matrix: QMatrix,
+        q_matrix_decoder: QMatrixDecoder,
         proposal: Proposal,
-        decoder: Decoder,
         taxa_N: Tensor,
         *,
         K: int,
@@ -42,9 +40,8 @@ class VCSMC(tf.Module):
 
         super().__init__()
 
-        self.q_matrix = q_matrix
+        self.q_matrix_decoder = q_matrix_decoder
         self.proposal = proposal
-        self.decoder = decoder
         self.taxa_N = taxa_N
         self.K = K
         self.prior_dist: Literal["gamma", "exp"] = prior_dist
@@ -76,7 +73,6 @@ class VCSMC(tf.Module):
         K = self.K
 
         log_double_factorials_2N = compute_log_double_factorials_2N(N)
-        Q = self.q_matrix()
 
         # at each step r, there are t = N-r >= 2 trees in the forest.
         # initially, r = 0 and t = N
@@ -89,6 +85,7 @@ class VCSMC(tf.Module):
 
         leaf_counts_Kxt = tf.ones([K, N], dtype=tf.int32)
         embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
+
         # Felsenstein probabilities for computing pi(s)
         felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
 
@@ -171,23 +168,26 @@ class VCSMC(tf.Module):
                 gather_K(leaf_counts_Kxt, idx1_K) + gather_K(leaf_counts_Kxt, idx2_K),
             )
             embeddings_KxtxD = merge_K(embeddings_KxtxD, embedding_KxD)
-            felsensteins_KxtxSxA = merge_K(
-                felsensteins_KxtxSxA,
-                compute_felsenstein_likelihoods_KxSxA(
-                    Q,
-                    gather_K(felsensteins_KxtxSxA, idx1_K),
-                    gather_K(felsensteins_KxtxSxA, idx2_K),
-                    branch1_K,
-                    branch2_K,
-                ),
+
+            # ===== compute Felsenstein likelihoods =====
+
+            Q_matrix_KxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(embedding_KxD)
+
+            felsensteins_KxSxA = compute_felsenstein_likelihoods_KxSxA(
+                Q_matrix_KxSxAxA,
+                gather_K(felsensteins_KxtxSxA, idx1_K),
+                gather_K(felsensteins_KxtxSxA, idx2_K),
+                branch1_K,
+                branch2_K,
             )
+            felsensteins_KxtxSxA = merge_K(felsensteins_KxtxSxA, felsensteins_KxSxA)
 
             # ===== compute new likelihood, pi, and weight =====
 
             prev_log_pi_K = log_pi_K
 
-            decoded_embeddings_KxtxSxA = tf.vectorized_map(
-                self.decoder, embeddings_KxtxD
+            stat_probs_KxtxSxA = tf.vectorized_map(
+                self.q_matrix_decoder.stat_probs_VxSxA, embeddings_KxtxD
             )
 
             log_likelihood_K, log_pi_K = compute_log_likelihood_and_pi_K(
@@ -195,7 +195,7 @@ class VCSMC(tf.Module):
                 branch2_lengths_Kxr,
                 leaf_counts_Kxt,
                 felsensteins_KxtxSxA,
-                decoded_embeddings_KxtxSxA,
+                stat_probs_KxtxSxA,
                 self.prior_dist,
                 self.prior_branch_len,
                 log_double_factorials_2N,
