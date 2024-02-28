@@ -32,15 +32,18 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     embeddings.
     """
 
-    def __init__(self, *, A: int):
+    def __init__(self, *, A: int, t_inf: float = 1e3):
         """
         Args:
             A: The alphabet size.
+            t_inf: Large t value used to approximate the stationary distribution.
         """
 
         super().__init__()
 
         self.A = A
+        self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
+
         self.log_Q_matrix_AxA = tf.Variable(
             tf.constant(0, DTYPE_FLOAT, [A, A]), name="log_Q"
         )
@@ -77,7 +80,7 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     def stat_probs_VxSxA(self, embeddings_VxD):
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
         Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD)
-        expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * 1e3)
+        expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * self.t_inf)
         stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]  # type: ignore
         return stat_probs_VxSxA
 
