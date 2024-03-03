@@ -177,15 +177,13 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
     """
     Use a multi-layer perceptron to learn every entry in the Q matrix (except
     the diagonal). Q-matrix is local to each embedding, and varies across sites.
-    The MLP uses the embedding and one-hot encoding of the site index as input.
-    The MLP's input dimension is the (feature-expanded) embedding dimension + S
-    (the number of sites).
     """
 
     def __init__(
         self,
         distance: Distance,
         *,
+        S: int,
         A: int,
         width: int,
         depth: int,
@@ -194,6 +192,7 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
     ):
         """
         Args:
+            S: Number of sites.
             A: Alphabet size.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
@@ -206,6 +205,7 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
         super().__init__()
 
         self.distance = distance
+        self.S = S
         self.A = A
         self.width = width
         self.depth = depth
@@ -218,8 +218,8 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
         mlp = keras.Sequential()
         mlp.add(keras.layers.Input([D1], dtype=DTYPE_FLOAT))
         mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
-        mlp.add(keras.layers.Dense(self.A * (self.A - 1), dtype=DTYPE_FLOAT))
-        mlp.add(keras.layers.Reshape([self.A, self.A - 1]))
+        mlp.add(keras.layers.Dense(self.S * self.A * (self.A - 1), dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Reshape([self.S, self.A, self.A - 1]))
         mlp.add(keras.layers.Softmax(-1, dtype=DTYPE_FLOAT))
         return mlp
 
@@ -234,21 +234,19 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
             self.mlp = self.create_mlp(D1)
 
         # get off-diagonal entries
-        Q_matrix_VxAxA1 = self.mlp(expanded_VxD1)
+        Q_matrix_VxSxAxA1 = self.mlp(expanded_VxD1)
 
         # expand diagonal entries into new column at the end
-        diag_VxA1 = tf.linalg.diag_part(Q_matrix_VxAxA1)
-        diag_VxA = tf.concat([diag_VxA1, tf.zeros([V, 1], DTYPE_FLOAT)], -1)
-        diag_VxAx1 = tf.expand_dims(diag_VxA, -1)
-        Q_matrix_VxAxA = tf.concat([Q_matrix_VxAxA1, diag_VxAx1], -1)
+        diag_VxSxA1 = tf.linalg.diag_part(Q_matrix_VxSxAxA1)
+        diag_VxSxA = tf.concat([diag_VxSxA1, tf.zeros([V, self.S, 1], DTYPE_FLOAT)], -1)
+        diag_VxSxAx1 = tf.expand_dims(diag_VxSxA, -1)
+        Q_matrix_VxSxAxA = tf.concat([Q_matrix_VxSxAxA1, diag_VxSxAx1], -1)
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        hyphens_VxA = tf.ones([V, self.A], DTYPE_FLOAT)
-        Q_matrix_VxAxA = tf.linalg.set_diag(Q_matrix_VxAxA, -hyphens_VxA)
+        hyphens_VxSxA = tf.ones([V, self.S, self.A], DTYPE_FLOAT)
+        Q_matrix_VxSxAxA = tf.linalg.set_diag(Q_matrix_VxSxAxA, -hyphens_VxSxA)
 
-        # return only shape (V,1,A,A), but assume broadcasting rules apply...
-        Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, tf.newaxis]
-        return Q_matrix_Vx1xAxA
+        return Q_matrix_VxSxAxA
 
     @tf_function(reduce_retracing=True)
     def stat_probs_VxSxA(self, embeddings_VxD):
