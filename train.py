@@ -53,6 +53,14 @@ def train(
         avg_root_Q_AxA = tf.reduce_mean(root_Q_SxAxA, 0)
         return avg_root_Q_AxA
 
+    @tf_function()
+    def get_data_reconstruction_cosine_similarity():
+        embeddings_NxD = vcsmc.proposal.seq_encoder(data_NxSxA)
+        reconstructed_NxSxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(embeddings_NxD)
+        sim = tf.reduce_sum(data_NxSxA * reconstructed_NxSxA)
+        sim /= tf.norm(data_NxSxA) * tf.norm(reconstructed_NxSxA)
+        return sim
+
     N = data_NxSxA.shape[0]
 
     results_dir = utils.create_results_dir()
@@ -81,9 +89,15 @@ def train(
             avg_log_likelihoods_across_epochs.append(log_likelihoods_avg)
             log_likelihoods_across_epochs.append(log_likelihood_K)
 
+            cosine_similarity = get_data_reconstruction_cosine_similarity()
+
             tf.summary.scalar("Elbo", log_Z_SMC)
             tf.summary.scalar("Log likelihood avg", log_likelihoods_avg)
             tf.summary.scalar("Log likelihoods std dev", log_likelihoods_std_dev)
+            tf.summary.scalar(
+                "Data reconstruction cosine similarity",
+                cosine_similarity,
+            )
             tf.summary.histogram("Log likelihoods", log_likelihood_K)
 
             if (epoch + 1) % 4 == 0:
