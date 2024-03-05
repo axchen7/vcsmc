@@ -103,7 +103,6 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         A: int,
         width: int,
         depth: int,
-        baseline: float = 0.1,
         t_inf: float = 1e3,
     ):
         """
@@ -111,9 +110,6 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
             A: Alphabet size.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
-            baseline: Baseline probability for each of the A letters, from 0 to 1.
-                Take this much of the probability mass from the uniform distribution 1/A.
-                Helps prevent the model from converging to a degenerate solution.
             t_inf: Large t value used to approximate the stationary distribution.
         """
 
@@ -123,7 +119,6 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         self.A = A
         self.width = width
         self.depth = depth
-        self.baseline = tf.constant(baseline, dtype=DTYPE_FLOAT)
         self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
 
         self.mlp = None
@@ -187,7 +182,6 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
         A: int,
         width: int,
         depth: int,
-        baseline: float = 0.1,
         t_inf: float = 1e3,
     ):
         """
@@ -196,9 +190,6 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
             A: Alphabet size.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
-            baseline: Baseline probability for each of the A letters, from 0 to 1.
-                Take this much of the probability mass from the uniform distribution 1/A.
-                Helps prevent the model from converging to a degenerate solution.
             t_inf: Large t value used to approximate the stationary distribution.
         """
 
@@ -209,7 +200,6 @@ class DensePerSiteMLPQMatrixDecoder(QMatrixDecoder):
         self.A = A
         self.width = width
         self.depth = depth
-        self.baseline = tf.constant(baseline, dtype=DTYPE_FLOAT)
         self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
 
         self.mlp = None
@@ -371,7 +361,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         A: int,
         width: int,
         depth: int,
-        baseline: float = 0.1,
+        baseline: float = 0.5,
         t_inf: float = 1e3,
     ):
         """
@@ -380,7 +370,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
             A: Alphabet size.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
-            baseline: Baseline probability for each of the A letters, from 0 to 1.
+            baseline: Baseline probabilities for stat_probs, for each of the A letters, from 0 to 1.
                 Take this much of the probability mass from the uniform distribution 1/A.
                 Helps prevent the model from converging to a degenerate solution.
             t_inf: Large t value used to approximate the stationary distribution.
@@ -462,4 +452,9 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
             self.mlp = self.create_mlp(D1)
 
         stat_probs_VxSxA = self.mlp(expanded_VxD1)
+
+        stat_probs_VxSxA = (
+            self.baseline * (1 / self.A) + (1 - self.baseline) * stat_probs_VxSxA  # type: ignore
+        )
+
         return stat_probs_VxSxA
