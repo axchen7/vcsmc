@@ -352,3 +352,107 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         stat_probs_A = self.stats_probs_A()
         stat_probs_norm_squared = tf.reduce_sum(tf.math.square(stat_probs_A))
         return self.reg_lambda * stat_probs_norm_squared
+
+
+class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
+    """
+    Parameterize the Q matrix by factoring it into A holding times and A
+    stationary probabilities. The holding times are represented by global
+    trainable variables, while the stationary probabilities are local to each
+    embedding, and vary across sites. An MLP is used to learn the stationary
+    probabilities.
+    """
+
+    def __init__(
+        self,
+        distance: Distance,
+        *,
+        S: int,
+        A: int,
+        width: int,
+        depth: int,
+        baseline: float = 0.1,
+        t_inf: float = 1e3,
+    ):
+        """
+        Args:
+            S: Number of sites.
+            A: Alphabet size.
+            width: Width of each hidden layer.
+            depth: Number of hidden layers.
+            baseline: Baseline probability for each of the A letters, from 0 to 1.
+                Take this much of the probability mass from the uniform distribution 1/A.
+                Helps prevent the model from converging to a degenerate solution.
+            t_inf: Large t value used to approximate the stationary distribution.
+        """
+
+        super().__init__()
+
+        self.distance = distance
+        self.S = S
+        self.A = A
+        self.width = width
+        self.depth = depth
+        self.baseline = tf.constant(baseline, dtype=DTYPE_FLOAT)
+        self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
+
+        self.log_holding_times_A = tf.Variable(
+            tf.constant(0, DTYPE_FLOAT, [A]), name="log_holding_times"
+        )
+
+        self.mlp = None
+
+    @tf_function()
+    def holding_times_A(self):
+        # one holding time can be fixed to match degrees of freedom
+        holding_times_A = tf.tensor_scatter_nd_update(
+            self.log_holding_times_A, [[0]], [tf.constant(0, DTYPE_FLOAT)]
+        )
+        # use exp to ensure all entries are positive
+        holding_times_A = tf.exp(holding_times_A)
+        # normalize to ensure mean is 1
+        holding_times_A /= tf.reduce_mean(holding_times_A)
+        return holding_times_A
+
+    def create_mlp(self, D1: int):
+        mlp = keras.Sequential()
+        mlp.add(keras.layers.Input([D1], dtype=DTYPE_FLOAT))
+        mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
+        mlp.add(keras.layers.Dense(self.S * self.A, dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Reshape([self.S, self.A]))
+        mlp.add(keras.layers.Softmax(-1, dtype=DTYPE_FLOAT))
+        return mlp
+
+    @tf_function(reduce_retracing=True)
+    def Q_matrix_VxSxAxA(self, embeddings_VxD):
+        V = tf.shape(embeddings_VxD)[0]  # type: ignore
+
+        holding_times_A = self.holding_times_A()
+        stat_probs_VxSxA = self.stat_probs_VxSxA(embeddings_VxD)
+
+        holding_times_repeated_AxA = tf.repeat(holding_times_A[tf.newaxis], self.A, 0)
+        stat_probs_diag_VxSxAxA = tf.linalg.diag(stat_probs_VxSxA)
+
+        Q_matrix_VxSxAxA = tf.matmul(
+            holding_times_repeated_AxA, stat_probs_diag_VxSxAxA
+        )
+
+        # set the diagonals to the sum of the off-diagonal entries
+        Q_matrix_VxSxAxA = tf.linalg.set_diag(
+            Q_matrix_VxSxAxA, tf.zeros([V, self.S, self.A], DTYPE_FLOAT)
+        )
+        hyphens_VxSxA = tf.reduce_sum(Q_matrix_VxSxAxA, -1)
+        Q_matrix_VxSxAxA = tf.linalg.set_diag(Q_matrix_VxSxAxA, -hyphens_VxSxA)
+
+        return Q_matrix_VxSxAxA
+
+    @tf_function(reduce_retracing=True)
+    def stat_probs_VxSxA(self, embeddings_VxD):
+        expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
+
+        if self.mlp is None:
+            D1 = expanded_VxD1.shape[1]
+            self.mlp = self.create_mlp(D1)
+
+        stat_probs_VxSxA = self.mlp(expanded_VxD1)
+        return stat_probs_VxSxA
