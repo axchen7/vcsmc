@@ -403,16 +403,21 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         self.mlp = None
 
     @tf_function()
-    def holding_times_A(self):
+    def reciprocal_holding_times_A(self):
+        """
+        Reciprocal of the expected holding times of each letter in the alphabet.
+        """
+
         # one holding time can be fixed to match degrees of freedom
-        holding_times_A = tf.tensor_scatter_nd_update(
+        log_holding_times_A = tf.tensor_scatter_nd_update(
             self.log_holding_times_A, [[0]], [tf.constant(0, DTYPE_FLOAT)]
         )
+
         # use exp to ensure all entries are positive
-        holding_times_A = tf.exp(holding_times_A)
-        # normalize to ensure mean is 1
-        holding_times_A /= tf.reduce_mean(holding_times_A)
-        return holding_times_A
+        reciprocal_holding_times_A = tf.exp(-log_holding_times_A)
+        # normalize to ensure mean of reciprocal holding times is 1
+        reciprocal_holding_times_A /= tf.reduce_mean(reciprocal_holding_times_A)
+        return reciprocal_holding_times_A
 
     def create_mlp(self, D1: int):
         mlp = keras.Sequential()
@@ -427,14 +432,16 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(self, embeddings_VxD):
         V = tf.shape(embeddings_VxD)[0]  # type: ignore
 
-        holding_times_A = self.holding_times_A()
+        reciprocal_holding_times_A = self.reciprocal_holding_times_A()
         stat_probs_VxSxA = self.stat_probs_VxSxA(embeddings_VxD)
 
-        holding_times_repeated_AxA = tf.repeat(holding_times_A[tf.newaxis], self.A, 0)
+        reciprocal_holding_times_repeated_AxA = tf.repeat(
+            reciprocal_holding_times_A[tf.newaxis], self.A, 0
+        )
         stat_probs_diag_VxSxAxA = tf.linalg.diag(stat_probs_VxSxA)
 
         Q_matrix_VxSxAxA = tf.matmul(
-            holding_times_repeated_AxA, stat_probs_diag_VxSxAxA
+            reciprocal_holding_times_repeated_AxA, stat_probs_diag_VxSxAxA
         )
 
         # set the diagonals to the sum of the off-diagonal entries
