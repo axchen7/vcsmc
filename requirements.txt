@@ -1,4 +1,5 @@
 ipykernel
+ipywidgets
 tensorflow
 tensorflow_probability
 tensorboard
