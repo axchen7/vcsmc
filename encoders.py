@@ -179,20 +179,3 @@ class HyperbolicMLPMergeEncoder(MergeEncoder):
         # the point a distance beta on the line between the origin and mid
         parent_VxD = mid_V * beta_V[:, tf.newaxis]  # type: ignore
         return parent_VxD
-
-
-class Decoder(tf.Module):
-    """
-    Decodes an embedding into a sequence.
-    """
-
-    def __call__(self, embeddings_VxD: Tensor) -> Tensor:
-        """
-        Args:
-            embeddings_VxD: Encoded sequences.
-        Returns:
-            sequences_VxSxA: Decoded sequences.
-                The values along axis A are are a probability distribution over
-                the alphabet.
-        """
-        raise NotImplementedError
