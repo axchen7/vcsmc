@@ -93,7 +93,7 @@ class MLPMergeEncoder(MergeEncoder):
     def __init__(self, distance: Distance, *, width: int, depth: int):
         """
         Args:
-            distance: Used to normalize the embeddings.
+            distance: Used to feature expand and normalize the embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
         """
@@ -133,6 +133,7 @@ class HyperbolicMLPMergeEncoder(MergeEncoder):
     def __init__(self, distance: Distance, *, width: int, depth: int):
         """
         Args:
+            distance: Used to feature expand the embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
         """
@@ -179,3 +180,45 @@ class HyperbolicMLPMergeEncoder(MergeEncoder):
         # the point a distance beta on the line between the origin and mid
         parent_VxD = mid_V * beta_V[:, tf.newaxis]  # type: ignore
         return parent_VxD
+
+
+class HyperbolicGeodesicMergeEncoder(MergeEncoder):
+    """
+    Uses the point on the geodesic between the two children closest to the
+    origin as the parent embedding. The parent embedding is thus a deterministic
+    function of the children embeddings. Requires embeddings to have dimension
+    2.
+    """
+
+    @tf_function(reduce_retracing=True)
+    def __call__(self, children1_VxD, children2_VxD):
+        # require embeddings to have dimension 2
+        D = children1_VxD.shape[1]
+        tf.assert_equal(D, 2)
+
+        # all values are vectors (shape=[V, 2]) unless otherwise stated
+
+        p = children1_VxD
+        q = children2_VxD
+
+        r = (p + q) / 2
+        diff = p - q
+
+        n = tf.stack([-diff[:, 1], diff[:, 0]], 1)
+        nhat = n / tf.norm(n, axis=1, keepdims=True)
+
+        # scalars (shape=[V] because of vectorization);
+        p_dot_p = tf.reduce_sum(p * p, 1)
+        p_dot_r = tf.reduce_sum(p * r, 1)
+        p_dot_nhat = tf.reduce_sum(p * nhat, 1)
+
+        alpha = (p_dot_p - 2 * p_dot_r + 1) / (2 * p_dot_nhat)
+        # end scalars
+
+        s = r + alpha[:, tf.newaxis] * nhat
+
+        s_minus_p_norm = tf.norm(s - p, axis=1, keepdims=True)
+        s_norm = tf.norm(s, axis=1, keepdims=True)
+
+        m = s * (1 - s_minus_p_norm / s_norm)
+        return m
