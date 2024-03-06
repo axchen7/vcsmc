@@ -37,12 +37,11 @@ class Euclidean(Distance):
 
 
 class Hyperbolic(Distance):
-    def __init__(self):
+    def __init__(self, max_radius: float = 0.99):
         super().__init__()
 
-        self.logit_max_radius = tf.Variable(
-            0, name="logit_max_radius", dtype=DTYPE_FLOAT
-        )
+        self.max_radius = tf.constant(max_radius, dtype=DTYPE_FLOAT)
+
         self.log_scale = tf.Variable(0.0, dtype=DTYPE_FLOAT, name="log_scale")
 
     @tf_function()
@@ -50,10 +49,8 @@ class Hyperbolic(Distance):
         # return a vector with the same direction but with the norm passed
         # through tanh()
 
-        max_radius = tf.sigmoid(self.logit_max_radius)
-
         norms_V = tf.norm(vectors_VxD, axis=-1)
-        new_norms_V = tf.tanh(norms_V) * max_radius
+        new_norms_V = tf.tanh(norms_V) * self.max_radius
 
         unit_vectors_VxD = vectors_VxD / norms_V[:, tf.newaxis]
         return unit_vectors_VxD * new_norms_V[:, tf.newaxis]
