@@ -4,6 +4,17 @@ from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 
 
+@tf_function(reduce_retracing=True)
+def safe_norm(x: Tensor, axis=None) -> Tensor:
+    """
+    Computes the L2 norm of a tensor, adding a small epsilon to avoid NaN
+    gradients when the norm is zero.
+    """
+
+    epsilon = 1e-8
+    return tf.sqrt(tf.reduce_sum(tf.square(x), axis=axis) + epsilon)
+
+
 class Distance(tf.Module):
     @tf_function(reduce_retracing=True)
     def normalize(self, vectors_VxD: Tensor) -> Tensor:
@@ -33,7 +44,7 @@ class Distance(tf.Module):
 class Euclidean(Distance):
     @tf_function()
     def __call__(self, vectors1_VxD, vectors2_VxD):
-        return tf.norm(vectors1_VxD - vectors2_VxD, axis=-1)
+        return safe_norm(vectors1_VxD - vectors2_VxD, axis=-1)
 
 
 class Hyperbolic(Distance):
@@ -49,7 +60,7 @@ class Hyperbolic(Distance):
         # return a vector with the same direction but with the norm passed
         # through tanh()
 
-        norms_V = tf.norm(vectors_VxD, axis=-1)
+        norms_V = safe_norm(vectors_VxD, axis=-1)
         new_norms_V = tf.tanh(norms_V) * self.max_radius
 
         # avoid division by zero
@@ -64,7 +75,7 @@ class Hyperbolic(Distance):
         # the norm is passed through atanh() to expand it from [0, 1]
         # to [0, inf]
 
-        norms_V = tf.norm(vectors_VxD, axis=-1)
+        norms_V = safe_norm(vectors_VxD, axis=-1)
         new_norms_V = tf.atanh(norms_V)
         # avoid division by zero
         unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + 1e-8)
