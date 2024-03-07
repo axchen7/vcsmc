@@ -140,7 +140,7 @@ class VCSMC(tf.Module):
 
             # ===== resample =====
 
-            indexes = tf.random.categorical([log_weight_K], K)
+            indexes = tf.random.categorical([log_weight_K], K, tf.int32)
             indexes = tf.squeeze(indexes)
 
             merge1_indexes_Kxr = tf.gather(merge1_indexes_Kxr, indexes)
