@@ -356,7 +356,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         stat_probs_VxSxA = self.stat_probs_VxSxA(embeddings_VxD, site_positions_SxC)
 
         reciprocal_holding_times_repeated_AxA = tf.repeat(
-            reciprocal_holding_times_A[tf.newaxis], self.A, 0
+            reciprocal_holding_times_A[:, tf.newaxis], self.A, 1
         )
         stat_probs_diag_VxSxAxA = tf.linalg.diag(stat_probs_VxSxA)
 
