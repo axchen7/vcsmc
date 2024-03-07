@@ -221,4 +221,9 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         s_norm = tf.norm(s, axis=1, keepdims=True)
 
         m = s * (1 - s_minus_p_norm / s_norm)
+
+        # if any resulting vectors contain non-finite values, replace with
+        # midpoint between p and q
+        m = tf.where(tf.math.is_finite(m), m, r)
+
         return m
