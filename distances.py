@@ -3,6 +3,8 @@ import tensorflow as tf
 from constants import DTYPE_FLOAT
 from type_utils import Tensor, tf_function
 
+EPSILON = 1e-8
+
 
 @tf_function(reduce_retracing=True)
 def safe_norm(x: Tensor, axis=None) -> Tensor:
@@ -11,8 +13,7 @@ def safe_norm(x: Tensor, axis=None) -> Tensor:
     gradients when the norm is zero.
     """
 
-    epsilon = 1e-8
-    return tf.sqrt(tf.reduce_sum(tf.square(x), axis=axis) + epsilon)
+    return tf.sqrt(tf.reduce_sum(tf.square(x), axis=axis) + EPSILON)
 
 
 class Distance(tf.Module):
@@ -64,7 +65,7 @@ class Hyperbolic(Distance):
         new_norms_V = tf.tanh(norms_V) * self.max_radius
 
         # avoid division by zero
-        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + 1e-8)
+        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + EPSILON)
         return unit_vectors_VxD * new_norms_V[:, tf.newaxis]
 
     @tf_function()
@@ -78,21 +79,20 @@ class Hyperbolic(Distance):
         norms_V = safe_norm(vectors_VxD, axis=-1)
         new_norms_V = tf.atanh(norms_V)
         # avoid division by zero
-        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + 1e-8)
+        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + EPSILON)
         return tf.concat([unit_vectors_VxD, new_norms_V[:, tf.newaxis]], axis=-1)
 
     @tf_function()
     def __call__(self, vectors1_VxD, vectors2_VxD):
         # see https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance
-        # acosh version causes NaNs, but asinh version works
 
         xy_norm_sq_V = tf.reduce_sum(tf.square(vectors1_VxD - vectors2_VxD), axis=-1)
         one_minus_x_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors1_VxD), axis=-1)
         one_minus_y_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors2_VxD), axis=-1)
 
-        distance_V = 2 * tf.asinh(
-            tf.sqrt(xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V))
-        )
+        delta_V = xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V)
+
+        distance_V = tf.acosh(1 + 2 * delta_V + EPSILON)
 
         scale = tf.exp(self.log_scale)
         return distance_V * scale
