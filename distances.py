@@ -52,7 +52,8 @@ class Hyperbolic(Distance):
         norms_V = tf.norm(vectors_VxD, axis=-1)
         new_norms_V = tf.tanh(norms_V) * self.max_radius
 
-        unit_vectors_VxD = vectors_VxD / norms_V[:, tf.newaxis]
+        # avoid division by zero
+        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + 1e-8)
         return unit_vectors_VxD * new_norms_V[:, tf.newaxis]
 
     @tf_function()
@@ -65,7 +66,8 @@ class Hyperbolic(Distance):
 
         norms_V = tf.norm(vectors_VxD, axis=-1)
         new_norms_V = tf.atanh(norms_V)
-        unit_vectors_VxD = vectors_VxD / norms_V[:, tf.newaxis]
+        # avoid division by zero
+        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + 1e-8)
         return tf.concat([unit_vectors_VxD, new_norms_V[:, tf.newaxis]], axis=-1)
 
     @tf_function()
