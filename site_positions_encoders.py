@@ -21,12 +21,13 @@ class SitePositionsEncoder(tf.Module):
 
 class DummySitePositionsEncoder(SitePositionsEncoder):
     """
-    Does nothing to the site positions.
+    Returns an empty Sx0 tensor.
     """
 
-    @tf_function()
+    @tf_function(reduce_retracing=True)
     def __call__(self, site_positions_SxSfull):
-        return site_positions_SxSfull
+        S = tf.shape(site_positions_SxSfull)[0]  # type: ignore
+        return tf.zeros([S, 0], dtype=DTYPE_FLOAT)
 
 
 class MLPSitePositionsEncoder(SitePositionsEncoder):
@@ -58,7 +59,7 @@ class MLPSitePositionsEncoder(SitePositionsEncoder):
         mlp.add(keras.layers.Dense(self.C, dtype=DTYPE_FLOAT))
         return mlp
 
-    @tf_function()
+    @tf_function(reduce_retracing=True)
     def __call__(self, site_positions_SxSfull):
         if self.mlp is None:
             Sfull = site_positions_SxSfull.shape[1]
