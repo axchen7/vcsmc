@@ -90,7 +90,7 @@ class Hyperbolic(Distance):
         one_minus_x_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors1_VxD), axis=-1)
         one_minus_y_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors2_VxD), axis=-1)
 
-        delta_V = xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V)
+        delta_V = 2 * xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V)
 
         distance_V = tf.acosh(1 + 2 * delta_V + EPSILON)
 
