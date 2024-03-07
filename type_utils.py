@@ -14,3 +14,4 @@ def tf_function(*args, **kwargs) -> Callable[[T], T]:
 
 
 Tensor = Any
+Dataset = Any

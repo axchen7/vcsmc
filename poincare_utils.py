@@ -5,6 +5,7 @@ from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
 
 from proposals import EmbeddingProposal
+from train import batch_by_sites
 from type_utils import Tensor
 from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged
@@ -18,7 +19,11 @@ def render_poincare(
 ) -> Drawing:
     N = taxa_N.shape[0]
 
-    result = vcsmc(data_NxSxA)
+    dataset = batch_by_sites(data_NxSxA, None)
+
+    # batch is actually the full dataset
+    data_batched_NxSxA, site_positions_batched_SxSfull = next(iter(dataset))
+    result = vcsmc(data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
 
     merge1_indexes_N1 = result["best_merge1_indexes_N1"]
     merge2_indexes_N1 = result["best_merge2_indexes_N1"]

@@ -54,10 +54,24 @@ class VCSMC(tf.Module):
         return tf.repeat(embeddings_NxD[tf.newaxis], self.K, axis=0)  # type: ignore
 
     @tf_function()
-    def __call__(self, data_NxSxA: Tensor, *, log=False) -> Tensor:
+    def __call__(
+        self,
+        data_NxSxA: Tensor,
+        data_batched_NxSxA: Tensor,
+        site_positions_batched_SxSfull,
+        *,
+        log=False,
+    ) -> Tensor:
         """
         Args:
-            data_NxSxA: Tensor of N sequences.
+            data_NxSxA: Tensor of N full sequences (not batched).
+                Used to compute initial embeddings.
+                S = total number of sites.
+            data_batched_NxSxA: Tensor of N sequences, batched along sequences and/or sites.
+                S = number of sites in the batch.
+            site_positions_SxSfull: One-hot encodings of the true site positions.
+                S = number of sites in the batch.
+                Sfull = total number of sites.
             log: Whether to log to TensorBoard. Must be in a summary writer context.
         Returns a dict containing:
             log_Z_SMC: lower bound to the likelihood; should set cost = -log_Z_SMC
@@ -69,10 +83,17 @@ class VCSMC(tf.Module):
             best_branch2_lengths_r: right branch lengths for the best tree
         """
 
-        N, S, A = data_NxSxA.shape
+        N = data_batched_NxSxA.shape[0]
+        A = data_batched_NxSxA.shape[2]
+
         K = self.K
 
         log_double_factorials_2N = compute_log_double_factorials_2N(N)
+
+        # compress site positions
+        site_positions_SxC = self.q_matrix_decoder.site_positions_encoder(
+            site_positions_batched_SxSfull
+        )
 
         # at each step r, there are t = N-r >= 2 trees in the forest.
         # initially, r = 0 and t = N
@@ -87,7 +108,7 @@ class VCSMC(tf.Module):
         embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
 
         # Felsenstein probabilities for computing pi(s)
-        felsensteins_KxtxSxA = tf.repeat(data_NxSxA[tf.newaxis], K, axis=0)
+        felsensteins_KxtxSxA = tf.repeat(data_batched_NxSxA[tf.newaxis], K, axis=0)
 
         # difference of current and last iteration's values are used to compute weights
         log_pi_K = tf.zeros(K, DTYPE_FLOAT)
@@ -113,7 +134,7 @@ class VCSMC(tf.Module):
                     (branch2_lengths_Kxr, tf.TensorShape([K, None])),
                     (leaf_counts_Kxt, tf.TensorShape([K, None])),
                     (embeddings_KxtxD, tf.TensorShape([K, None, D])),
-                    (felsensteins_KxtxSxA, tf.TensorShape([K, None, S, A])),
+                    (felsensteins_KxtxSxA, tf.TensorShape([K, None, None, A])),
                 ]
             )
 
@@ -171,7 +192,9 @@ class VCSMC(tf.Module):
 
             # ===== compute Felsenstein likelihoods =====
 
-            Q_matrix_KxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(embedding_KxD)
+            Q_matrix_KxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
+                embedding_KxD, site_positions_SxC
+            )
 
             felsensteins_KxSxA = compute_felsenstein_likelihoods_KxSxA(
                 Q_matrix_KxSxAxA,
@@ -186,8 +209,12 @@ class VCSMC(tf.Module):
 
             prev_log_pi_K = log_pi_K
 
+            # TODO optimize vectorized_map
             stat_probs_KxtxSxA = tf.vectorized_map(
-                self.q_matrix_decoder.stat_probs_VxSxA, embeddings_KxtxD
+                lambda embeddings_txD: self.q_matrix_decoder.stat_probs_VxSxA(
+                    embeddings_txD, site_positions_SxC
+                ),
+                embeddings_KxtxD,
             )
 
             log_likelihood_K, log_pi_K = compute_log_likelihood_and_pi_K(

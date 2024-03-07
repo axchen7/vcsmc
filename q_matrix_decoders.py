@@ -4,18 +4,30 @@ import tensorflow as tf
 from constants import DTYPE_FLOAT
 from distances import Distance
 from encoders import mlp_add_hidden_layers
+from site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
 from type_utils import Tensor, tf_function
 
 
 class QMatrixDecoder(tf.Module):
-    def Q_matrix_VxSxAxA(self, embeddings_VxD: Tensor) -> Tensor:
+    def __init__(self, site_positions_encoder: SitePositionsEncoder | None = None):
+        super().__init__()
+
+        self.site_positions_encoder: SitePositionsEncoder = (
+            site_positions_encoder or DummySitePositionsEncoder()
+        )
+
+    def Q_matrix_VxSxAxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         """
         Returns the Q matrix for each of the S sites. Operates on a batch of
         embeddings.
         """
         raise NotImplementedError
 
-    def stat_probs_VxSxA(self, embeddings_VxD: Tensor) -> Tensor:
+    def stat_probs_VxSxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         """
         Returns the stationary probabilities for each of the S sites. Operates
         on a batch of Q matrices.
@@ -52,7 +64,7 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         )
 
     @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD):
+    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
         # first non-diagonal entry in each row can be fixed to match degrees of
         # freedom
         Q_matrix_AxA = tf.tensor_scatter_nd_update(
@@ -80,9 +92,9 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         return Q_matrix_1x1xAxA
 
     @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD):
+    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
-        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD)
+        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
         expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * self.t_inf)
         stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]  # type: ignore
         return stat_probs_VxSxA
@@ -133,7 +145,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         return mlp
 
     @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD):
+    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
         V = tf.shape(embeddings_VxD)[0]  # type: ignore
 
         expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
@@ -160,9 +172,9 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         return Q_matrix_Vx1xAxA
 
     @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD):
+    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
-        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD)
+        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
         expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * self.t_inf)
         stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]  # type: ignore
         return stat_probs_VxSxA
@@ -218,7 +230,7 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         return stat_probs_A
 
     @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD):
+    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
         pi = self.nucleotide_exchanges_6()  # length 6
         pi8 = tf.repeat(pi, 8)
 
@@ -251,7 +263,7 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         return Q_matrix_1x1xAxA
 
     @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD):
+    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
         stat_probs_A = self.stats_probs_A()
 
         # return only shape (1,1,A), but assume broadcasting rules apply...
@@ -277,35 +289,32 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
     def __init__(
         self,
         distance: Distance,
+        site_positions_encoder: SitePositionsEncoder,
         *,
-        S: int,
         A: int,
         width: int,
         depth: int,
         baseline: float = 0.5,
-        t_inf: float = 1e3,
     ):
         """
         Args:
-            S: Number of sites.
+            distance: Used to feature expand the embeddings.
+            site_positions_encoder: Used to compress the site positions.
             A: Alphabet size.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
             baseline: Baseline probabilities for stat_probs, for each of the A letters, from 0 to 1.
                 Take this much of the probability mass from the uniform distribution 1/A.
                 Helps prevent the model from converging to a degenerate solution.
-            t_inf: Large t value used to approximate the stationary distribution.
         """
 
-        super().__init__()
+        super().__init__(site_positions_encoder)
 
         self.distance = distance
-        self.S = S
         self.A = A
         self.width = width
         self.depth = depth
         self.baseline = tf.constant(baseline, dtype=DTYPE_FLOAT)
-        self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
 
         self.log_holding_times_A = tf.Variable(
             tf.constant(0, DTYPE_FLOAT, [A]), name="log_holding_times"
@@ -330,21 +339,21 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         reciprocal_holding_times_A /= tf.reduce_mean(reciprocal_holding_times_A)
         return reciprocal_holding_times_A
 
-    def create_mlp(self, D1: int):
+    def create_mlp(self, D1: int, C: int):
         mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([D1], dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Input([D1 + C], dtype=DTYPE_FLOAT))
         mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
-        mlp.add(keras.layers.Dense(self.S * self.A, dtype=DTYPE_FLOAT))
-        mlp.add(keras.layers.Reshape([self.S, self.A]))
-        mlp.add(keras.layers.Softmax(-1, dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Dense(self.A, dtype=DTYPE_FLOAT))
+        mlp.add(keras.layers.Softmax(dtype=DTYPE_FLOAT))
         return mlp
 
     @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD):
+    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
         V = tf.shape(embeddings_VxD)[0]  # type: ignore
+        S = tf.shape(site_positions_SxC)[0]  # type: ignore ; S can change depending on batch size
 
         reciprocal_holding_times_A = self.reciprocal_holding_times_A()
-        stat_probs_VxSxA = self.stat_probs_VxSxA(embeddings_VxD)
+        stat_probs_VxSxA = self.stat_probs_VxSxA(embeddings_VxD, site_positions_SxC)
 
         reciprocal_holding_times_repeated_AxA = tf.repeat(
             reciprocal_holding_times_A[tf.newaxis], self.A, 0
@@ -357,7 +366,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
 
         # set the diagonals to the sum of the off-diagonal entries
         Q_matrix_VxSxAxA = tf.linalg.set_diag(
-            Q_matrix_VxSxAxA, tf.zeros([V, self.S, self.A], DTYPE_FLOAT)
+            Q_matrix_VxSxAxA, tf.zeros([V, S, self.A], DTYPE_FLOAT)
         )
         hyphens_VxSxA = tf.reduce_sum(Q_matrix_VxSxAxA, -1)
         Q_matrix_VxSxAxA = tf.linalg.set_diag(Q_matrix_VxSxAxA, -hyphens_VxSxA)
@@ -365,15 +374,31 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         return Q_matrix_VxSxAxA
 
     @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD):
+    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
+        V = tf.shape(embeddings_VxD)[0]  # type: ignore
+        S = tf.shape(site_positions_SxC)[0]  # type: ignore ; S can change depending on batch size
+
         expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
 
         if self.mlp is None:
             D1 = expanded_VxD1.shape[1]
-            self.mlp = self.create_mlp(D1)
+            C = site_positions_SxC.shape[1]  # type: ignore
+            self.mlp = self.create_mlp(D1, C)
 
-        stat_probs_VxSxA = self.mlp(expanded_VxD1)
+        # shape (V*S, D1); repeat like AAABBBCCC
+        expanded_repeated_VSxD1 = tf.repeat(expanded_VxD1, S, 0)
 
+        # shape (V*S, C); repeat like ABCABCABC
+        site_positions_repeated_VSxC = tf.tile(site_positions_SxC, [V, 1])
+
+        # shape (V*S, D1+C); flattened list of embeddings and site positions
+        expanded_with_site_positions_VSxD1C = tf.concat(
+            [expanded_repeated_VSxD1, site_positions_repeated_VSxC], -1
+        )
+
+        stat_probs_VSxA = self.mlp(expanded_with_site_positions_VSxD1C)
+
+        stat_probs_VxSxA = tf.reshape(stat_probs_VSxA, [-1, S, self.A])
         stat_probs_VxSxA = (
             self.baseline * (1 / self.A) + (1 - self.baseline) * stat_probs_VxSxA  # type: ignore
         )

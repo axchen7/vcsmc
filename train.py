@@ -8,8 +8,59 @@ from Bio import Phylo
 from tqdm import tqdm
 
 import utils
-from type_utils import Tensor, tf_function
+from constants import DTYPE_FLOAT
+from type_utils import Dataset, Tensor, tf_function
 from vcsmc import VCSMC
+
+
+@tf_function()
+def get_site_positions_SxSfull(data_NxSxA: Tensor) -> Tensor:
+    S = data_NxSxA.shape[1]
+    site_positions_SxSfull = tf.eye(S, dtype=DTYPE_FLOAT)
+    return site_positions_SxSfull
+
+
+@tf_function()
+def batch_by_sites(data_NxSxA: Tensor, batch_size: int | None) -> Dataset:
+    """
+    Returns a dataset where each element is a tuple
+    (data_batched_SxNxA, site_positions_batched_SxSfull).
+
+    Args:
+        data_NxSxA: The data.
+        batch_size: The batch size. Set to None to use the full dataset.
+    """
+
+    if batch_size is None:
+        S = data_NxSxA.shape[1]
+        batch_size = S
+
+    data_SxNxA = tf.transpose(data_NxSxA, [1, 0, 2])
+    site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
+
+    # V = variable batch dimension
+    data_ds_VxNxA = tf.data.Dataset.from_tensor_slices(data_SxNxA)
+    site_positions_ds_VxSfull = tf.data.Dataset.from_tensor_slices(
+        site_positions_SxSfull
+    )
+
+    # shape: V x ([N, A], [Sfull])
+    dataset = tf.data.Dataset.zip((data_ds_VxNxA, site_positions_ds_VxSfull))
+
+    dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
+
+    # shape: V x ([S, N, A], [S, Sfull]), where now S = batch_size
+    dataset = dataset.batch(batch_size)
+
+    # convert to shape: V x ([N, S, A], [S, Sfull])
+    dataset = dataset.map(
+        lambda data_batched_SxNxA, site_positions_batched_SxSfull: (
+            tf.transpose(data_batched_SxNxA, [1, 0, 2]),
+            site_positions_batched_SxSfull,
+        )
+    )
+
+    return dataset
 
 
 def train(
@@ -21,24 +72,54 @@ def train(
     root: str = "Healthy",
     epochs: int,
     start_epoch: int = 0,
+    sites_batch_size: int | None = None,
     graph_and_profile: bool = False,
 ):
+    site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
+
     @tf_function()
-    def train_step(batch_NxSxA: Tensor):
-        with tf.GradientTape() as tape:
-            result = vcsmc(batch_NxSxA, log=True)
-            log_Z_SMC = result["log_Z_SMC"]
-            log_likelihood_K = result["log_likelihood_K"]
-            best_newick_tree = result["best_newick_tree"]
+    def train_step(dataset: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        Trains one epoch, iterating through batches.
 
-            cost = -log_Z_SMC
-            cost += vcsmc.q_matrix_decoder.regularization()  # scale by N and S?
+        Returns:
+            log_Z_SMC_sum: Sum across batches of log_Z_SMC.
+            log_likelihood_sum: Sum across batches of log likelihoods averaged across particles.
+            best_newick_tree: best of the K newick trees from the first epoch.
+        """
 
-        variables = tape.watched_variables()
-        grads = tape.gradient(cost, variables)
-        optimizer.apply_gradients(zip(grads, variables))  # type: ignore
+        log_Z_SMC_sum = tf.constant(0.0, dtype=DTYPE_FLOAT)
+        log_likelihood_sum = tf.constant(0.0, dtype=DTYPE_FLOAT)
 
-        return log_Z_SMC, log_likelihood_K, best_newick_tree
+        best_newick_tree = tf.constant("", dtype=tf.string)
+
+        for data_batched_SxNxA, site_positions_batched_SxSfull in dataset:
+            with tf.GradientTape() as tape:
+                result = vcsmc(
+                    data_NxSxA,
+                    data_batched_SxNxA,
+                    site_positions_batched_SxSfull,
+                    log=True,
+                )
+
+                log_Z_SMC = result["log_Z_SMC"]
+                log_likelihood_K = result["log_likelihood_K"]
+
+                if best_newick_tree == "":
+                    best_newick_tree = result["best_newick_tree"]
+
+                cost = -log_Z_SMC
+                # TODO remove regularization
+                cost += vcsmc.q_matrix_decoder.regularization()  # scale by N and S?
+
+            variables = tape.watched_variables()
+            grads = tape.gradient(cost, variables)
+            optimizer.apply_gradients(zip(grads, variables))  # type: ignore
+
+            log_Z_SMC_sum += log_Z_SMC
+            log_likelihood_sum += tf.reduce_mean(log_likelihood_K)
+
+        return log_Z_SMC_sum, log_likelihood_sum, best_newick_tree
 
     @tf_function()
     def get_avg_root_Q_matrix_AxA():
@@ -47,8 +128,14 @@ def train(
         root_embedding_1xD = vcsmc.proposal.seq_encoder(
             tf.expand_dims(data_NxSxA[root_idx], 0)
         )
+        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+            site_positions_SxSfull
+        )
         root_Q_SxAxA = tf.squeeze(
-            vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(root_embedding_1xD), 0
+            vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
+                root_embedding_1xD, site_positions_SxC
+            ),
+            0,
         )
         avg_root_Q_AxA = tf.reduce_mean(root_Q_SxAxA, 0)
         return avg_root_Q_AxA
@@ -56,7 +143,12 @@ def train(
     @tf_function()
     def get_data_reconstruction_cosine_similarity():
         embeddings_NxD = vcsmc.proposal.seq_encoder(data_NxSxA)
-        reconstructed_NxSxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(embeddings_NxD)
+        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+            site_positions_SxSfull
+        )
+        reconstructed_NxSxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
+            embeddings_NxD, site_positions_SxC
+        )
         sim = tf.reduce_sum(data_NxSxA * reconstructed_NxSxA)
         sim /= tf.norm(data_NxSxA) * tf.norm(reconstructed_NxSxA)
         return sim
@@ -66,39 +158,34 @@ def train(
     results_dir = utils.create_results_dir()
     summary_writer = tf.summary.create_file_writer(results_dir)  # type: ignore
 
+    # ===== batch data =====
+
+    dataset = batch_by_sites(data_NxSxA, sites_batch_size)
+
     # ===== generate graph and profile =====
 
     if graph_and_profile:
+        data_batched_NxSxA, site_positions_batched_SxSfull = next(iter(dataset))
+
         tf.summary.trace_on(graph=True, profiler=True)  # type: ignore
-        vcsmc(data_NxSxA)
+        vcsmc(data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
         with summary_writer.as_default():
             tf.summary.trace_export(name="vcsmc", step=0, profiler_outdir=results_dir)  # type: ignore
 
     # ===== train =====
 
-    log_likelihoods_across_epochs = []
-    avg_log_likelihoods_across_epochs = []
-
     for epoch in tqdm(range(epochs)):
         with summary_writer.as_default(step=epoch + start_epoch):
-            log_Z_SMC, log_likelihood_K, best_newick_tree = train_step(data_NxSxA)
-
-            log_likelihoods_avg = tf.math.reduce_mean(log_likelihood_K)
-            log_likelihoods_std_dev = tf.math.reduce_std(log_likelihood_K)
-
-            avg_log_likelihoods_across_epochs.append(log_likelihoods_avg)
-            log_likelihoods_across_epochs.append(log_likelihood_K)
+            log_Z_SMC_sum, log_likelihood_avg, best_newick_tree = train_step(dataset)
 
             cosine_similarity = get_data_reconstruction_cosine_similarity()
 
-            tf.summary.scalar("Elbo", log_Z_SMC)
-            tf.summary.scalar("Log likelihood avg", log_likelihoods_avg)
-            tf.summary.scalar("Log likelihoods std dev", log_likelihoods_std_dev)
+            tf.summary.scalar("Elbo", log_Z_SMC_sum)
+            tf.summary.scalar("Log likelihood avg", log_likelihood_avg)
             tf.summary.scalar(
                 "Data reconstruction cosine similarity",
                 cosine_similarity,
             )
-            tf.summary.histogram("Log likelihoods", log_likelihood_K)
 
             if (epoch + 1) % 4 == 0:
                 # # ===== leaf embeddings =====
@@ -139,23 +226,3 @@ def train(
     # ===== done training! =====
 
     print("Training complete!")
-
-    # ===== final log likelihoods across epochs =====
-
-    K = log_likelihoods_across_epochs[0].shape[0]
-
-    plt.scatter(
-        np.arange(epochs).repeat(K),
-        np.array(log_likelihoods_across_epochs).flatten(),
-        c="black",
-        alpha=0.2,
-    )
-    plt.plot(
-        np.arange(epochs),
-        avg_log_likelihoods_across_epochs,
-        c="orange",
-    )
-    plt.xlabel("Epoch")
-    plt.ylabel("Log Likelihood")
-    plt.title("Log Likelihoods Across Epochs")
-    plt.show()
