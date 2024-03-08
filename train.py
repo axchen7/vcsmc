@@ -2,7 +2,6 @@ from io import StringIO
 
 import keras
 import matplotlib.pyplot as plt
-import numpy as np
 import tensorflow as tf
 from Bio import Phylo
 from tqdm import tqdm
