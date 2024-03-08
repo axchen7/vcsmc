@@ -201,6 +201,14 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         p = children1_VxD
         q = children2_VxD
 
+        p_norm = safe_norm(p, axis=1, keepdims=True)
+        q_norm = safe_norm(q, axis=1, keepdims=True)
+
+        # "pull" the further child to the same distance from the origin as the
+        # closer child
+        p = tf.where(p_norm > q_norm, p * q_norm / p_norm, p)
+        q = tf.where(q_norm > p_norm, q * p_norm / q_norm, q)
+
         r = (p + q) / 2
         diff = p - q
 
