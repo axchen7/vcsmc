@@ -49,12 +49,11 @@ class Euclidean(Distance):
 
 
 class Hyperbolic(Distance):
-    def __init__(self, max_radius: float = 0.99):
+    def __init__(self, *, max_radius: float = 0.99, scale: float = 0.01):
         super().__init__()
 
         self.max_radius = tf.constant(max_radius, dtype=DTYPE_FLOAT)
-
-        self.log_scale = tf.Variable(0.0, dtype=DTYPE_FLOAT, name="log_scale")
+        self.scale = tf.constant(scale, dtype=DTYPE_FLOAT)
 
     @tf_function()
     def normalize(self, vectors_VxD):
@@ -94,5 +93,4 @@ class Hyperbolic(Distance):
 
         distance_V = tf.acosh(1 + 2 * delta_V + EPSILON)
 
-        scale = tf.exp(self.log_scale)
-        return distance_V * scale
+        return distance_V * self.scale
