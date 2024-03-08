@@ -63,9 +63,12 @@ def render_poincare(
         p3 = poincare.Point(parent_embed[0], parent_embed[1])
         points.extend([p1, p2, p3])
 
-        l1 = poincare.Line.from_points(*p1, *p3, segment=True)
-        l2 = poincare.Line.from_points(*p2, *p3, segment=True)
-        lines.extend([l1, l2])
+        if p1 != p3:
+            l1 = poincare.Line.from_points(*p1, *p3, segment=True)
+            lines.append(l1)
+        if p2 != p3:
+            l2 = poincare.Line.from_points(*p2, *p3, segment=True)
+            lines.append(l2)
 
         if label1 != "":
             t1 = (label1, emb1[0], emb1[1])
