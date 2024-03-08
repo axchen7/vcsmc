@@ -2,7 +2,7 @@ import keras
 import tensorflow as tf
 
 from constants import DTYPE_FLOAT
-from distances import Distance
+from distances import Distance, safe_norm
 from type_utils import Tensor, tf_function
 
 
@@ -205,25 +205,33 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         diff = p - q
 
         n = tf.stack([-diff[:, 1], diff[:, 0]], 1)
-        nhat = n / tf.norm(n, axis=1, keepdims=True)
+        nhat = n / safe_norm(n, axis=1, keepdims=True)
 
-        # scalars (shape=[V] because of vectorization);
+        # ===== scalars (shape=[V] because of vectorization) =====
         p_dot_p = tf.reduce_sum(p * p, 1)
         p_dot_r = tf.reduce_sum(p * r, 1)
         p_dot_nhat = tf.reduce_sum(p * nhat, 1)
 
+        # p_dot_nhat=0 would result in NaNs down the line, so first replace with
+        # 1 to ensure that m ultimately has no NaNs. This is needed because
+        # although we intend to replace m with r in such cases anyway, m must
+        # not contain NaNs as calling tf.where() with NaNs may cause NaN
+        # gradients.
+        ok = tf.not_equal(p_dot_nhat, 0)
+        p_dot_nhat = tf.where(ok, p_dot_nhat, tf.ones_like(p_dot_nhat))
+
         alpha = (p_dot_p - 2 * p_dot_r + 1) / (2 * p_dot_nhat)
-        # end scalars
+        # ===== end scalars =====
 
         s = r + alpha[:, tf.newaxis] * nhat
 
-        s_minus_p_norm = tf.norm(s - p, axis=1, keepdims=True)
-        s_norm = tf.norm(s, axis=1, keepdims=True)
+        s_minus_p_norm = safe_norm(s - p, axis=1, keepdims=True)
+        s_norm = safe_norm(s, axis=1, keepdims=True)
 
         m = s * (1 - s_minus_p_norm / s_norm)
 
-        # if any resulting vectors contain non-finite values, replace with
-        # midpoint between p and q
-        m = tf.where(tf.math.is_finite(m), m, r)
+        # if any resulting vector is degenerate, replace with midpoint between p
+        # and q
+        m = tf.where(ok[:, tf.newaxis], m, r)
 
         return m
