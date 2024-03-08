@@ -7,13 +7,13 @@ EPSILON = 1e-8
 
 
 @tf_function(reduce_retracing=True)
-def safe_norm(x: Tensor, axis=None) -> Tensor:
+def safe_norm(x: Tensor, axis=None, keepdims=False) -> Tensor:
     """
     Computes the L2 norm of a tensor, adding a small epsilon to avoid NaN
     gradients when the norm is zero.
     """
 
-    return tf.sqrt(tf.reduce_sum(tf.square(x), axis=axis) + EPSILON)
+    return tf.sqrt(tf.reduce_sum(tf.square(x), axis, keepdims) + EPSILON)
 
 
 class Distance(tf.Module):
