@@ -1,8 +1,6 @@
 import numpy as np
-import tensorflow as tf
-
-from constants import DTYPE_FLOAT
-from type_utils import Tensor
+import torch
+from torch import Tensor
 
 # fmt: off
 
@@ -36,14 +34,14 @@ GT10_ALPHABET = {
 
 def load_phy(
     file: str, alphabet: dict[str, list[float]]
-) -> tuple[int, int, int, Tensor, Tensor]:
+) -> tuple[int, int, int, Tensor, list[str]]:
     """
     Returns:
         N: Number of taxa.
         S: Number of sites.
         A: Alphabet size.
         data_NxSxA: Tensor of shape (N, S, A).
-        taxa_N: Tensor of taxa names of shape (N,).
+        taxa_N: Length of taxa names of length N.
     """
 
     with open(file) as f:
@@ -52,7 +50,6 @@ def load_phy(
     genome_lines = lines[1:]
 
     taxa_N = [line[: line.find(" ")].strip() for line in genome_lines]
-    taxa_N = tf.convert_to_tensor(taxa_N, dtype=tf.string)
 
     genome_strings = [line[line.find(" ") :].strip() for line in genome_lines]
 
@@ -68,6 +65,6 @@ def load_phy(
         for s in range(S):
             data_NxSxA[n, s, :] = alphabet[genome_strings[n][s]]
 
-    data_NxSxA = tf.convert_to_tensor(data_NxSxA, DTYPE_FLOAT)
+    data_NxSxA = torch.tensor(data_NxSxA)
 
     return N, S, A, data_NxSxA, taxa_N

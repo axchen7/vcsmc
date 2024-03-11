@@ -173,7 +173,7 @@ def build_newick_tree(
     tree.
 
     Args:
-        taxa_N: Tensor of taxa names of shape (N,).
+        taxa_N: List of taxa names of length N.
         merge_indexes_N1x2: Tensor of merge indexes, where the nth entry is the
             merge indexes at the nth merge step. Shape is (N-1, 2)
         branch_lengths_N1x2: Tensor of branch lengths, where the nth entry is
