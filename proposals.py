@@ -1,16 +1,13 @@
-import math
-
-import tensorflow as tf
-import tensorflow_probability as tfp
+import torch
+import torch.nn as nn
+from torch import Tensor
 
 import distances
 import encoders
-from constants import DTYPE_FLOAT
-from type_utils import Tensor, tf_function
 from vcsmc_utils import gather_K, gather_K2
 
 
-class Proposal(tf.Module):
+class Proposal(nn.Module):
     """
     Proposal distribution for selecting two nodes to merge and sampling branch lengths.
     """
@@ -20,10 +17,9 @@ class Proposal(tf.Module):
 
         self.seq_encoder = seq_encoder
 
-    def __call__(
+    def forward(
         self,
         N: int,
-        r: Tensor,
         leaf_counts_Kxt: Tensor,
         embeddings_KxtxD: Tensor,
         log: bool,
@@ -33,7 +29,6 @@ class Proposal(tf.Module):
 
         Args:
             N: The number of leaf nodes.
-            r: The current merge step (0 <= r <= N-2).
             leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
             log: Whether to log to TensorBoard. Must be in a summary writer context.
@@ -80,81 +75,73 @@ class ExpBranchProposal(Proposal):
 
         initial_param = 1 / initial_branch_len
         # value of variable is passed through exp() later
-        initial_log_param = tf.constant(math.log(initial_param), DTYPE_FLOAT, [N - 1])
+        initial_log_param = torch.tensor(initial_param).log().repeat(N - 1)
 
-        # N2 -> N-2
-        self.log_branch_params1_N2 = tf.Variable(
-            initial_log_param, name="log_branch_params1_N2"
-        )
-        self.log_branch_params2_N2 = tf.Variable(
-            initial_log_param, name="log_branch_params2_N2"
-        )
+        # N1 -> N-1
+        self.log_branch_params1_N1 = nn.Parameter(initial_log_param)
+        self.log_branch_params2_N1 = nn.Parameter(initial_log_param)
 
-    @tf_function()
-    def branch_params(self, r):
+    def branch_params(self, r: int):
         # use exp to ensure params are positive
-        branch_param1 = tf.exp(self.log_branch_params1_N2[r])  # type: ignore
-        branch_param2 = tf.exp(self.log_branch_params2_N2[r])  # type: ignore
+        branch_param1 = self.log_branch_params1_N1[r].exp()
+        branch_param2 = self.log_branch_params2_N1[r].exp()
         return branch_param1, branch_param2
 
-    @tf_function(reduce_retracing=True)
-    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD, log):
+    def forward(
+        self,
+        N: int,
+        leaf_counts_Kxt: Tensor,
+        embeddings_KxtxD: Tensor,
+        log: bool,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
-        t = N - r  # number of subtrees
+        t = leaf_counts_Kxt.shape[1]  # number of subtrees
+        r = N - t  # merge step
 
         # ===== uniformly sample 2 distinct nodes to merge =====
 
-        idx1_K = tf.random.uniform([K], 0, t, tf.int32)
-        idx2_K = tf.random.uniform([K], 0, t - 1, tf.int32)
+        idx1_K = torch.randint(0, t, [K])
+        idx2_K = torch.randint(0, t - 1, [K])
 
         # shift to guarantee idx2 > idx1
-        idx2_K = tf.where(idx2_K >= idx1_K, idx2_K + 1, idx2_K)
+        idx2_K = torch.where(idx2_K >= idx1_K, idx2_K + 1, idx2_K)
 
         # ===== sample branch lengths from exponential distributions =====
 
         branch_param1, branch_param2 = self.branch_params(r)
 
-        branch_dist1 = tfp.distributions.Exponential(branch_param1)
-        branch_dist2 = tfp.distributions.Exponential(branch_param2)
+        branch_dist1 = torch.distributions.Exponential(rate=branch_param1)
+        branch_dist2 = torch.distributions.Exponential(rate=branch_param2)
 
-        (
-            branch1_K,
-            log_branch1_prior_K,
-        ) = branch_dist1.experimental_sample_and_log_prob(K)
-        (
-            branch2_K,
-            log_branch2_prior_K,
-        ) = branch_dist2.experimental_sample_and_log_prob(K)
+        branch1_K = branch_dist1.sample([K])  # type: ignore
+        branch2_K = branch_dist2.sample([K])  # type: ignore
+
+        log_branch1_prior_K = branch_dist1.log_prob(branch1_K)
+        log_branch2_prior_K = branch_dist2.log_prob(branch2_K)
 
         # ===== compute proposal probability =====
 
         # log(t choose 2)
-        log_num_merge_choices = tf.math.log(t * (t - 1) / 2)
+        log_num_merge_choices = torch.log(torch.tensor(t * (t - 1) / 2))
         log_merge_prob = -log_num_merge_choices
 
         log_v_plus_K = log_merge_prob + log_branch1_prior_K + log_branch2_prior_K
 
         # ===== compute over-counting correction factor =====
 
-        num_subtrees_with_one_leaf_K = tf.reduce_sum(
-            tf.cast(leaf_counts_Kxt == 1, tf.int32), 1
-        )
+        num_subtrees_with_one_leaf_K = torch.sum(leaf_counts_Kxt == 1, 1)
 
         # exclude trees currently being merged from the count
-        num_subtrees_with_one_leaf_K -= tf.cast(
-            gather_K(leaf_counts_Kxt, idx1_K) == 1, tf.int32
-        )
-        num_subtrees_with_one_leaf_K -= tf.cast(
-            gather_K(leaf_counts_Kxt, idx2_K) == 1, tf.int32
-        )
+        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx1_K) == 1).int()
+        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx2_K) == 1).int()
 
         v_minus_K = N - num_subtrees_with_one_leaf_K
-        log_v_minus_K = tf.math.log(tf.cast(v_minus_K, DTYPE_FLOAT))
+        log_v_minus_K = v_minus_K.log()
 
         # ===== return proposal =====
 
         # dummy embedding
-        embedding_KxD = tf.zeros([K, 0], DTYPE_FLOAT)
+        embedding_KxD = torch.zeros([K, 0])
 
         return (
             idx1_K,
@@ -201,13 +188,19 @@ class EmbeddingProposal(Proposal):
 
         self.distance = distance
         self.merge_encoder = merge_encoder
-        self.sample_temp = tf.constant(sample_merge_temp, DTYPE_FLOAT)
+        self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
 
-    @tf_function(reduce_retracing=True)
-    def __call__(self, N, r, leaf_counts_Kxt, embeddings_KxtxD, log):
+    def forward(
+        self,
+        N: int,
+        leaf_counts_Kxt: Tensor,
+        embeddings_KxtxD: Tensor,
+        log: bool,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
-        t = N - r  # number of subtrees
+        t = leaf_counts_Kxt.shape[1]  # number of subtrees
+        r = N - t  # merge step
 
         # ===== sample 2 distinct nodes to merge =====
 
@@ -215,44 +208,44 @@ class EmbeddingProposal(Proposal):
         # negative log probabilities, and incorporating the sample
         # temperature
 
-        flat_embeddings1_KttxD = tf.reshape(  # repeat like 123123123...
-            tf.tile(embeddings_KxtxD, [1, t, 1]), [K * t * t, -1]
-        )
-        flat_embeddings2_KttxD = tf.reshape(  # repeat like 111222333...
-            tf.tile(embeddings_KxtxD, [1, 1, t]), [K * t * t, -1]
-        )
+        Ktt = K * t * t  # for brevity
+        # repeat like 123123123...
+        flat_embeddings1_KttxD = embeddings_KxtxD.repeat(1, t, 1).view(Ktt, -1)
+        # repeat like 111222333...
+        flat_embeddings2_KttxD = embeddings_KxtxD.repeat(1, 1, t).view(Ktt, -1)
 
-        pairwise_distances_Ktt = self.distance(
+        pairwise_distances_Ktt: Tensor = self.distance(
             flat_embeddings1_KttxD, flat_embeddings2_KttxD
         )
-        pairwise_distances_Kxtxt = tf.reshape(pairwise_distances_Ktt, [K, t, t])
-        merge_log_weights_Kxtxt = -pairwise_distances_Kxtxt / self.sample_temp  # type: ignore
+        pairwise_distances_Kxtxt = pairwise_distances_Ktt.view(K, t, t)
+        merge_log_weights_Kxtxt = -pairwise_distances_Kxtxt / self.sample_merge_temp
 
         # set diagonal entries to -inf to prevent self-merges
-        merge_log_weights_Kxtxt = tf.linalg.set_diag(
-            merge_log_weights_Kxtxt,
-            tf.fill([K, t], tf.constant(-math.inf, DTYPE_FLOAT)),
-        )
+        diag_mask_txt = torch.diag(torch.full([t], -torch.inf))
+        merge_log_weights_Kxtxt.add_(diag_mask_txt.unsqueeze(0))
 
+        # TODO convert
         # for debugging
-        if log:
-            if t == N:
-                log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
-                log_weights /= tf.reduce_sum(log_weights)
-                tf.summary.histogram("Merge weights", log_weights)
+        # if log:
+        #     if t == N:
+        #         log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
+        #         log_weights /= tf.reduce_sum(log_weights)
+        #         tf.summary.histogram("Merge weights", log_weights)
 
-        flattened_log_weights_Kxtt = tf.reshape(merge_log_weights_Kxtxt, [K, t * t])
+        flattened_log_weights_Kxtt = merge_log_weights_Kxtxt.view(K, t * t)
+
+        # shift log weights so each row's max is 0
+        max_log_weights_K = torch.max(flattened_log_weights_Kxtt, 1).values
+        flattened_log_weights_Kxtt -= max_log_weights_K.unsqueeze(1)
 
         # sample a single pair of subtrees for each of the K particles
-        flattened_sample_K = tf.random.categorical(
-            flattened_log_weights_Kxtt, 1, tf.int32
+        flattened_sample_Kx1 = torch.multinomial(
+            torch.exp(flattened_log_weights_Kxtt), 1
         )
-        flattened_sample_K = tf.squeeze(flattened_sample_K)
+        flattened_sample_K = flattened_sample_Kx1.squeeze(1)
 
-        tf.assert_less(flattened_sample_K, t * t, message="sample out of range")
         idx1_K = flattened_sample_K // t
         idx2_K = flattened_sample_K % t
-        tf.assert_equal(idx1_K == idx2_K, False, message="subtrees are equal")
 
         # ===== get merged embedding =====
 
@@ -264,8 +257,8 @@ class EmbeddingProposal(Proposal):
         # ===== sample/get branches parameters =====
 
         if self.sample_branches:
-            dist1_K = self.distance(child1_KxD, embedding_KxD)
-            dist2_K = self.distance(child2_KxD, embedding_KxD)
+            dist1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
+            dist2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
 
             # sample from exponential distributions whose expectations are the
             # distances between children and merged embeddings
@@ -274,24 +267,20 @@ class EmbeddingProposal(Proposal):
 
             # ===== sample branch lengths from exponential distributions =====
 
-            uniform1_K = tf.random.uniform([K], 0, 1, dtype=DTYPE_FLOAT)
-            uniform2_K = tf.random.uniform([K], 0, 1, dtype=DTYPE_FLOAT)
+            uniform1_K = torch.rand([K])
+            uniform2_K = torch.rand([K])
 
             # use uniform sample + inverse CDF to sample from exponential
             # distribution
-            branch1_K = -tf.math.log(uniform1_K) / branch_param1_K
-            branch2_K = -tf.math.log(uniform2_K) / branch_param2_K
+            branch1_K = -uniform1_K.log() / branch_param1_K
+            branch2_K = -uniform2_K.log() / branch_param2_K
 
             # plug samples back into log exponential PDF
-            log_branch1_prior_K = (
-                tf.math.log(branch_param1_K) - branch_param1_K * branch1_K
-            )
-            log_branch2_prior_K = (
-                tf.math.log(branch_param2_K) - branch_param2_K * branch2_K
-            )
+            log_branch1_prior_K = branch_param1_K.log() - branch_param1_K * branch1_K
+            log_branch2_prior_K = branch_param2_K.log() - branch_param2_K * branch2_K
         else:
-            branch1_K = self.distance(child1_KxD, embedding_KxD)
-            branch2_K = self.distance(child2_KxD, embedding_KxD)
+            branch1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
+            branch2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
 
             log_branch1_prior_K = 0
             log_branch2_prior_K = 0
@@ -304,27 +293,21 @@ class EmbeddingProposal(Proposal):
         # merging (idx2, idx1)
 
         log_merge_prob_K = gather_K2(merge_log_weights_Kxtxt, idx1_K, idx2_K)
-        log_merge_prob_K += tf.math.log(tf.constant(2, DTYPE_FLOAT))
-        log_merge_prob_K -= tf.math.reduce_logsumexp(merge_log_weights_Kxtxt, [1, 2])
+        log_merge_prob_K += torch.log(torch.tensor(2))
+        log_merge_prob_K -= torch.logsumexp(merge_log_weights_Kxtxt, [1, 2])
 
         log_v_plus_K = log_merge_prob_K + log_branch1_prior_K + log_branch2_prior_K
 
         # ===== compute over-counting correction factor =====
 
-        num_subtrees_with_one_leaf_K = tf.reduce_sum(
-            tf.cast(leaf_counts_Kxt == 1, tf.int32), 1
-        )
+        num_subtrees_with_one_leaf_K = torch.sum(leaf_counts_Kxt == 1, 1)
 
         # exclude trees currently being merged from the count
-        num_subtrees_with_one_leaf_K -= tf.cast(
-            gather_K(leaf_counts_Kxt, idx1_K) == 1, tf.int32
-        )
-        num_subtrees_with_one_leaf_K -= tf.cast(
-            gather_K(leaf_counts_Kxt, idx2_K) == 1, tf.int32
-        )
+        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx1_K) == 1).int()
+        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx2_K) == 1).int()
 
         v_minus_K = N - num_subtrees_with_one_leaf_K
-        log_v_minus_K = tf.math.log(tf.cast(v_minus_K, DTYPE_FLOAT))
+        log_v_minus_K = v_minus_K.log()
 
         # ===== return proposal =====
 
