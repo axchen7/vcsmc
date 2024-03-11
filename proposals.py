@@ -238,9 +238,7 @@ class EmbeddingProposal(Proposal):
         flattened_log_weights_Kxtt -= max_log_weights_K.unsqueeze(1)
 
         # sample a single pair of subtrees for each of the K particles
-        flattened_sample_Kx1 = torch.multinomial(
-            torch.exp(flattened_log_weights_Kxtt), 1
-        )
+        flattened_sample_Kx1 = torch.multinomial(flattened_log_weights_Kxtt.exp(), 1)
         flattened_sample_K = flattened_sample_Kx1.squeeze(1)
 
         idx1_K = flattened_sample_K // t
