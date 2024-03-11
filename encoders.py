@@ -69,7 +69,7 @@ class MLPSequenceEncoder(SequenceEncoder):
             distance: Used to normalize the embeddings.
             S: Number of sites.
             A: Alphabet size.
-            D: Number of dimensions in output embeddings.
+            D: Number of dimensions sequence embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
         """
@@ -138,7 +138,7 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
     def __init__(self, *, D: int):
         """
         Args:
-            D: Number of dimensions in the embeddings (must be 2).
+            D: Number of dimensions sequence embeddings (must be 2).
         """
 
         super().__init__()
