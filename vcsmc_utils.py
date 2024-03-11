@@ -122,7 +122,7 @@ def gather_K(arr_K: Tensor, index_K: Tensor) -> Tensor:
     Given an array of shape (K, None, ...), gathers the K elements at
     [k, index[k]] for each k in [0, K). Returns a tensor of shape (K, ...).
     """
-    K = index_K.shape[0]
+    K = arr_K.shape[0]
     return arr_K[torch.arange(K), index_K]
 
 
@@ -132,7 +132,7 @@ def gather_K2(arr_K: Tensor, index1_K: Tensor, index2_K: Tensor) -> Tensor:
     [k, index1[k], index2[k]] for each k in [0, K).
     Returns a tensor of shape (K, ...).
     """
-    K = index1_K.shape[0]
+    K = arr_K.shape[0]
     return arr_K[torch.arange(K), index1_K, index2_K]
 
 
@@ -148,7 +148,7 @@ def replace_with_merged(
 ) -> Tensor:
     """
     Removes elements at idx1 and idx2, and appends new_val to the end. Acts on
-    axis=0.
+    dim=0.
     """
 
     # ensure idx1 < idx2
@@ -159,6 +159,29 @@ def replace_with_merged(
         [arr[:idx1], arr[idx1 + 1 : idx2], arr[idx2 + 1 :], new_val.unsqueeze(0)],
         0,
     )
+
+
+def replace_with_merged_K(
+    arr_K: Tensor, idx1_K: Tensor, idx2_K: Tensor, new_val_K: Tensor
+) -> Tensor:
+    """
+    For each k in [0, K), modify row arr[k] by removing elements at idx1[k] and
+    idx2[k], and appending new_val[k] to the end.
+    """
+
+    # ensure idx1 < idx2 (element-wise)
+    idx1_K, idx2_K = torch.min(idx1_K, idx2_K), torch.max(idx1_K, idx2_K)
+
+    # move new_val into arr at idx1
+    gather_K(arr_K, idx1_K)[:] = new_val_K
+
+    # move last element of arr to idx2
+    gather_K(arr_K, idx2_K)[:] = arr_K[:, -1]
+
+    # remove last element of arr
+    arr_K = arr_K[:, :-1]
+
+    return arr_K.clone()  # ensure .view() works on return tensor
 
 
 def build_newick_tree(
