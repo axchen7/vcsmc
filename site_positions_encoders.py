@@ -1,17 +1,15 @@
-import keras
-import tensorflow as tf
+import torch
+from torch import Tensor, nn
 
-from constants import DTYPE_FLOAT
-from encoders import mlp_add_hidden_layers
-from type_utils import Tensor, tf_function
+from encoders import MLP
 
 
-class SitePositionsEncoder(tf.Module):
+class SitePositionsEncoder(nn.Module):
     """
     Compresses one-hot site positions to a smaller dimension C.
     """
 
-    def __call__(self, site_positions_SxSfull: Tensor) -> Tensor:
+    def forward(self, site_positions_SxSfull: Tensor) -> Tensor:
         """
         Returns:
             site_positions_SxC: Compressed site positions.
@@ -24,10 +22,9 @@ class DummySitePositionsEncoder(SitePositionsEncoder):
     Returns an empty Sx0 tensor.
     """
 
-    @tf_function(reduce_retracing=True)
-    def __call__(self, site_positions_SxSfull):
-        S = tf.shape(site_positions_SxSfull)[0]  # type: ignore
-        return tf.zeros([S, 0], dtype=DTYPE_FLOAT)
+    def forward(self, site_positions_SxSfull: Tensor) -> Tensor:
+        S = site_positions_SxSfull.shape[0]
+        return torch.zeros([S, 0])
 
 
 class MLPSitePositionsEncoder(SitePositionsEncoder):
@@ -36,9 +33,10 @@ class MLPSitePositionsEncoder(SitePositionsEncoder):
     dimension C.
     """
 
-    def __init__(self, *, C: int, width: int, depth: int):
+    def __init__(self, *, S: int, C: int, width: int, depth: int):
         """
         Args:
+            S: The full number of sites.
             C: The compressed dimension.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
@@ -46,24 +44,8 @@ class MLPSitePositionsEncoder(SitePositionsEncoder):
 
         super().__init__()
 
-        self.C = C
-        self.width = width
-        self.depth = depth
+        self.mlp = MLP(S, C, width, depth)
 
-        self.mlp = None
-
-    def create_mlp(self, Sfull: int):
-        mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([Sfull], dtype=DTYPE_FLOAT))
-        mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
-        mlp.add(keras.layers.Dense(self.C, dtype=DTYPE_FLOAT))
-        return mlp
-
-    @tf_function(reduce_retracing=True)
-    def __call__(self, site_positions_SxSfull):
-        if self.mlp is None:
-            Sfull = site_positions_SxSfull.shape[1]
-            self.mlp = self.create_mlp(Sfull)
-
+    def forward(self, site_positions_SxSfull: Tensor) -> Tensor:
         site_positions_SxC = self.mlp(site_positions_SxSfull)
         return site_positions_SxC
