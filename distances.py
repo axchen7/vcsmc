@@ -1,23 +1,21 @@
-import tensorflow as tf
-
-from constants import DTYPE_FLOAT
-from type_utils import Tensor, tf_function
+import torch
+import torch.nn as nn
+from torch import Tensor
 
 EPSILON = 1e-8
 
 
-@tf_function(reduce_retracing=True)
-def safe_norm(x: Tensor, axis=None, keepdims=False) -> Tensor:
+def safe_norm(x: Tensor, dim: int | None = None, keepdim: bool = False) -> Tensor:
     """
     Computes the L2 norm of a tensor, adding a small epsilon to avoid NaN
     gradients when the norm is zero.
     """
 
-    return tf.sqrt(tf.reduce_sum(tf.square(x), axis, keepdims) + EPSILON)
+    norm_sq = x.pow(2).sum(dim, keepdim)
+    return torch.sqrt(norm_sq + EPSILON)
 
 
-class Distance(tf.Module):
-    @tf_function(reduce_retracing=True)
+class Distance(nn.Module):
     def normalize(self, vectors_VxD: Tensor) -> Tensor:
         """
         Given a tensor of shape (V, D), normalizes each row so that it is
@@ -26,7 +24,12 @@ class Distance(tf.Module):
         """
         return vectors_VxD
 
-    @tf_function(reduce_retracing=True)
+    def feature_expand_shape(self, D: int) -> int:
+        """
+        Returns the dimensionality after expanding a single D-dimensional vector.
+        """
+        return D
+
     def feature_expand(self, vectors_VxD: Tensor) -> Tensor:
         """
         Given a tensor of shape (V, D), expands it to a tensor of shape (V, ?),
@@ -34,7 +37,7 @@ class Distance(tf.Module):
         """
         return vectors_VxD
 
-    def __call__(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
+    def forward(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
         """
         Given two tensors of shape (V, D) containing normalized vectors,returns
         the distance between each pair of rows. Returns a tensor of shape (V,).
@@ -43,54 +46,54 @@ class Distance(tf.Module):
 
 
 class Euclidean(Distance):
-    @tf_function()
-    def __call__(self, vectors1_VxD, vectors2_VxD):
-        return safe_norm(vectors1_VxD - vectors2_VxD, axis=-1)
+    def forward(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
+        return safe_norm(vectors1_VxD - vectors2_VxD, -1)
 
 
 class Hyperbolic(Distance):
     def __init__(self, *, max_radius: float = 0.99, scale: float = 0.01):
         super().__init__()
 
-        self.max_radius = tf.constant(max_radius, dtype=DTYPE_FLOAT)
-        self.scale = tf.constant(scale, dtype=DTYPE_FLOAT)
+        self.max_radius = max_radius
+        self.scale = scale
 
-    @tf_function()
-    def normalize(self, vectors_VxD):
+    def normalize(self, vectors_VxD: Tensor) -> Tensor:
         # return a vector with the same direction but with the norm passed
         # through tanh()
 
-        norms_V = safe_norm(vectors_VxD, axis=-1)
-        new_norms_V = tf.tanh(norms_V) * self.max_radius
+        norms_V = safe_norm(vectors_VxD, -1)
+        new_norms_V = norms_V.tanh() * self.max_radius
 
         # avoid division by zero
-        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + EPSILON)
-        return unit_vectors_VxD * new_norms_V[:, tf.newaxis]
+        unit_vectors_VxD = vectors_VxD / (norms_V.unsqueeze(-1) + EPSILON)
+        return unit_vectors_VxD * new_norms_V.unsqueeze(-1)
 
-    @tf_function()
-    def feature_expand(self, vectors_VxD):
+    def feature_expand_shape(self, D: int) -> int:
+        return D + 1
+
+    def feature_expand(self, vectors_VxD: Tensor) -> Tensor:
         # return a normalized vector with the norm appended as a feature, which
         # captures the vector's distance from the Poincaré disk's center
 
         # the norm is passed through atanh() to expand it from [0, 1]
         # to [0, inf]
 
-        norms_V = safe_norm(vectors_VxD, axis=-1)
-        new_norms_V = tf.atanh(norms_V)
-        # avoid division by zero
-        unit_vectors_VxD = vectors_VxD / (norms_V[:, tf.newaxis] + EPSILON)
-        return tf.concat([unit_vectors_VxD, new_norms_V[:, tf.newaxis]], axis=-1)
+        norms_V = safe_norm(vectors_VxD, -1)
+        new_norms_V = norms_V.atanh()
 
-    @tf_function()
-    def __call__(self, vectors1_VxD, vectors2_VxD):
+        # avoid division by zero
+        unit_vectors_VxD = vectors_VxD / (norms_V.unsqueeze(-1) + EPSILON)
+        return torch.cat([unit_vectors_VxD, new_norms_V.unsqueeze(-1)], -1)
+
+    def forward(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
         # see https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance
 
-        xy_norm_sq_V = tf.reduce_sum(tf.square(vectors1_VxD - vectors2_VxD), axis=-1)
-        one_minus_x_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors1_VxD), axis=-1)
-        one_minus_y_norm_sq_V = 1 - tf.reduce_sum(tf.square(vectors2_VxD), axis=-1)
+        xy_norm_sq_V = torch.sum((vectors1_VxD - vectors2_VxD) ** 2, -1)
+        one_minus_x_norm_sq_V = 1 - torch.sum(vectors1_VxD**2, dim=-1)
+        one_minus_y_norm_sq_V = 1 - torch.sum(vectors2_VxD**2, dim=-1)
 
         delta_V = 2 * xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V)
 
-        distance_V = tf.acosh(1 + 2 * delta_V + EPSILON)
+        distance_V = torch.acosh(1 + 2 * delta_V + EPSILON)
 
         return distance_V * self.scale
