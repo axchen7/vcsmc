@@ -65,7 +65,7 @@ def compute_log_likelihood_and_pi_K(
     felsensteins_KxtxSxA: Tensor,
     stat_probs_KxtxSxA: Tensor,
     prior_dist: Literal["gamma", "exp"],
-    prior_branch_len: Tensor,
+    prior_branch_len: float,
     log_double_factorials_2N: Tensor,
 ) -> tuple[Tensor, Tensor]:
     """
