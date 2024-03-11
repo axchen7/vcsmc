@@ -65,6 +65,6 @@ def load_phy(
         for s in range(S):
             data_NxSxA[n, s, :] = alphabet[genome_strings[n][s]]
 
-    data_NxSxA = torch.tensor(data_NxSxA)
+    data_NxSxA = torch.tensor(data_NxSxA, dtype=torch.float)
 
     return N, S, A, data_NxSxA, taxa_N
