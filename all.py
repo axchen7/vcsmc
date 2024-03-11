@@ -2,7 +2,7 @@
 Imports everything relevant for training the model.
 """
 
-import keras
+import torch
 
 from distances import *
 from encoders import *
