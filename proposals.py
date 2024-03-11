@@ -220,8 +220,9 @@ class EmbeddingProposal(Proposal):
         merge_log_weights_Kxtxt = -pairwise_distances_Kxtxt / self.sample_merge_temp
 
         # set diagonal entries to -inf to prevent self-merges
-        diag_mask_txt = torch.diag(torch.full([t], -torch.inf))
-        merge_log_weights_Kxtxt.add_(diag_mask_txt.unsqueeze(0))
+        merge_log_weights_Kxtxt = merge_log_weights_Kxtxt.diagonal_scatter(
+            torch.full([K, t], -torch.inf), dim1=1, dim2=2
+        )
 
         # TODO convert
         # for debugging
