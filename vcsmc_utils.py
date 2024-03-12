@@ -164,14 +164,33 @@ def replace_with_merged_K(
 
     # move new_val into arr at idx1
     new_arr_K[arange_K, idx1_K] = new_val_K
-
     # move last element of arr to idx2
     new_arr_K[arange_K, idx2_K] = arr_K[:, -1]
-
     # remove last element of arr
     new_arr_K = new_arr_K[:, :-1]
 
     return new_arr_K
+
+
+def replace_with_merged_list(arr: list, idx1: int, idx2: int, new_val) -> list:
+    """
+    Mirrors merge ordering in `replace_with_merged_K`. Does not modify the input
+    """
+
+    # ensure idx1 < idx2
+    if idx1 > idx2:
+        idx1, idx2 = idx2, idx1
+
+    new_arr = arr.copy()
+
+    # move new_val into arr at idx1
+    new_arr[idx1] = new_val
+    # move last element of arr to idx2
+    new_arr[idx2] = arr[-1]
+    # remove last element of arr
+    new_arr.pop()
+
+    return new_arr
 
 
 def build_newick_tree(
@@ -202,12 +221,8 @@ def build_newick_tree(
     trees_t = taxa_N
 
     for r in range(N - 1):
-        idx1 = merge1_indexes_N1[r]
-        idx2 = merge2_indexes_N1[r]
-
-        # ensure idx1 < idx2
-        if idx1 > idx2:
-            idx1, idx2 = idx2, idx1
+        idx1 = int(merge1_indexes_N1[r])
+        idx2 = int(merge2_indexes_N1[r])
 
         branch1 = str(float(branch1_lengths_N1[r]))
         branch2 = str(float(branch2_lengths_N1[r]))
@@ -217,9 +232,7 @@ def build_newick_tree(
 
         new_tree = "(" + tree1 + ":" + branch1 + "," + tree2 + ":" + branch2 + ")"
 
-        trees_t = (
-            trees_t[:idx1] + trees_t[idx1 + 1 : idx2] + trees_t[idx2 + 1 :] + [new_tree]
-        )
+        trees_t = replace_with_merged_list(trees_t, idx1, idx2, new_tree)
 
     root_tree = trees_t[0] + ";"
     return root_tree
