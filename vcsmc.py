@@ -1,11 +1,10 @@
-from typing import Literal
+from typing import Literal, TypedDict
 
-import tensorflow as tf
+import torch
+from torch import Tensor, nn
 
-from constants import DTYPE_FLOAT
 from proposals import Proposal
 from q_matrix_decoders import QMatrixDecoder
-from type_utils import Tensor, tf_function
 from vcsmc_utils import (
     build_newick_tree,
     compute_felsenstein_likelihoods_KxSxA,
@@ -13,16 +12,26 @@ from vcsmc_utils import (
     compute_log_likelihood_and_pi_K,
     concat_K,
     gather_K,
-    replace_with_merged,
+    replace_with_merged_K,
 )
 
 
-class VCSMC(tf.Module):
+class VCSMC_Result(TypedDict):
+    log_Z_SMC: Tensor
+    log_likelihood_K: Tensor
+    best_newick_tree: str
+    best_merge1_indexes_N1: Tensor
+    best_merge2_indexes_N1: Tensor
+    best_branch1_lengths_N1: Tensor
+    best_branch2_lengths_N1: Tensor
+
+
+class VCSMC(nn.Module):
     def __init__(
         self,
         q_matrix_decoder: QMatrixDecoder,
         proposal: Proposal,
-        taxa_N: Tensor,
+        taxa_N: list[str],
         *,
         K: int,
         prior_dist: Literal["gamma", "exp"] = "exp",
@@ -32,7 +41,7 @@ class VCSMC(tf.Module):
         Args:
             q_matrix: QMatrix object
             proposal: Proposal object
-            taxa_N: Tensor of taxa names
+            taxa_N: List of taxa names of length N
             K: Number of particles
             prior_dist: Prior distribution for branch lengths
             prior_branch_len: Expected branch length under the prior
@@ -45,23 +54,24 @@ class VCSMC(tf.Module):
         self.taxa_N = taxa_N
         self.K = K
         self.prior_dist: Literal["gamma", "exp"] = prior_dist
-        self.prior_branch_len = tf.constant(prior_branch_len, DTYPE_FLOAT)
+        self.prior_branch_len = prior_branch_len
 
-    @tf_function()
-    def get_init_embeddings_KxNxD(self, data_NxSxA):
+        N = len(taxa_N)
+        self.log_double_factorials_2N = compute_log_double_factorials_2N(N)
+
+    def get_init_embeddings_KxNxD(self, data_NxSxA: Tensor):
         """Sets the embedding for all K particles to the same initial value."""
-        embeddings_NxD = self.proposal.seq_encoder(data_NxSxA)
-        return tf.repeat(embeddings_NxD[tf.newaxis], self.K, axis=0)  # type: ignore
+        embeddings_NxD: Tensor = self.proposal.seq_encoder(data_NxSxA)
+        return embeddings_NxD.repeat(self.K, 1, 1)
 
-    @tf_function()
-    def __call__(
+    def forward(
         self,
         data_NxSxA: Tensor,
         data_batched_NxSxA: Tensor,
-        site_positions_batched_SxSfull,
+        site_positions_batched_SxSfull: Tensor,
         *,
         log=False,
-    ) -> Tensor:
+    ) -> VCSMC_Result:
         """
         Args:
             data_NxSxA: Tensor of N full sequences (not batched).
@@ -88,8 +98,6 @@ class VCSMC(tf.Module):
 
         K = self.K
 
-        log_double_factorials_2N = compute_log_double_factorials_2N(N)
-
         # compress site positions
         site_positions_SxC = self.q_matrix_decoder.site_positions_encoder(
             site_positions_batched_SxSfull
@@ -99,59 +107,49 @@ class VCSMC(tf.Module):
         # initially, r = 0 and t = N
 
         # for tracking tree topologies
-        merge1_indexes_Kxr = tf.zeros([K, 0], dtype=tf.int32)
-        merge2_indexes_Kxr = tf.zeros([K, 0], dtype=tf.int32)
-        branch1_lengths_Kxr = tf.zeros([K, 0], dtype=DTYPE_FLOAT)
-        branch2_lengths_Kxr = tf.zeros([K, 0], dtype=DTYPE_FLOAT)
+        merge1_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int)
+        merge2_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int)
+        branch1_lengths_Kxr = torch.zeros(K, 0)
+        branch2_lengths_Kxr = torch.zeros(K, 0)
 
-        leaf_counts_Kxt = tf.ones([K, N], dtype=tf.int32)
+        leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int)
         embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
 
         # Felsenstein probabilities for computing pi(s)
-        felsensteins_KxtxSxA = tf.repeat(data_batched_NxSxA[tf.newaxis], K, axis=0)
+        felsensteins_KxtxSxA = data_batched_NxSxA.repeat(K, 1, 1, 1)
 
         # difference of current and last iteration's values are used to compute weights
-        log_pi_K = tf.zeros(K, DTYPE_FLOAT)
+        log_pi_K = torch.zeros(K)
         # for computing empirical measure pi_rk(s)
-        log_weight_K = tf.zeros(K, DTYPE_FLOAT)
+        log_weight_K = torch.zeros(K)
 
         # must record all weights to compute Z_SMC
-        log_weights_rxK = tf.TensorArray(DTYPE_FLOAT, N - 1)
+        log_weights_list_rxK: list[Tensor] = []
 
         # for displaying at the end
-        log_likelihood_K = tf.zeros(K, DTYPE_FLOAT)  # initial value isn't used
+        log_likelihood_K = torch.zeros(K)  # initial value isn't used
 
-        # for setting shape_invariants
-        D = embeddings_KxtxD.shape[2]
+        # for flattening embeddings
+        D = embeddings_KxtxD.shape[-1]
 
         # iterate over merge steps
-        for r in tf.range(N - 1):
-            tf.autograph.experimental.set_loop_options(
-                shape_invariants=[
-                    (merge1_indexes_Kxr, tf.TensorShape([K, None])),
-                    (merge2_indexes_Kxr, tf.TensorShape([K, None])),
-                    (branch1_lengths_Kxr, tf.TensorShape([K, None])),
-                    (branch2_lengths_Kxr, tf.TensorShape([K, None])),
-                    (leaf_counts_Kxt, tf.TensorShape([K, None])),
-                    (embeddings_KxtxD, tf.TensorShape([K, None, D])),
-                    (felsensteins_KxtxSxA, tf.TensorShape([K, None, None, A])),
-                ]
-            )
-
+        for _ in range(N - 1):
             # ===== resample =====
 
-            indexes = tf.random.categorical([log_weight_K], K, tf.int32)
-            indexes = tf.squeeze(indexes)
+            # shift log weights so max is 0
+            log_weight_shifted_K = log_weight_K - torch.max(log_weight_K)
 
-            merge1_indexes_Kxr = tf.gather(merge1_indexes_Kxr, indexes)
-            merge2_indexes_Kxr = tf.gather(merge2_indexes_Kxr, indexes)
-            branch1_lengths_Kxr = tf.gather(branch1_lengths_Kxr, indexes)
-            branch2_lengths_Kxr = tf.gather(branch2_lengths_Kxr, indexes)
-            leaf_counts_Kxt = tf.gather(leaf_counts_Kxt, indexes)
-            embeddings_KxtxD = tf.gather(embeddings_KxtxD, indexes)
-            felsensteins_KxtxSxA = tf.gather(felsensteins_KxtxSxA, indexes)
-            log_pi_K = tf.gather(log_pi_K, indexes)
-            log_weight_K = tf.gather(log_weight_K, indexes)
+            indexes_K = torch.multinomial(log_weight_shifted_K.exp(), K, True)
+
+            merge1_indexes_Kxr = merge1_indexes_Kxr[indexes_K]
+            merge2_indexes_Kxr = merge2_indexes_Kxr[indexes_K]
+            branch1_lengths_Kxr = branch1_lengths_Kxr[indexes_K]
+            branch2_lengths_Kxr = branch2_lengths_Kxr[indexes_K]
+            leaf_counts_Kxt = leaf_counts_Kxt[indexes_K]
+            embeddings_KxtxD = embeddings_KxtxD[indexes_K]
+            felsensteins_KxtxSxA = felsensteins_KxtxSxA[indexes_K]
+            log_pi_K = log_pi_K[indexes_K]
+            log_weight_K = log_weight_K[indexes_K]
 
             # ===== extend partial states using proposal =====
 
@@ -164,18 +162,11 @@ class VCSMC(tf.Module):
                 embedding_KxD,
                 log_v_plus_K,
                 log_v_minus_K,
-            ) = self.proposal(N, r, leaf_counts_Kxt, embeddings_KxtxD, log)
+            ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD, log)
 
             # helper function
-            def merge_K(arr_K, new_val_K):
-                # TODO optimize
-                return tf.map_fn(
-                    lambda args: replace_with_merged(
-                        args[0], idx1_K[args[2]], idx2_K[args[2]], args[1]
-                    ),
-                    (arr_K, new_val_K, tf.range(K)),
-                    fn_output_signature=arr_K.dtype,
-                )
+            def merge_K(arr_K: Tensor, new_val_K: Tensor):
+                return replace_with_merged_K(arr_K, idx1_K, idx2_K, new_val_K)
 
             # ===== post-proposal bookkeeping =====
 
@@ -207,15 +198,27 @@ class VCSMC(tf.Module):
 
             # ===== compute new likelihood, pi, and weight =====
 
-            prev_log_pi_K = log_pi_K
+            def compute_stat_probs_KxtxSxA():
+                t = embeddings_KxtxD.shape[1]
 
-            # TODO optimize vectorized_map
-            stat_probs_KxtxSxA = tf.vectorized_map(
-                lambda embeddings_txD: self.q_matrix_decoder.stat_probs_VxSxA(
-                    embeddings_txD, site_positions_SxC
-                ),
-                embeddings_KxtxD,
-            )
+                # flatten embeddings to compute stat_probs, then reshape back
+                embeddings_KtxD = embeddings_KxtxD.reshape(K * t, D)
+                stat_probs_KtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
+                    embeddings_KtxD, site_positions_SxC
+                )
+
+                Kt = stat_probs_KtxSxA.shape[0]
+                S = stat_probs_KtxSxA.shape[1]
+
+                # if stat_probs_VxSxA() returned a tensor with S=1 and/or Kt=1,
+                # continue to use broadcasting
+                if Kt == 1:
+                    return stat_probs_KtxSxA.view(1, 1, S, A)
+                else:
+                    return stat_probs_KtxSxA.view(K, t, S, A)
+
+            prev_log_pi_K = log_pi_K
+            stat_probs_KxtxSxA = compute_stat_probs_KxtxSxA()
 
             log_likelihood_K, log_pi_K = compute_log_likelihood_and_pi_K(
                 branch1_lengths_Kxr,
@@ -225,13 +228,13 @@ class VCSMC(tf.Module):
                 stat_probs_KxtxSxA,
                 self.prior_dist,
                 self.prior_branch_len,
-                log_double_factorials_2N,
+                self.log_double_factorials_2N,
             )
 
             # equation (7) in the VCSMC paper
             log_weight_K = log_pi_K - prev_log_pi_K + log_v_minus_K - log_v_plus_K
 
-            log_weights_rxK = log_weights_rxK.write(r, log_weight_K)
+            log_weights_list_rxK.append(log_weight_K)
 
         # ===== compute Z_SMC =====
 
@@ -240,14 +243,14 @@ class VCSMC(tf.Module):
         # multiplying over coalescent events (across r).
         # See equation (8) in the VCSMC paper.
 
-        log_weights_rxK = log_weights_rxK.stack()
-        log_scaled_weights_rxK = log_weights_rxK - tf.math.log(tf.cast(K, DTYPE_FLOAT))
-        log_sum_weights_r = tf.reduce_logsumexp(log_scaled_weights_rxK, axis=1)
-        log_Z_SMC = tf.reduce_sum(log_sum_weights_r)
+        log_weights_rxK = torch.stack(log_weights_list_rxK)
+        log_scaled_weights_rxK = log_weights_rxK - torch.log(torch.tensor(K))
+        log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
+        log_Z_SMC = torch.sum(log_sum_weights_r)
 
         # ==== build best Newick tree ====
 
-        best_tree_idx = tf.math.argmax(log_likelihood_K)
+        best_tree_idx = torch.argmax(log_likelihood_K)
         best_newick_tree = build_newick_tree(
             self.taxa_N,
             merge1_indexes_Kxr[best_tree_idx],
