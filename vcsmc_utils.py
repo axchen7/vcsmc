@@ -98,17 +98,19 @@ def compute_log_likelihood_and_pi_K(
 
     if prior_dist == "exp":
         # distribution has a mean of prior_branch_len
-        branch_prior_dist = torch.distributions.Exponential(rate=1.0 / prior_branch_len)
+        branch_prior_distr = torch.distributions.Exponential(
+            rate=1.0 / prior_branch_len
+        )
     elif prior_dist == "gamma":
         # distribution has a mean of prior_branch_len
-        branch_prior_dist = torch.distributions.Gamma(
+        branch_prior_distr = torch.distributions.Gamma(
             concentration=2.0, rate=2.0 / prior_branch_len
         )
     else:
         raise ValueError
 
-    log_branch1_prior_K = torch.sum(branch_prior_dist.log_prob(branch1_lengths_Kxr), 1)
-    log_branch2_prior_K = torch.sum(branch_prior_dist.log_prob(branch2_lengths_Kxr), 1)
+    log_branch1_prior_K = torch.sum(branch_prior_distr.log_prob(branch1_lengths_Kxr), 1)
+    log_branch2_prior_K = torch.sum(branch_prior_distr.log_prob(branch2_lengths_Kxr), 1)
 
     log_pi_K = (
         log_likelihood_K

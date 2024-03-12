@@ -109,14 +109,14 @@ class ExpBranchProposal(Proposal):
 
         branch_param1, branch_param2 = self.branch_params(r)
 
-        branch_dist1 = torch.distributions.Exponential(rate=branch_param1)
-        branch_dist2 = torch.distributions.Exponential(rate=branch_param2)
+        branch_distr1 = torch.distributions.Exponential(rate=branch_param1)
+        branch_distr2 = torch.distributions.Exponential(rate=branch_param2)
 
-        branch1_K = branch_dist1.sample(torch.Size([K]))
-        branch2_K = branch_dist2.sample(torch.Size([K]))
+        branch1_K = branch_distr1.sample(torch.Size([K]))
+        branch2_K = branch_distr2.sample(torch.Size([K]))
 
-        log_branch1_prior_K = branch_dist1.log_prob(branch1_K)
-        log_branch2_prior_K = branch_dist2.log_prob(branch2_K)
+        log_branch1_prior_K = branch_distr1.log_prob(branch1_K)
+        log_branch2_prior_K = branch_distr2.log_prob(branch2_K)
 
         # ===== compute proposal probability =====
 
@@ -234,8 +234,8 @@ class EmbeddingProposal(Proposal):
 
         flattened_log_weights_Kxtt = merge_log_weights_Kxtxt.view(K, t * t)
 
-        merge_dist = torch.distributions.Categorical(logits=flattened_log_weights_Kxtt)
-        flattened_sample_K = merge_dist.sample()
+        merge_distr = torch.distributions.Categorical(logits=flattened_log_weights_Kxtt)
+        flattened_sample_K = merge_distr.sample()
 
         idx1_K = flattened_sample_K // t
         idx2_K = flattened_sample_K % t
