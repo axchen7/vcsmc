@@ -112,8 +112,8 @@ class ExpBranchProposal(Proposal):
         branch_dist1 = torch.distributions.Exponential(rate=branch_param1)
         branch_dist2 = torch.distributions.Exponential(rate=branch_param2)
 
-        branch1_K = branch_dist1.sample([K])  # type: ignore
-        branch2_K = branch_dist2.sample([K])  # type: ignore
+        branch1_K = branch_dist1.sample(torch.Size([K]))
+        branch2_K = branch_dist2.sample(torch.Size([K]))
 
         log_branch1_prior_K = branch_dist1.log_prob(branch1_K)
         log_branch2_prior_K = branch_dist2.log_prob(branch2_K)
@@ -234,15 +234,8 @@ class EmbeddingProposal(Proposal):
 
         flattened_log_weights_Kxtt = merge_log_weights_Kxtxt.view(K, t * t)
 
-        # shift log weights so each row's max is 0
-        max_log_weights_K = torch.max(flattened_log_weights_Kxtt, 1).values
-        flattened_log_weights_Kxtt = (
-            flattened_log_weights_Kxtt - max_log_weights_K.unsqueeze(1)
-        )
-
-        # sample a single pair of subtrees for each of the K particles
-        flattened_sample_Kx1 = torch.multinomial(flattened_log_weights_Kxtt.exp(), 1)
-        flattened_sample_K = flattened_sample_Kx1.squeeze(1)
+        merge_dist = torch.distributions.Categorical(logits=flattened_log_weights_Kxtt)
+        flattened_sample_K = merge_dist.sample()
 
         idx1_K = flattened_sample_K // t
         idx2_K = flattened_sample_K % t

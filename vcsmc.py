@@ -136,10 +136,8 @@ class VCSMC(nn.Module):
         for _ in range(N - 1):
             # ===== resample =====
 
-            # shift log weights so max is 0
-            log_weight_shifted_K = log_weight_K - torch.max(log_weight_K)
-
-            indexes_K = torch.multinomial(log_weight_shifted_K.exp(), K, True)
+            resample_dist = torch.distributions.Categorical(logits=log_weight_K)
+            indexes_K = resample_dist.sample(torch.Size([K]))
 
             merge1_indexes_Kxr = merge1_indexes_Kxr[indexes_K]
             merge2_indexes_Kxr = merge2_indexes_Kxr[indexes_K]
