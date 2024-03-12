@@ -1,6 +1,7 @@
 ipykernel
 ipywidgets
 torch
+torch_tb_profiler
 tensorboard
 numpy
 scipy
