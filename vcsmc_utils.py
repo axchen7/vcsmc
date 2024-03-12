@@ -107,11 +107,14 @@ def compute_log_likelihood_and_pi_K(
     else:
         raise ValueError
 
-    log_branch1_prior = torch.sum(branch_prior_dist.log_prob(branch1_lengths_Kxr))
-    log_branch2_prior = torch.sum(branch_prior_dist.log_prob(branch2_lengths_Kxr))
+    log_branch1_prior_K = torch.sum(branch_prior_dist.log_prob(branch1_lengths_Kxr), 1)
+    log_branch2_prior_K = torch.sum(branch_prior_dist.log_prob(branch2_lengths_Kxr), 1)
 
     log_pi_K = (
-        log_likelihood_K + log_topology_prior_K + log_branch1_prior + log_branch2_prior
+        log_likelihood_K
+        + log_topology_prior_K
+        + log_branch1_prior_K
+        + log_branch2_prior_K
     )
 
     return log_likelihood_K, log_pi_K
@@ -143,24 +146,6 @@ def concat_K(arr_Kxr, val_K) -> Tensor:
     return torch.cat([arr_Kxr, val_K.unsqueeze(1)], 1)
 
 
-def replace_with_merged(
-    arr: Tensor, idx1: Tensor, idx2: Tensor, new_val: Tensor
-) -> Tensor:
-    """
-    Removes elements at idx1 and idx2, and appends new_val to the end. Acts on
-    dim=0.
-    """
-
-    # ensure idx1 < idx2
-    if idx1 > idx2:
-        idx1, idx2 = idx2, idx1
-
-    return torch.cat(
-        [arr[:idx1], arr[idx1 + 1 : idx2], arr[idx2 + 1 :], new_val.unsqueeze(0)],
-        0,
-    )
-
-
 def replace_with_merged_K(
     arr_K: Tensor, idx1_K: Tensor, idx2_K: Tensor, new_val_K: Tensor
 ) -> Tensor:
@@ -169,19 +154,24 @@ def replace_with_merged_K(
     idx2[k], and appending new_val[k] to the end.
     """
 
+    K = arr_K.shape[0]
+    arange_K = torch.arange(K)
+
     # ensure idx1 < idx2 (element-wise)
     idx1_K, idx2_K = torch.min(idx1_K, idx2_K), torch.max(idx1_K, idx2_K)
 
+    new_arr_K = arr_K.clone()
+
     # move new_val into arr at idx1
-    gather_K(arr_K, idx1_K)[:] = new_val_K
+    new_arr_K[arange_K, idx1_K] = new_val_K
 
     # move last element of arr to idx2
-    gather_K(arr_K, idx2_K)[:] = arr_K[:, -1]
+    new_arr_K[arange_K, idx2_K] = arr_K[:, -1]
 
     # remove last element of arr
-    arr_K = arr_K[:, :-1]
+    new_arr_K = new_arr_K[:, :-1]
 
-    return arr_K.clone()  # ensure .view() works on return tensor
+    return new_arr_K
 
 
 def build_newick_tree(
