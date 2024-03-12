@@ -1,6 +1,5 @@
 import math
 
-import torch
 from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
 from torch import Tensor
@@ -8,6 +7,7 @@ from torch import Tensor
 from proposals import EmbeddingProposal
 from train import batch_by_sites
 from vcsmc import VCSMC
+from vcsmc_utils import replace_with_merged_list
 
 
 def render_poincare(
@@ -38,27 +38,27 @@ def render_poincare(
     min_y = math.inf
     max_y = -math.inf
 
-    embeddings_txD = proposal.seq_encoder(data_NxSxA)
+    embeddings_txD: list[Tensor] = list(proposal.seq_encoder(data_NxSxA))
     labels_t = taxa_N
 
     for r in range(N - 1):
         idx1 = merge1_indexes_N1[r]
         idx2 = merge2_indexes_N1[r]
 
-        # ensure idx1 < idx2
-        if idx1 > idx2:
-            idx1, idx2 = idx2, idx1
+        emb1_D = embeddings_txD[idx1]
+        emb2_D = embeddings_txD[idx2]
 
-        emb1_1xD = embeddings_txD[idx1].unsqueeze(0)
-        emb2_1xD = embeddings_txD[idx2].unsqueeze(0)
-        parent_emb_1xD = proposal.merge_encoder(emb1_1xD, emb2_1xD)
+        parent_emb_1xD = proposal.merge_encoder(
+            emb1_D.unsqueeze(0), emb2_D.unsqueeze(0)
+        )
+        parent_emb_D = parent_emb_1xD[0]
 
         # flip y coordinate to match matplotlib display orientation
         unpack = lambda x: (float(x[0]), -float(x[1]))
 
-        emb1 = unpack(emb1_1xD[0])
-        emb2 = unpack(emb2_1xD[0])
-        parent_embed = unpack(parent_emb_1xD[0])
+        emb1 = unpack(emb1_D)
+        emb2 = unpack(emb2_D)
+        parent_embed = unpack(parent_emb_D)
 
         label1 = labels_t[idx1]
         label2 = labels_t[idx2]
@@ -87,18 +87,10 @@ def render_poincare(
         min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
         max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
 
-        embeddings_txD = torch.cat(
-            [
-                embeddings_txD[:idx1],
-                embeddings_txD[idx1 + 1 : idx2],
-                embeddings_txD[idx2 + 1 :],
-                parent_emb_1xD,
-            ],
-            0,
+        embeddings_txD = replace_with_merged_list(
+            embeddings_txD, idx1, idx2, parent_emb_D
         )
-        labels_t = (
-            labels_t[:idx1] + labels_t[idx1 + 1 : idx2] + labels_t[idx2 + 1 :] + [""]
-        )
+        labels_t = replace_with_merged_list(labels_t, idx1, idx2, "")
 
     dx = max_x - min_x
     dy = max_y - min_y
