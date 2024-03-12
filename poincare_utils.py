@@ -1,28 +1,29 @@
 import math
 
-import tensorflow as tf
+import torch
 from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
+from torch import Tensor
 
 from proposals import EmbeddingProposal
 from train import batch_by_sites
-from type_utils import Tensor
 from vcsmc import VCSMC
-from vcsmc_utils import replace_with_merged
 
 
 def render_poincare(
     vcsmc: VCSMC,
     proposal: EmbeddingProposal,
     data_NxSxA: Tensor,
-    taxa_N: Tensor,
+    taxa_N: list[str],
 ) -> Drawing:
-    N = taxa_N.shape[0]
+    N = len(taxa_N)
 
     dataset = batch_by_sites(data_NxSxA, None)
 
     # batch is actually the full dataset
-    data_batched_NxSxA, site_positions_batched_SxSfull = next(iter(dataset))
+    data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
+    data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
+
     result = vcsmc(data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
 
     merge1_indexes_N1 = result["best_merge1_indexes_N1"]
@@ -44,19 +45,23 @@ def render_poincare(
         idx1 = merge1_indexes_N1[r]
         idx2 = merge2_indexes_N1[r]
 
-        emb1_D = embeddings_txD[idx1]
-        emb2_D = embeddings_txD[idx2]
-        parent_emb_D = proposal.merge_encoder(emb1_D[tf.newaxis], emb2_D[tf.newaxis])[0]
+        # ensure idx1 < idx2
+        if idx1 > idx2:
+            idx1, idx2 = idx2, idx1
+
+        emb1_1xD = embeddings_txD[idx1].unsqueeze(0)
+        emb2_1xD = embeddings_txD[idx2].unsqueeze(0)
+        parent_emb_1xD = proposal.merge_encoder(emb1_1xD, emb2_1xD)
 
         # flip y coordinate to match matplotlib display orientation
         unpack = lambda x: (float(x[0]), -float(x[1]))
 
-        emb1 = unpack(emb1_D)
-        emb2 = unpack(emb2_D)
-        parent_embed = unpack(parent_emb_D)
+        emb1 = unpack(emb1_1xD[0])
+        emb2 = unpack(emb2_1xD[0])
+        parent_embed = unpack(parent_emb_1xD[0])
 
-        label1 = str(labels_t[idx1].numpy())[2:-1]
-        label2 = str(labels_t[idx2].numpy())[2:-1]
+        label1 = labels_t[idx1]
+        label2 = labels_t[idx2]
 
         p1 = poincare.Point(emb1[0], emb1[1])
         p2 = poincare.Point(emb2[0], emb2[1])
@@ -82,8 +87,18 @@ def render_poincare(
         min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
         max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
 
-        embeddings_txD = replace_with_merged(embeddings_txD, idx1, idx2, parent_emb_D)
-        labels_t = replace_with_merged(labels_t, idx1, idx2, tf.constant(""))
+        embeddings_txD = torch.cat(
+            [
+                embeddings_txD[:idx1],
+                embeddings_txD[idx1 + 1 : idx2],
+                embeddings_txD[idx2 + 1 :],
+                parent_emb_1xD,
+            ],
+            0,
+        )
+        labels_t = (
+            labels_t[:idx1] + labels_t[idx1 + 1 : idx2] + labels_t[idx2 + 1 :] + [""]
+        )
 
     dx = max_x - min_x
     dy = max_y - min_y
