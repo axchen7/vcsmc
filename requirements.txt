@@ -1,9 +1,7 @@
 ipykernel
 ipywidgets
-tensorflow
-tensorflow_probability
+torch
 tensorboard
-tensorboard-plugin-profile
 numpy
 scipy
 matplotlib
