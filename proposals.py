@@ -236,7 +236,9 @@ class EmbeddingProposal(Proposal):
 
         # shift log weights so each row's max is 0
         max_log_weights_K = torch.max(flattened_log_weights_Kxtt, 1).values
-        flattened_log_weights_Kxtt -= max_log_weights_K.unsqueeze(1)
+        flattened_log_weights_Kxtt = (
+            flattened_log_weights_Kxtt - max_log_weights_K.unsqueeze(1)
+        )
 
         # sample a single pair of subtrees for each of the K particles
         flattened_sample_Kx1 = torch.multinomial(flattened_log_weights_Kxtt.exp(), 1)
@@ -291,8 +293,10 @@ class EmbeddingProposal(Proposal):
         # merging (idx2, idx1)
 
         log_merge_prob_K = gather_K2(merge_log_weights_Kxtxt, idx1_K, idx2_K)
-        log_merge_prob_K += torch.log(torch.tensor(2))
-        log_merge_prob_K -= torch.logsumexp(merge_log_weights_Kxtxt, [1, 2])
+        log_merge_prob_K = log_merge_prob_K + torch.log(torch.tensor(2))
+        log_merge_prob_K = log_merge_prob_K - torch.logsumexp(
+            merge_log_weights_Kxtxt, [1, 2]
+        )
 
         log_v_plus_K = log_merge_prob_K + log_branch1_prior_K + log_branch2_prior_K
 
