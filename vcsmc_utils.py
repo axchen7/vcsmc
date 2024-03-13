@@ -43,8 +43,16 @@ def compute_felsenstein_likelihoods_KxSxA(
     Qbranch1_KxSxAxA = Q_matrix_KxSxAxA * branch1_K[:, None, None, None]
     Qbranch2_KxSxAxA = Q_matrix_KxSxAxA * branch2_K[:, None, None, None]
 
+    # do matrix exp in double precision to avoid underflow
+    Qbranch1_KxSxAxA = Qbranch1_KxSxAxA.double()
+    Qbranch2_KxSxAxA = Qbranch2_KxSxAxA.double()
+
     P1_KxSxAxA = torch.matrix_exp(Qbranch1_KxSxAxA)
     P2_KxSxAxA = torch.matrix_exp(Qbranch2_KxSxAxA)
+
+    # convert back to original dtype
+    P1_KxSxAxA = P1_KxSxAxA.to(Q_matrix_KxSxAxA.dtype)
+    P2_KxSxAxA = P2_KxSxAxA.to(Q_matrix_KxSxAxA.dtype)
 
     likelihoods1_KxSxAx1 = likelihoods1_KxSxA.unsqueeze(-1)
     likelihoods2_KxSxAx1 = likelihoods2_KxSxA.unsqueeze(-1)

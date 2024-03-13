@@ -93,6 +93,7 @@ class Hyperbolic(Distance):
 
         delta_V = 2 * xy_norm_sq_V / (one_minus_x_norm_sq_V * one_minus_y_norm_sq_V)
 
-        distance_V = torch.acosh(1 + 2 * delta_V + EPSILON)
+        # use larger epsilon to make float32 stable
+        distance_V = torch.acosh(1 + 2 * delta_V + (EPSILON * 10))
 
         return distance_V * self.scale
