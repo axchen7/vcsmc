@@ -109,14 +109,14 @@ class ExpBranchProposal(Proposal):
 
         branch_param1, branch_param2 = self.branch_params(r)
 
-        branch_distr1 = torch.distributions.Exponential(rate=branch_param1)
-        branch_distr2 = torch.distributions.Exponential(rate=branch_param2)
+        branch1_distr = torch.distributions.Exponential(rate=branch_param1)
+        branch1_distr = torch.distributions.Exponential(rate=branch_param2)
 
-        branch1_K = branch_distr1.sample(torch.Size([K]))
-        branch2_K = branch_distr2.sample(torch.Size([K]))
+        branch1_K = branch1_distr.sample(torch.Size([K]))
+        branch2_K = branch1_distr.sample(torch.Size([K]))
 
-        log_branch1_prior_K = branch_distr1.log_prob(branch1_K)
-        log_branch2_prior_K = branch_distr2.log_prob(branch2_K)
+        log_branch1_prior_K = branch1_distr.log_prob(branch1_K)
+        log_branch2_prior_K = branch1_distr.log_prob(branch2_K)
 
         # ===== compute proposal probability =====
 
@@ -253,24 +253,20 @@ class EmbeddingProposal(Proposal):
             dist1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
             dist2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
 
-            # sample from exponential distributions whose expectations are the
-            # distances between children and merged embeddings
+            # sample branch lengths from exp distributions whose expectations
+            # are the distances between children and merged embeddings
+
             branch_param1_K = 1 / dist1_K
             branch_param2_K = 1 / dist2_K
 
-            # ===== sample branch lengths from exponential distributions =====
+            branch1_distr = torch.distributions.Exponential(rate=branch_param1_K)
+            branch2_distr = torch.distributions.Exponential(rate=branch_param2_K)
 
-            uniform1_K = torch.rand([K])
-            uniform2_K = torch.rand([K])
+            branch1_K = branch1_distr.sample()
+            branch2_K = branch2_distr.sample()
 
-            # use uniform sample + inverse CDF to sample from exponential
-            # distribution
-            branch1_K = -uniform1_K.log() / branch_param1_K
-            branch2_K = -uniform2_K.log() / branch_param2_K
-
-            # plug samples back into log exponential PDF
-            log_branch1_prior_K = branch_param1_K.log() - branch_param1_K * branch1_K
-            log_branch2_prior_K = branch_param2_K.log() - branch_param2_K * branch2_K
+            log_branch1_prior_K = branch1_distr.log_prob(branch1_K)
+            log_branch2_prior_K = branch2_distr.log_prob(branch2_K)
         else:
             branch1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
             branch2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
