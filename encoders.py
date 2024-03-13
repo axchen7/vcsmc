@@ -170,6 +170,14 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         p_dot_r = torch.sum(p * r, 1)
         p_dot_nhat = torch.sum(p * nhat, 1)
 
+        # p_dot_nhat=0 would result in NaNs down the line, so first replace with
+        # 1 to ensure that m ultimately has no NaNs. This is needed because
+        # although we intend to replace m with r in such cases anyway, m must
+        # not contain NaNs as calling torch.where() with NaNs may cause NaN
+        # gradients.
+        ok = p_dot_nhat != 0
+        p_dot_nhat = torch.where(ok, p_dot_nhat, torch.ones_like(p_dot_nhat))
+
         alpha = (p_dot_p - 2 * p_dot_r + 1) / (2 * p_dot_nhat)
         # ===== end scalars =====
 
@@ -180,8 +188,8 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
 
         m = s * (1 - s_minus_p_norm / s_norm)
 
-        # if any resulting vector is NaN or inf, replace with midpoint between p
+        # if any resulting vector is degenerate, replace with midpoint between p
         # and q
-        m = torch.where(torch.isfinite(m), m, r)
+        m = torch.where(ok.unsqueeze(1), m, r)
 
         return m
