@@ -3,6 +3,7 @@ from torch import Tensor, nn
 
 from distances import Distance
 from encoders import MLP
+from expm.expm_taylor import expm
 from site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
 
 
@@ -80,9 +81,7 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     ) -> Tensor:
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
         Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
-        # matrix_exp is not implemented for mps
-        expm_limit_VxSxAxA = torch.matrix_exp(Q_matrix_VxSxAxA.cpu() * self.t_inf)
-        expm_limit_VxSxAxA = expm_limit_VxSxAxA.to(Q_matrix_VxSxAxA)
+        expm_limit_VxSxAxA = expm(Q_matrix_VxSxAxA * self.t_inf)
         stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]
         return stat_probs_VxSxA
 
@@ -160,9 +159,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
     ) -> Tensor:
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
         Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
-        # matrix_exp is not implemented for mps
-        expm_limit_VxSxAxA = torch.matrix_exp(Q_matrix_VxSxAxA.cpu() * self.t_inf)
-        expm_limit_VxSxAxA = expm_limit_VxSxAxA.to(Q_matrix_VxSxAxA)
+        expm_limit_VxSxAxA = expm(Q_matrix_VxSxAxA * self.t_inf)
         stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]
         return stat_probs_VxSxA
 

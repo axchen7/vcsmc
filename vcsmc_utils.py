@@ -4,6 +4,8 @@ from typing import Literal
 import torch
 from torch import Tensor
 
+from expm.expm_simple import expm
+
 
 def compute_log_double_factorials_2N(N: int) -> Tensor:
     """
@@ -43,9 +45,8 @@ def compute_felsenstein_likelihoods_KxSxA(
     Qbranch1_KxSxAxA = Q_matrix_KxSxAxA * branch1_K[:, None, None, None]
     Qbranch2_KxSxAxA = Q_matrix_KxSxAxA * branch2_K[:, None, None, None]
 
-    # matrix_exp is not implemented for mps
-    P1_KxSxAxA = torch.matrix_exp(Qbranch1_KxSxAxA.cpu()).to(Q_matrix_KxSxAxA)
-    P2_KxSxAxA = torch.matrix_exp(Qbranch2_KxSxAxA.cpu()).to(Q_matrix_KxSxAxA)
+    P1_KxSxAxA = expm(Qbranch1_KxSxAxA)
+    P2_KxSxAxA = expm(Qbranch2_KxSxAxA)
 
     likelihoods1_KxSxAx1 = likelihoods1_KxSxA.unsqueeze(-1)
     likelihoods2_KxSxAx1 = likelihoods2_KxSxA.unsqueeze(-1)
