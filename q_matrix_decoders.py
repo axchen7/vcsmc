@@ -1,14 +1,12 @@
-import keras
-import tensorflow as tf
+import torch
+from torch import Tensor, nn
 
-from constants import DTYPE_FLOAT
 from distances import Distance
-from encoders import mlp_add_hidden_layers
+from encoders import MLP
 from site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
-from type_utils import Tensor, tf_function
 
 
-class QMatrixDecoder(tf.Module):
+class QMatrixDecoder(nn.Module):
     def __init__(self, site_positions_encoder: SitePositionsEncoder | None = None):
         super().__init__()
 
@@ -34,10 +32,9 @@ class QMatrixDecoder(tf.Module):
         """
         raise NotImplementedError
 
-    @tf_function()
     def regularization(self) -> Tensor:
         """Add to cost."""
-        return tf.constant(0, DTYPE_FLOAT)
+        return torch.tensor(0.0)
 
 
 class DenseStationaryQMatrixDecoder(QMatrixDecoder):
@@ -57,46 +54,38 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         super().__init__()
 
         self.A = A
-        self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
+        self.t_inf = t_inf
 
-        self.log_Q_matrix_AxA = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [A, A]), name="log_Q"
-        )
+        self.log_Q_matrix_AxA = nn.Parameter(torch.zeros(A, A))
+        self.log_stat_probs_A = nn.Parameter(torch.zeros(A))
 
-    @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
-        # first non-diagonal entry in each row can be fixed to match degrees of
-        # freedom
-        Q_matrix_AxA = tf.tensor_scatter_nd_update(
-            self.log_Q_matrix_AxA,
-            [[i, (i + 1) % self.A] for i in range(self.A)],
-            [tf.constant(0, DTYPE_FLOAT)] * self.A,
-        )
-
+    def Q_matrix_VxSxAxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         # use exp to ensure all off-diagonal entries are positive
-        Q_matrix_AxA = tf.exp(Q_matrix_AxA)
+        Q_matrix_AxA = self.log_Q_matrix_AxA.exp()
 
         # exclude diagonal entry for now...
-        Q_matrix_AxA = tf.linalg.set_diag(Q_matrix_AxA, [0] * self.A)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(torch.zeros(self.A))
 
         # normalize off-diagonal entries within each row
-        denom_Ax1 = tf.reduce_sum(Q_matrix_AxA, 1, True)
-        Q_matrix_AxA /= denom_Ax1
+        denom_Ax1 = torch.sum(Q_matrix_AxA, -1, True)
+        Q_matrix_AxA = Q_matrix_AxA / denom_Ax1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        hyphens_A = tf.ones(self.A, DTYPE_FLOAT)
-        Q_matrix_AxA = tf.linalg.set_diag(Q_matrix_AxA, -hyphens_A)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(self.A))
 
         # return only shape (1,1,A,A), but assume broadcasting rules apply...
-        Q_matrix_1x1xAxA = Q_matrix_AxA[tf.newaxis, tf.newaxis]
+        Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
         return Q_matrix_1x1xAxA
 
-    @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
+    def stat_probs_VxSxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
         Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
-        expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * self.t_inf)
-        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]  # type: ignore
+        expm_limit_VxSxAxA = torch.matrix_exp(Q_matrix_VxSxAxA * self.t_inf)
+        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]
         return stat_probs_VxSxA
 
 
@@ -113,6 +102,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         distance: Distance,
         *,
         A: int,
+        D: int,
         width: int,
         depth: int,
         t_inf: float = 1e3,
@@ -120,6 +110,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         """
         Args:
             A: Alphabet size.
+            D: Number of dimensions sequence embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
             t_inf: Large t value used to approximate the stationary distribution.
@@ -129,54 +120,50 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
         self.distance = distance
         self.A = A
-        self.width = width
-        self.depth = depth
-        self.t_inf = tf.constant(t_inf, DTYPE_FLOAT)
+        self.t_inf = t_inf
 
-        self.mlp = None
+        D1 = distance.feature_expand_shape(D)
+        self.mlp = MLP(D1, A * A, width, depth)
 
-    def create_mlp(self, D1: int):
-        mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([D1], dtype=DTYPE_FLOAT))
-        mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
-        mlp.add(keras.layers.Dense(self.A * (self.A - 1), dtype=DTYPE_FLOAT))
-        mlp.add(keras.layers.Reshape([self.A, self.A - 1]))
-        mlp.add(keras.layers.Softmax(-1, dtype=DTYPE_FLOAT))
-        return mlp
-
-    @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
-        V = tf.shape(embeddings_VxD)[0]  # type: ignore
+    def Q_matrix_VxSxAxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
+        V = embeddings_VxD.shape[0]
 
         expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
 
-        if self.mlp is None:
-            D1 = expanded_VxD1.shape[1]
-            self.mlp = self.create_mlp(D1)
+        # get Q matrix and reshape
+        log_Q_matrix_VxAA: Tensor = self.mlp(expanded_VxD1)
+        log_Q_matrix_VxAxA = log_Q_matrix_VxAA.view(V, self.A, self.A)
 
-        # get off-diagonal entries
-        Q_matrix_VxAxA1 = self.mlp(expanded_VxD1)
+        # use exp to ensure all off-diagonal entries are positive
+        Q_matrix_VxAxA = log_Q_matrix_VxAxA.exp()
 
-        # expand diagonal entries into new column at the end
-        diag_VxA1 = tf.linalg.diag_part(Q_matrix_VxAxA1)
-        diag_VxA = tf.concat([diag_VxA1, tf.zeros([V, 1], DTYPE_FLOAT)], -1)
-        diag_VxAx1 = tf.expand_dims(diag_VxA, -1)
-        Q_matrix_VxAxA = tf.concat([Q_matrix_VxAxA1, diag_VxAx1], -1)
+        # exclude diagonal entry for now...
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
+            torch.zeros(V, self.A), dim1=-2, dim2=-1
+        )
+
+        # normalize off-diagonal entries within each row
+        denom_VxAx1 = torch.sum(Q_matrix_VxAxA, -1, True)
+        Q_matrix_VxAxA = Q_matrix_VxAxA / denom_VxAx1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        hyphens_VxA = tf.ones([V, self.A], DTYPE_FLOAT)
-        Q_matrix_VxAxA = tf.linalg.set_diag(Q_matrix_VxAxA, -hyphens_VxA)
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
+            -torch.ones(V, self.A), dim1=-2, dim2=-1
+        )
 
         # return only shape (V,1,A,A), but assume broadcasting rules apply...
-        Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, tf.newaxis]
+        Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, None]
         return Q_matrix_Vx1xAxA
 
-    @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
+    def stat_probs_VxSxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         # find e^(Qt) as t -> inf; then, stationary distribution is in every row
         Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
-        expm_limit_VxSxAxA = tf.linalg.expm(Q_matrix_VxSxAxA * self.t_inf)
-        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]  # type: ignore
+        expm_limit_VxSxAxA = torch.matrix_exp(Q_matrix_VxSxAxA * self.t_inf)
+        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]
         return stat_probs_VxSxA
 
 
@@ -194,51 +181,36 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
 
         super().__init__()
 
-        self.reg_lambda = tf.constant(reg_lambda, DTYPE_FLOAT)
+        self.reg_lambda = reg_lambda
 
-        self.log_nucleotide_exchanges_6 = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [6]), name="log_nucleotide_exchanges"
-        )
-        self.log_stat_probs_A = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [16]), name="log_stat_probs"
-        )
+        self.log_nucleotide_exchanges_6 = nn.Parameter(torch.zeros(6))
+        self.log_stat_probs_A = nn.Parameter(torch.zeros(16))
 
-    @tf_function()
     def nucleotide_exchanges_6(self):
-        # one exchangeability can be fixed to match degrees of freedom
-        nucleotide_exchanges_6 = tf.tensor_scatter_nd_update(
-            self.log_nucleotide_exchanges_6, [[0]], [tf.constant(0, DTYPE_FLOAT)]
-        )
         # use exp to ensure all entries are positive
-        nucleotide_exchanges_6 = tf.exp(nucleotide_exchanges_6)
+        nucleotide_exchanges_6 = self.log_nucleotide_exchanges_6.exp()
         # normalize to ensure mean is 1
-        nucleotide_exchanges_6 /= tf.reduce_mean(nucleotide_exchanges_6)
+        nucleotide_exchanges_6 = nucleotide_exchanges_6 / torch.mean(
+            nucleotide_exchanges_6
+        )
         return nucleotide_exchanges_6
 
-    @tf_function()
     def stats_probs_A(self):
         """Internal, returns global stationary probabilities."""
 
-        # one stationary probability can be fixed to match degrees of freedom
-        stat_probs_A = tf.tensor_scatter_nd_update(
-            self.log_stat_probs_A, [[0]], [tf.constant(0, DTYPE_FLOAT)]
-        )
-        # use softmax to ensure all entries are positive
-        stat_probs_A = tf.exp(stat_probs_A)
-        # normalize to ensure sum is 1
-        stat_probs_A /= tf.reduce_sum(stat_probs_A)
-        return stat_probs_A
+        return self.log_stat_probs_A.softmax(0)
 
-    @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
+    def Q_matrix_VxSxAxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         pi = self.nucleotide_exchanges_6()  # length 6
-        pi8 = tf.repeat(pi, 8)
+        pi8 = pi.repeat(8)
 
         # index helpers for Q matrix
         AA, CC, GG, TT, AC, AG, AT, CG, CT, GT, CA, GA, TA, GC, TC, TG = range(16)
 
         # fmt: off
-        updates = [
+        updates_list = [
           # | first base changes                    | second base changes
             [AA, CA], [AC, CC], [AG, CG], [AT, CT], [AA, AC], [CA, CC], [GA, GC], [TA, TC], # A->C
             [AA, GA], [AC, GC], [AG, GG], [AT, GT], [AA, AG], [CA, CG], [GA, GG], [TA, TG], # A->G
@@ -249,31 +221,33 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         ]
         # fmt: on
 
-        R_AxA = tf.scatter_nd(updates, pi8, [16, 16])
-        R_AxA = R_AxA + tf.transpose(R_AxA)
+        updates = torch.tensor(updates_list)
+        R_AxA = torch.zeros(16, 16)
+        R_AxA[updates[:, 0], updates[:, 1]] = pi8
+        R_AxA = R_AxA + R_AxA.t()
 
         stat_probs_A = self.stats_probs_A()
-        Q_matrix_AxA = tf.matmul(R_AxA, tf.linalg.diag(stat_probs_A))
+        Q_matrix_AxA = torch.matmul(R_AxA, torch.diag(stat_probs_A))
 
-        hyphens = tf.reduce_sum(Q_matrix_AxA, 1)
-        Q_matrix_AxA = tf.linalg.set_diag(Q_matrix_AxA, -hyphens)
+        diag_A = torch.sum(Q_matrix_AxA, -1)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-diag_A)
 
         # return only shape (1,1,A,A), but assume broadcasting rules apply...
-        Q_matrix_1x1xAxA = Q_matrix_AxA[tf.newaxis, tf.newaxis]
+        Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
         return Q_matrix_1x1xAxA
 
-    @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
+    def stat_probs_VxSxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
         stat_probs_A = self.stats_probs_A()
 
         # return only shape (1,1,A), but assume broadcasting rules apply...
-        stat_probs_VxSxA = stat_probs_A[tf.newaxis, tf.newaxis]
+        stat_probs_VxSxA = stat_probs_A[None, None]
         return stat_probs_VxSxA
 
-    @tf_function()
-    def regularization(self):
+    def regularization(self) -> Tensor:
         stat_probs_A = self.stats_probs_A()
-        stat_probs_norm_squared = tf.reduce_sum(tf.math.square(stat_probs_A))
+        stat_probs_norm_squared = torch.sum(stat_probs_A**2)
         return self.reg_lambda * stat_probs_norm_squared
 
 
@@ -292,6 +266,8 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         site_positions_encoder: SitePositionsEncoder,
         *,
         A: int,
+        D: int,
+        C: int,
         width: int,
         depth: int,
         baseline: float = 0.5,
@@ -301,6 +277,8 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
             distance: Used to feature expand the embeddings.
             site_positions_encoder: Used to compress the site positions.
             A: Alphabet size.
+            D: Number of dimensions sequence embeddings.
+            C: Number of dimensions compressed site positions.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
             baseline: Baseline probabilities for stat_probs, for each of the A letters, from 0 to 1.
@@ -312,95 +290,76 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
 
         self.distance = distance
         self.A = A
-        self.width = width
-        self.depth = depth
-        self.baseline = tf.constant(baseline, dtype=DTYPE_FLOAT)
+        self.baseline = baseline
 
-        self.log_holding_times_A = tf.Variable(
-            tf.constant(0, DTYPE_FLOAT, [A]), name="log_holding_times"
-        )
+        self.log_holding_times_A = nn.Parameter(torch.zeros(A))
 
-        self.mlp = None
+        D1 = distance.feature_expand_shape(D)
+        self.mlp = MLP(D1 + C, A, width, depth)
 
-    @tf_function()
     def reciprocal_holding_times_A(self):
         """
         Reciprocal of the expected holding times of each letter in the alphabet.
         """
 
-        # one holding time can be fixed to match degrees of freedom
-        log_holding_times_A = tf.tensor_scatter_nd_update(
-            self.log_holding_times_A, [[0]], [tf.constant(0, DTYPE_FLOAT)]
-        )
-
         # use exp to ensure all entries are positive
-        reciprocal_holding_times_A = tf.exp(-log_holding_times_A)
+        reciprocal_holding_times_A = torch.exp(-self.log_holding_times_A)
         # normalize to ensure mean of reciprocal holding times is 1
-        reciprocal_holding_times_A /= tf.reduce_mean(reciprocal_holding_times_A)
+        reciprocal_holding_times_A = (
+            reciprocal_holding_times_A / reciprocal_holding_times_A.mean()
+        )
         return reciprocal_holding_times_A
 
-    def create_mlp(self, D1: int, C: int):
-        mlp = keras.Sequential()
-        mlp.add(keras.layers.Input([D1 + C], dtype=DTYPE_FLOAT))
-        mlp_add_hidden_layers(mlp, width=self.width, depth=self.depth)
-        mlp.add(keras.layers.Dense(self.A, dtype=DTYPE_FLOAT))
-        mlp.add(keras.layers.Softmax(dtype=DTYPE_FLOAT))
-        return mlp
-
-    @tf_function(reduce_retracing=True)
-    def Q_matrix_VxSxAxA(self, embeddings_VxD, site_positions_SxC):
-        V = tf.shape(embeddings_VxD)[0]  # type: ignore
-        S = tf.shape(site_positions_SxC)[0]  # type: ignore ; S can change depending on batch size
+    def Q_matrix_VxSxAxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
 
         reciprocal_holding_times_A = self.reciprocal_holding_times_A()
         stat_probs_VxSxA = self.stat_probs_VxSxA(embeddings_VxD, site_positions_SxC)
 
-        reciprocal_holding_times_repeated_AxA = tf.repeat(
-            reciprocal_holding_times_A[:, tf.newaxis], self.A, 1
-        )
-        stat_probs_diag_VxSxAxA = tf.linalg.diag(stat_probs_VxSxA)
+        # reciprocal holding times, repeated across each row
+        recip_times_AxA = reciprocal_holding_times_A.unsqueeze(1).repeat(1, self.A)
+        stat_probs_diag_VxSxAxA = torch.diag_embed(stat_probs_VxSxA)
 
-        Q_matrix_VxSxAxA = tf.matmul(
-            reciprocal_holding_times_repeated_AxA, stat_probs_diag_VxSxAxA
-        )
+        Q_matrix_VxSxAxA = torch.matmul(recip_times_AxA, stat_probs_diag_VxSxAxA)
 
         # set the diagonals to the sum of the off-diagonal entries
-        Q_matrix_VxSxAxA = tf.linalg.set_diag(
-            Q_matrix_VxSxAxA, tf.zeros([V, S, self.A], DTYPE_FLOAT)
+        Q_matrix_VxSxAxA = Q_matrix_VxSxAxA.diagonal_scatter(
+            torch.zeros(V, S, self.A), dim1=-2, dim2=-1
         )
-        hyphens_VxSxA = tf.reduce_sum(Q_matrix_VxSxAxA, -1)
-        Q_matrix_VxSxAxA = tf.linalg.set_diag(Q_matrix_VxSxAxA, -hyphens_VxSxA)
+        diag_VxSxA = torch.sum(Q_matrix_VxSxAxA, -1)
+        Q_matrix_VxSxAxA = Q_matrix_VxSxAxA.diagonal_scatter(
+            -diag_VxSxA, dim1=-2, dim2=-1
+        )
 
         return Q_matrix_VxSxAxA
 
-    @tf_function(reduce_retracing=True)
-    def stat_probs_VxSxA(self, embeddings_VxD, site_positions_SxC):
-        V = tf.shape(embeddings_VxD)[0]  # type: ignore
-        S = tf.shape(site_positions_SxC)[0]  # type: ignore ; S can change depending on batch size
+    def stat_probs_VxSxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
 
         expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
 
-        if self.mlp is None:
-            D1 = expanded_VxD1.shape[1]
-            C = site_positions_SxC.shape[1]  # type: ignore
-            self.mlp = self.create_mlp(D1, C)
-
         # shape (V*S, D1); repeat like AAABBBCCC
-        expanded_repeated_VSxD1 = tf.repeat(expanded_VxD1, S, 0)
+        expanded_repeated_VSxD1 = expanded_VxD1.repeat_interleave(S, 0)
 
         # shape (V*S, C); repeat like ABCABCABC
-        site_positions_repeated_VSxC = tf.tile(site_positions_SxC, [V, 1])
+        site_positions_repeated_VSxC = site_positions_SxC.repeat(V, 1)
 
         # shape (V*S, D1+C); flattened list of embeddings and site positions
-        expanded_with_site_positions_VSxD1C = tf.concat(
+        expanded_with_site_positions_VSxD1C = torch.cat(
             [expanded_repeated_VSxD1, site_positions_repeated_VSxC], -1
         )
 
-        stat_probs_VSxA = self.mlp(expanded_with_site_positions_VSxD1C)
+        stat_probs_VSxA = self.mlp(expanded_with_site_positions_VSxD1C).softmax(-1)
 
-        stat_probs_VxSxA = tf.reshape(stat_probs_VSxA, [-1, S, self.A])
+        stat_probs_VxSxA = stat_probs_VSxA.view(V, S, self.A)
         stat_probs_VxSxA = (
-            self.baseline * (1 / self.A) + (1 - self.baseline) * stat_probs_VxSxA  # type: ignore
+            self.baseline * (1 / self.A) + (1 - self.baseline) * stat_probs_VxSxA
         )
 
         return stat_probs_VxSxA
