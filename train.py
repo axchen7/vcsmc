@@ -106,8 +106,6 @@ def train(
                 best_newick_tree = result["best_newick_tree"]
 
             loss = -log_Z_SMC
-            # TODO remove regularization
-            loss = loss - vcsmc.q_matrix_decoder.regularization()  # scale by N and S?
 
             loss.backward()
             optimizer.step()

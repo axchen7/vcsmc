@@ -32,10 +32,6 @@ class QMatrixDecoder(nn.Module):
         """
         raise NotImplementedError
 
-    def regularization(self) -> Tensor:
-        """Add to cost."""
-        return torch.tensor(0.0)
-
 
 class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     """
@@ -173,15 +169,17 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
     irrespective of the input embeddings.
     """
 
-    def __init__(self, *, reg_lambda: float = 0.0):
+    def __init__(self, *, baseline: float = 0.5):
         """
         Args:
-            reg_lambda: Stationary probability regularization coefficient.
+            baseline: Baseline probabilities for stat_probs, for each of the A letters, from 0 to 1.
+                Take this much of the probability mass from the uniform distribution 1/A.
+                Helps prevent the model from converging to a degenerate solution.
         """
 
         super().__init__()
 
-        self.reg_lambda = reg_lambda
+        self.baseline = baseline
 
         self.log_nucleotide_exchanges_6 = nn.Parameter(torch.zeros(6))
         self.log_stat_probs_A = nn.Parameter(torch.zeros(16))
@@ -198,7 +196,9 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
     def stats_probs_A(self):
         """Internal, returns global stationary probabilities."""
 
-        return self.log_stat_probs_A.softmax(0)
+        stat_probs_A = self.log_stat_probs_A.softmax(0)
+        stat_probs_A = self.baseline * (1 / 16) + (1 - self.baseline) * stat_probs_A
+        return stat_probs_A
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -244,11 +244,6 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         # return only shape (1,1,A), but assume broadcasting rules apply...
         stat_probs_VxSxA = stat_probs_A[None, None]
         return stat_probs_VxSxA
-
-    def regularization(self) -> Tensor:
-        stat_probs_A = self.stats_probs_A()
-        stat_probs_norm_squared = torch.sum(stat_probs_A**2)
-        return self.reg_lambda * stat_probs_norm_squared
 
 
 class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
