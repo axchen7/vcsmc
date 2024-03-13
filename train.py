@@ -200,7 +200,7 @@ def train(
             # ===== Q matrix =====
 
             fig, ax = plt.subplots()
-            ax.imshow(get_avg_root_Q_matrix_AxA())
+            ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
             writer.add_figure("Root Q matrix (average across sites)", fig, epoch)
 
         writer.flush()
