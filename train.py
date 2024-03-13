@@ -185,22 +185,6 @@ def train(
             writer.add_histogram("Log likelihoods", log_likelihood_K, epoch)
 
         if (epoch + 1) % 4 == 0:
-            # # ===== leaf embeddings =====
-
-            # leaf_embeddings = evsmc.leaf_embeddings(data_SxNxA)
-            # leaf_embeddings = evsmc.distance.project_many(leaf_embeddings)
-
-            # plt.scatter(leaf_embeddings[:, 0], leaf_embeddings[:, 1])
-
-            # for i, taxon in enumerate(taxa):
-            #     plt.annotate(
-            #         taxon,
-            #         (leaf_embeddings[i, 0], leaf_embeddings[i, 1]),
-            #         fontsize="xx-small",
-            #     )
-
-            # tf.summary.image("Leaf embeddings", utils.cur_plt_to_tf_image())
-
             # ===== best tree =====
 
             fig, ax = plt.subplots(figsize=(10, N * 0.2))
