@@ -56,21 +56,19 @@ class ExpBranchProposal(Proposal):
 
     def __init__(
         self,
-        seq_encoder: encoders.SequenceEncoder,
         *,
         N: int,
         initial_branch_len: float = 1.0,
     ):
         """
         Args:
-            seq_encoder: Sequence encoder.
             N: The number of leaf nodes.
             initial_branch_len: The initial expected value of the branch lengths.
                 The exponential distribution from which branch lengths are
                 sampled will initially have lambda = 1/initial_branch_len.
         """
 
-        super().__init__(seq_encoder)
+        super().__init__(encoders.DummySequenceEncoder())
 
         initial_param = 1 / initial_branch_len
         # value of variable is passed through exp() later
