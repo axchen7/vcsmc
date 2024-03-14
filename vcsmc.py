@@ -7,8 +7,8 @@ from proposals import Proposal
 from q_matrix_decoders import QMatrixDecoder
 from vcsmc_utils import (
     build_newick_tree,
-    compute_felsenstein_likelihoods_KxSxA,
     compute_log_double_factorials_2N,
+    compute_log_felsenstein_likelihoods_KxSxA,
     compute_log_likelihood_and_pi_K,
     concat_K,
     gather_K,
@@ -116,7 +116,7 @@ class VCSMC(nn.Module):
         embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
 
         # Felsenstein probabilities for computing pi(s)
-        felsensteins_KxtxSxA = data_batched_NxSxA.repeat(K, 1, 1, 1)
+        log_felsensteins_KxtxSxA = data_batched_NxSxA.log().repeat(K, 1, 1, 1)
 
         # difference of current and last iteration's values are used to compute weights
         log_pi_K = torch.zeros(K)
@@ -145,7 +145,7 @@ class VCSMC(nn.Module):
             branch2_lengths_Kxr = branch2_lengths_Kxr[indexes_K]
             leaf_counts_Kxt = leaf_counts_Kxt[indexes_K]
             embeddings_KxtxD = embeddings_KxtxD[indexes_K]
-            felsensteins_KxtxSxA = felsensteins_KxtxSxA[indexes_K]
+            log_felsensteins_KxtxSxA = log_felsensteins_KxtxSxA[indexes_K]
             log_pi_K = log_pi_K[indexes_K]
             log_weight_K = log_weight_K[indexes_K]
 
@@ -185,18 +185,20 @@ class VCSMC(nn.Module):
                 embedding_KxD, site_positions_SxC
             )
 
-            felsensteins_KxSxA = compute_felsenstein_likelihoods_KxSxA(
+            log_felsensteins_KxSxA = compute_log_felsenstein_likelihoods_KxSxA(
                 Q_matrix_KxSxAxA,
-                gather_K(felsensteins_KxtxSxA, idx1_K),
-                gather_K(felsensteins_KxtxSxA, idx2_K),
+                gather_K(log_felsensteins_KxtxSxA, idx1_K),
+                gather_K(log_felsensteins_KxtxSxA, idx2_K),
                 branch1_K,
                 branch2_K,
             )
-            felsensteins_KxtxSxA = merge_K(felsensteins_KxtxSxA, felsensteins_KxSxA)
+            log_felsensteins_KxtxSxA = merge_K(
+                log_felsensteins_KxtxSxA, log_felsensteins_KxSxA
+            )
 
             # ===== compute new likelihood, pi, and weight =====
 
-            def compute_stat_probs_KxtxSxA():
+            def compute_log_stat_probs_KxtxSxA():
                 t = embeddings_KxtxD.shape[1]
 
                 # flatten embeddings to compute stat_probs, then reshape back
@@ -204,6 +206,7 @@ class VCSMC(nn.Module):
                 stat_probs_KtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
                     embeddings_KtxD, site_positions_SxC
                 )
+                log_stat_probs_KtxSxA = stat_probs_KtxSxA.log()
 
                 Kt = stat_probs_KtxSxA.shape[0]
                 S = stat_probs_KtxSxA.shape[1]
@@ -211,19 +214,19 @@ class VCSMC(nn.Module):
                 # if stat_probs_VxSxA() returned a tensor with S=1 and/or Kt=1,
                 # continue to use broadcasting
                 if Kt == 1:
-                    return stat_probs_KtxSxA.view(1, 1, S, A)
+                    return log_stat_probs_KtxSxA.view(1, 1, S, A)
                 else:
-                    return stat_probs_KtxSxA.view(K, t, S, A)
+                    return log_stat_probs_KtxSxA.view(K, t, S, A)
 
             prev_log_pi_K = log_pi_K
-            stat_probs_KxtxSxA = compute_stat_probs_KxtxSxA()
+            log_stat_probs_KxtxSxA = compute_log_stat_probs_KxtxSxA()
 
             log_likelihood_K, log_pi_K = compute_log_likelihood_and_pi_K(
                 branch1_lengths_Kxr,
                 branch2_lengths_Kxr,
                 leaf_counts_Kxt,
-                felsensteins_KxtxSxA,
-                stat_probs_KxtxSxA,
+                log_felsensteins_KxtxSxA,
+                log_stat_probs_KxtxSxA,
                 self.prior_dist,
                 self.prior_branch_len,
                 self.log_double_factorials_2N,

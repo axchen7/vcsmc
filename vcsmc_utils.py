@@ -35,10 +35,10 @@ def compute_log_double_factorials_2N(N: int) -> Tensor:
     return torch.tensor(all_values)
 
 
-def compute_felsenstein_likelihoods_KxSxA(
+def compute_log_felsenstein_likelihoods_KxSxA(
     Q_matrix_KxSxAxA: Tensor,
-    likelihoods1_KxSxA: Tensor,
-    likelihoods2_KxSxA: Tensor,
+    log_likelihoods1_KxSxA: Tensor,
+    log_likelihoods2_KxSxA: Tensor,
     branch1_K: Tensor,
     branch2_K: Tensor,
 ) -> Tensor:
@@ -48,24 +48,25 @@ def compute_felsenstein_likelihoods_KxSxA(
     P1_KxSxAxA = expm(Qbranch1_KxSxAxA)
     P2_KxSxAxA = expm(Qbranch2_KxSxAxA)
 
-    likelihoods1_KxSxAx1 = likelihoods1_KxSxA.unsqueeze(-1)
-    likelihoods2_KxSxAx1 = likelihoods2_KxSxA.unsqueeze(-1)
+    log_P1_KxSxAxA = P1_KxSxAxA.log()
+    log_P2_KxSxAxA = P2_KxSxAxA.log()
 
-    prob1_KxSxAx1 = torch.matmul(P1_KxSxAxA, likelihoods1_KxSxAx1)
-    prob2_KxSxAx1 = torch.matmul(P2_KxSxAxA, likelihoods2_KxSxAx1)
+    log_likelihoods1_KxSx1xA = log_likelihoods1_KxSxA.unsqueeze(-2)
+    log_likelihoods2_KxSx1xA = log_likelihoods2_KxSxA.unsqueeze(-2)
 
-    prob1_KxSxA = prob1_KxSxAx1.squeeze(-1)
-    prob2_KxSxA = prob2_KxSxAx1.squeeze(-1)
+    # numerically stable log matrix multiplication
+    log_prob1_KxSxA = torch.logsumexp(log_P1_KxSxAxA + log_likelihoods1_KxSx1xA, -1)
+    log_prob2_KxSxA = torch.logsumexp(log_P2_KxSxAxA + log_likelihoods2_KxSx1xA, -1)
 
-    return prob1_KxSxA * prob2_KxSxA
+    return log_prob1_KxSxA + log_prob2_KxSxA
 
 
 def compute_log_likelihood_and_pi_K(
     branch1_lengths_Kxr: Tensor,
     branch2_lengths_Kxr: Tensor,
     leaf_counts_Kxt: Tensor,
-    felsensteins_KxtxSxA: Tensor,
-    stat_probs_KxtxSxA: Tensor,
+    log_felsensteins_KxtxSxA: Tensor,
+    log_stat_probs_KxtxSxA: Tensor,
     prior_dist: Literal["gamma", "exp"],
     prior_branch_len: float,
     log_double_factorials_2N: Tensor,
@@ -83,8 +84,9 @@ def compute_log_likelihood_and_pi_K(
     """
 
     # dot Felsenstein probabilities with stationary probabilities (along axis A)
-    likelihoods_KxtxS = torch.sum(felsensteins_KxtxSxA * stat_probs_KxtxSxA, -1)
-    log_likelihoods_KxtxS = torch.log(likelihoods_KxtxS)
+    log_likelihoods_KxtxS = torch.logsumexp(
+        log_felsensteins_KxtxSxA + log_stat_probs_KxtxSxA, -1
+    )
     log_likelihood_K = torch.sum(log_likelihoods_KxtxS, [1, 2])
 
     leaf_counts_2timesminus3_Kxt = 2 * leaf_counts_Kxt - 3
