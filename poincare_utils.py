@@ -1,12 +1,14 @@
 import math
 
+import matplotlib.pyplot as plt
 import torch
 from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
+from ipywidgets import interactive
 from torch import Tensor
 
 from proposals import EmbeddingProposal
-from train import batch_by_sites
+from train import batch_by_sites, get_site_positions_SxSfull
 from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged_list
 
@@ -120,3 +122,73 @@ def render_poincare(
 
         d.set_render_size(w=800)
         return d
+
+
+def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
+    S = data_NxSxA.shape[1]
+
+    with torch.no_grad():
+        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+            get_site_positions_SxSfull(data_NxSxA)
+        )
+
+    def plot_q_matrix(r, theta, s):
+        with torch.no_grad():
+            x = r * math.cos(theta)
+            y = r * math.sin(theta)
+            embedding_1xD = torch.tensor([x, y]).unsqueeze(0)
+            q_matrix_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
+                embedding_1xD, site_positions_SxC
+            )[0]
+            q_matrix_AxA = q_matrix_SxAxA[s]
+            plt.imshow(q_matrix_AxA.cpu())
+            plt.show()
+
+    return interactive(
+        plot_q_matrix,
+        r=(0.01, 0.99, 0.01),
+        theta=(0, 2 * math.pi, 0.01),
+        s=(0, S - 1, 1),
+    )
+
+
+def interactive_stat_probs(vcsmc: VCSMC, data_NxSxA: Tensor):
+    S_RANGE = 10
+
+    S = data_NxSxA.shape[1]
+    A = data_NxSxA.shape[2]
+
+    with torch.no_grad():
+        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+            get_site_positions_SxSfull(data_NxSxA)
+        )
+
+    def plot_stat_probs(r, theta, s_start):
+        with torch.no_grad():
+            x = r * math.cos(theta)
+            y = r * math.sin(theta)
+            embedding_1xD = torch.tensor([x, y]).unsqueeze(0)
+            stat_probs_SxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
+                embedding_1xD, site_positions_SxC
+            )[0]
+
+            fig = plt.figure(figsize=(20, 4))
+            ax = fig.add_subplot(111)
+
+            ax.set_xticks(range(S_RANGE))
+            ax.set_xticklabels(range(s_start, s_start + S_RANGE))  # type: ignore
+            ax.set_yticks(range(A))
+            ax.set_yticklabels(["A", "C", "G", "T"])
+
+            im = ax.imshow(
+                stat_probs_SxA.T[:, s_start : s_start + S_RANGE].cpu(), cmap="Blues"
+            )
+            plt.colorbar(im)
+            plt.show()
+
+    return interactive(
+        plot_stat_probs,
+        r=(0.01, 0.99, 0.01),
+        theta=(0, 2 * math.pi, 0.01),
+        s_start=(0, S - S_RANGE, 1),
+    )
