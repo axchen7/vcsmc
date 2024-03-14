@@ -13,11 +13,7 @@ from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged_list
 
 
-def render_poincare(
-    vcsmc: VCSMC,
-    data_NxSxA: Tensor,
-    taxa_N: list[str],
-) -> Drawing:
+def render_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]) -> Drawing:
     with torch.no_grad():
         N = len(taxa_N)
 
@@ -125,6 +121,22 @@ def render_poincare(
 
         d.set_render_size(w=800)
         return d
+
+
+def plot_embeddings(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
+    with torch.no_grad():
+        embeddings: Tensor = vcsmc.proposal.seq_encoder(data_NxSxA)
+        embeddings = embeddings.cpu()
+
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111)
+
+        ax.scatter(embeddings[:, 0], embeddings[:, 1])
+
+        for i, txt in enumerate(taxa_N):
+            ax.text(float(embeddings[i, 0]), float(embeddings[i, 1]), txt, fontsize=6)
+
+        plt.show()
 
 
 def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
