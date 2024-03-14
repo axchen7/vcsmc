@@ -15,12 +15,15 @@ from vcsmc_utils import replace_with_merged_list
 
 def render_poincare(
     vcsmc: VCSMC,
-    proposal: EmbeddingProposal,
     data_NxSxA: Tensor,
     taxa_N: list[str],
 ) -> Drawing:
     with torch.no_grad():
         N = len(taxa_N)
+
+        proposal = vcsmc.proposal
+        if not isinstance(proposal, EmbeddingProposal):
+            raise ValueError("Only EmbeddingProposal is supported")
 
         dataset = batch_by_sites(data_NxSxA, None)
 
