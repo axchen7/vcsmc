@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import torch
 from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
-from ipywidgets import interactive
+from IPython.display import display
+from ipywidgets import FloatSlider, interactive
 from torch import Tensor
 
 from proposals import EmbeddingProposal
@@ -13,7 +14,7 @@ from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged_list
 
 
-def render_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]) -> Drawing:
+def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
     with torch.no_grad():
         N = len(taxa_N)
 
@@ -98,11 +99,12 @@ def render_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]) -> Draw
         dx = max_x - min_x
         dy = max_y - min_y
 
-        size = max(dx, dy) * 1.1
+        initial_size = max(dx, dy) * 1.1
 
-        origin_x = -size / 2 + (min_x + max_x) / 2
-        origin_y = -size / 2 + (min_y + max_y) / 2
+        initial_origin_x = -initial_size / 2 + (min_x + max_x) / 2
+        initial_origin_y = -initial_size / 2 + (min_y + max_y) / 2
 
+    def plot_poincare(size, origin_x, origin_y):
         stroke_width = size / 500
         radius = 2 * stroke_width
         text_size = size / 100
@@ -119,8 +121,15 @@ def render_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]) -> Draw
         for t in texts:
             d.draw(Text(t[0], text_size, t[1], t[2], fill="black"))
 
-        d.set_render_size(w=800)
-        return d
+        d.set_render_size(w=750)
+        display(d)
+
+    return interactive(
+        plot_poincare,
+        size=FloatSlider(value=initial_size, min=0, max=2, step=0.001),
+        origin_x=FloatSlider(value=initial_origin_x, min=-1, max=1, step=0.001),
+        origin_y=FloatSlider(value=initial_origin_y, min=-1, max=1, step=0.001),
+    )
 
 
 def plot_embeddings(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
