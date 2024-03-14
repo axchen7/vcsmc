@@ -254,8 +254,9 @@ class EmbeddingProposal(Proposal):
             # sample branch lengths from exp distributions whose expectations
             # are the distances between children and merged embeddings
 
-            branch_param1_K = 1 / dist1_K
-            branch_param2_K = 1 / dist2_K
+            # EPSILON**0.5 is needed to prevent division by zero under float32
+            branch_param1_K = 1 / (dist1_K + distances.EPSILON**0.5)
+            branch_param2_K = 1 / (dist2_K + distances.EPSILON**0.5)
 
             branch1_distr = torch.distributions.Exponential(rate=branch_param1_K)
             branch2_distr = torch.distributions.Exponential(rate=branch_param2_K)
