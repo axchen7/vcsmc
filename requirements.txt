@@ -1,4 +1,5 @@
 ipykernel
+notebook
 ipywidgets
 torch
 torch_tb_profiler
