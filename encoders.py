@@ -3,6 +3,8 @@ from torch import Tensor, nn
 
 from distances import Distance, safe_norm
 from encoder_utils import MLP
+from q_matrix_decoders import QMatrixDecoder
+from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
 
 
 class SequenceEncoder(nn.Module):
@@ -54,11 +56,21 @@ class MLPSequenceEncoder(SequenceEncoder):
 class MergeEncoder(nn.Module):
     """Encodes a pair of child embeddings into a parent embedding."""
 
-    def forward(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
+    def forward(
+        self,
+        children1_VxD: Tensor,
+        children2_VxD: Tensor,
+        log_felsensteins1_VxSxA: Tensor,
+        log_felsensteins2_VxSxA: Tensor,
+        site_positions_SxC: Tensor,
+    ) -> Tensor:
         """
         Args:
             children1_VxD: First child embeddings.
             children2_VxD: Second child embeddings.
+            log_felsensteins1_VxSxA: Log Felsenstein likelihoods for the first children.
+            log_felsensteins2_VxSxA: Log Felsenstein likelihoods for the second children.
+            site_positions_SxC: Compressed site positions.
         Returns:
             embeddings_VxD: Encoded parents, normalized.
         """
@@ -86,7 +98,14 @@ class MLPMergeEncoder(MergeEncoder):
         D1 = distance.feature_expand_shape(D)
         self.mlp = MLP(2 * D1, D, width, depth)
 
-    def forward(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
+    def forward(
+        self,
+        children1_VxD: Tensor,
+        children2_VxD: Tensor,
+        log_felsensteins1_VxSxA: Tensor,
+        log_felsensteins2_VxSxA: Tensor,
+        site_positions_SxC: Tensor,
+    ) -> Tensor:
         expanded1_VxD1 = self.distance.feature_expand(children1_VxD)
         expanded2_VxD1 = self.distance.feature_expand(children2_VxD)
 
@@ -113,7 +132,14 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
 
         assert D == 2
 
-    def forward(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
+    def forward(
+        self,
+        children1_VxD: Tensor,
+        children2_VxD: Tensor,
+        log_felsensteins1_VxSxA: Tensor,
+        log_felsensteins2_VxSxA: Tensor,
+        site_positions_SxC: Tensor,
+    ) -> Tensor:
         # all values are vectors (shape=[V, 2]) unless otherwise stated
 
         p = children1_VxD
@@ -161,3 +187,90 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         m = torch.where(ok.unsqueeze(1), m, r)
 
         return m
+
+
+class MaxLikelihoodMergeEncoder(MergeEncoder):
+    """
+    Finds the parent embedding that maximizes the likelihood as computed by the
+    Felsenstein algorithm. Performs gradient ascent to find the maximum.
+    """
+
+    def __init__(
+        self,
+        distance: Distance,
+        q_matrix_decoder: QMatrixDecoder,
+        *,
+        iters: int,
+        lr: float,
+    ):
+        """
+        Args:
+            distance: Used to normalize the embeddings and compute distances.
+            q_matrix_decoder: Used to decode Q matrices of child embeddings.
+            iters: Number of iterations of gradient ascent.
+            lr: Learning rate for gradient ascent.
+        """
+
+        super().__init__()
+
+        self.distance = distance
+        self.q_matrix_decoder = q_matrix_decoder
+        self.iters = iters
+        self.lr = lr
+
+    def forward(
+        self,
+        children1_VxD: Tensor,
+        children2_VxD: Tensor,
+        log_felsensteins1_VxSxA: Tensor,
+        log_felsensteins2_VxSxA: Tensor,
+        site_positions_SxC: Tensor,
+    ) -> Tensor:
+        # stop gradients from flowing back to inputs
+        children1_VxD = children1_VxD.detach()
+        children2_VxD = children2_VxD.detach()
+        log_felsensteins1_VxSxA = log_felsensteins1_VxSxA.detach()
+        log_felsensteins2_VxSxA = log_felsensteins2_VxSxA.detach()
+        site_positions_SxC = site_positions_SxC.detach()
+
+        # re-enable gradients, in case we are in a torch.no_grad() context
+        with torch.enable_grad():
+            # to be optimized
+            raw_parents_VxD = torch.zeros_like(children1_VxD, requires_grad=True)
+
+            for _ in range(self.iters):
+                parents_VxD = self.distance.normalize(raw_parents_VxD)
+
+                Q_matrix_VxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
+                    parents_VxD, site_positions_SxC
+                ).detach()
+
+                stat_probs_VxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
+                    parents_VxD, site_positions_SxC
+                ).detach()
+                log_stat_probs_VxSxA = stat_probs_VxSxA.log()
+
+                branch1_V = self.distance(children1_VxD, parents_VxD)
+                branch2_V = self.distance(children2_VxD, parents_VxD)
+
+                log_felsensteins_VxSxA = compute_log_felsenstein_likelihoods_KxSxA(
+                    Q_matrix_VxSxAxA,
+                    log_felsensteins1_VxSxA,
+                    log_felsensteins2_VxSxA,
+                    branch1_V,
+                    branch2_V,
+                )
+
+                # dot Felsenstein probabilities with stationary probabilities (along axis A)
+                log_likelihoods_VxS = torch.logsumexp(
+                    log_felsensteins_VxSxA + log_stat_probs_VxSxA, -1
+                )
+                log_likelihood_V = log_likelihoods_VxS.sum(-1)
+
+                # maximize likelihood via gradient ascent
+                log_likelihood_V.backward(torch.ones_like(log_likelihood_V))
+                raw_parents_VxD.data += self.lr * raw_parents_VxD.grad  # type: ignore
+                raw_parents_VxD.grad.zero_()  # type: ignore
+
+        parents_VxD = self.distance.normalize(raw_parents_VxD)
+        return parents_VxD.detach()

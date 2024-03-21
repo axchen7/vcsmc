@@ -251,7 +251,16 @@ class EmbeddingProposal(Proposal):
         child1_KxD = gather_K(embeddings_KxtxD, idx1_K)
         child2_KxD = gather_K(embeddings_KxtxD, idx2_K)
 
-        embedding_KxD = self.merge_encoder(child1_KxD, child2_KxD)
+        log_felsensteins1_VxSxA = gather_K(log_felsensteins_KxtxSxA, idx1_K)
+        log_felsensteins2_VxSxA = gather_K(log_felsensteins_KxtxSxA, idx2_K)
+
+        embedding_KxD = self.merge_encoder(
+            child1_KxD,
+            child2_KxD,
+            log_felsensteins1_VxSxA,
+            log_felsensteins2_VxSxA,
+            site_positions_SxC,
+        )
 
         # ===== sample/get branches parameters =====
 
