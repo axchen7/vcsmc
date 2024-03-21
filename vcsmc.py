@@ -161,7 +161,12 @@ class VCSMC(nn.Module):
                 log_v_plus_K,
                 log_v_minus_K,
             ) = self.proposal(
-                N, leaf_counts_Kxt, embeddings_KxtxD, log_felsensteins_KxtxSxA, log
+                N,
+                leaf_counts_Kxt,
+                embeddings_KxtxD,
+                log_felsensteins_KxtxSxA,
+                site_positions_SxC,
+                log,
             )
 
             # helper function
