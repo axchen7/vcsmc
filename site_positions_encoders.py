@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from encoders import MLP
+from encoder_utils import MLP
 
 
 class SitePositionsEncoder(nn.Module):

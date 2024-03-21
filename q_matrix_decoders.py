@@ -2,7 +2,7 @@ import torch
 from torch import Tensor, nn
 
 from distances import Distance
-from encoders import MLP
+from encoder_utils import MLP
 from expm.expm_taylor import expm
 from site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
 
