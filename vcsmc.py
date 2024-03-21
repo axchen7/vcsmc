@@ -160,7 +160,9 @@ class VCSMC(nn.Module):
                 embedding_KxD,
                 log_v_plus_K,
                 log_v_minus_K,
-            ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD, log)
+            ) = self.proposal(
+                N, leaf_counts_Kxt, embeddings_KxtxD, log_felsensteins_KxtxSxA, log
+            )
 
             # helper function
             def merge_K(arr_K: Tensor, new_val_K: Tensor):

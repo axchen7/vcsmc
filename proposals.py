@@ -21,6 +21,7 @@ class Proposal(nn.Module):
         N: int,
         leaf_counts_Kxt: Tensor,
         embeddings_KxtxD: Tensor,
+        log_felsensteins_KxtxSxA: Tensor,
         log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
@@ -30,6 +31,7 @@ class Proposal(nn.Module):
             N: The number of leaf nodes.
             leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
+            log_felsensteins_KxtxSxA: Log Felsenstein likelihoods for each subtree of each particle.
             log: Whether to log to TensorBoard. Must be in a summary writer context.
         Returns:
             idx1_K: Indices of the first node to merge.
@@ -89,6 +91,7 @@ class ExpBranchProposal(Proposal):
         N: int,
         leaf_counts_Kxt: Tensor,
         embeddings_KxtxD: Tensor,
+        log_felsensteins_KxtxSxA: Tensor,
         log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
@@ -193,6 +196,7 @@ class EmbeddingProposal(Proposal):
         N: int,
         leaf_counts_Kxt: Tensor,
         embeddings_KxtxD: Tensor,
+        log_felsensteins_KxtxSxA: Tensor,
         log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
