@@ -39,7 +39,7 @@ class VCSMC(nn.Module):
     ):
         """
         Args:
-            q_matrix: QMatrix object
+            q_matrix_decoder: QMatrix object
             proposal: Proposal object
             taxa_N: List of taxa names of length N
             K: Number of particles
