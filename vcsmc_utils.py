@@ -37,8 +37,8 @@ def compute_log_double_factorials_2N(N: int) -> Tensor:
 
 def compute_log_felsenstein_likelihoods_KxSxA(
     Q_matrix_KxSxAxA: Tensor,
-    log_likelihoods1_KxSxA: Tensor,
-    log_likelihoods2_KxSxA: Tensor,
+    log_felsensteins1_KxSxA: Tensor,
+    log_felsensteins2_KxSxA: Tensor,
     branch1_K: Tensor,
     branch2_K: Tensor,
 ) -> Tensor:
@@ -51,12 +51,12 @@ def compute_log_felsenstein_likelihoods_KxSxA(
     log_P1_KxSxAxA = P1_KxSxAxA.log()
     log_P2_KxSxAxA = P2_KxSxAxA.log()
 
-    log_likelihoods1_KxSx1xA = log_likelihoods1_KxSxA.unsqueeze(-2)
-    log_likelihoods2_KxSx1xA = log_likelihoods2_KxSxA.unsqueeze(-2)
+    log_felsensteins1_KxSx1xA = log_felsensteins1_KxSxA.unsqueeze(-2)
+    log_felsensteins2_KxSx1xA = log_felsensteins2_KxSxA.unsqueeze(-2)
 
     # numerically stable log matrix multiplication
-    log_prob1_KxSxA = torch.logsumexp(log_P1_KxSxAxA + log_likelihoods1_KxSx1xA, -1)
-    log_prob2_KxSxA = torch.logsumexp(log_P2_KxSxAxA + log_likelihoods2_KxSx1xA, -1)
+    log_prob1_KxSxA = torch.logsumexp(log_P1_KxSxAxA + log_felsensteins1_KxSx1xA, -1)
+    log_prob2_KxSxA = torch.logsumexp(log_P2_KxSxAxA + log_felsensteins2_KxSx1xA, -1)
 
     return log_prob1_KxSxA + log_prob2_KxSxA
 
