@@ -211,6 +211,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         *,
         iters: int,
         lr: float,
+        clip: float,
     ):
         """
         Args:
@@ -218,6 +219,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
             q_matrix_decoder: Used to decode Q matrices of child embeddings.
             iters: Number of iterations of gradient ascent.
             lr: Learning rate for gradient ascent.
+            clip: Clipping value for gradient ascent.
         """
 
         super().__init__()
@@ -226,6 +228,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         self.q_matrix_decoder = q_matrix_decoder
         self.iters = iters
         self.lr = lr
+        self.clip = clip
 
     def forward(
         self,
@@ -303,8 +306,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
 
                 # maximize likelihood via gradient ascent
                 log_likelihood_V.backward(torch.ones_like(log_likelihood_V))
-                alpha_V.data += self.lr * alpha_V.grad  # type: ignore
-                beta_V.data += self.lr * beta_V.grad  # type: ignore
+                alpha_V.data += self.lr * torch.clamp(alpha_V.grad, -self.clip, self.clip)  # type: ignore
+                beta_V.data += self.lr * torch.clamp(beta_V.grad, -self.clip, self.clip)  # type: ignore
                 alpha_V.grad.zero_()  # type: ignore
                 beta_V.grad.zero_()  # type: ignore
 
