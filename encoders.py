@@ -10,6 +10,10 @@ from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
 class SequenceEncoder(nn.Module):
     """Encodes sequences into embeddings."""
 
+    def __init__(self, *, D: int):
+        super().__init__()
+        self.D = D
+
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         """
         Args:
@@ -22,6 +26,9 @@ class SequenceEncoder(nn.Module):
 
 class DummySequenceEncoder(SequenceEncoder):
     """A dummy encoder that returns zero embeddings."""
+
+    def __init__(self):
+        super().__init__(D=0)
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         V = sequences_VxSxA.shape[0]
@@ -44,7 +51,7 @@ class MLPSequenceEncoder(SequenceEncoder):
             depth: Number of hidden layers.
         """
 
-        super().__init__()
+        super().__init__(D=D)
 
         self.distance = distance
         self.mlp = MLP(S * A, D, width, depth)
