@@ -239,11 +239,10 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         site_positions_SxC: Tensor,
     ) -> Tensor:
         # stop gradients from flowing back to inputs
-        children1_VxD = children1_VxD.detach()
-        children2_VxD = children2_VxD.detach()
         log_felsensteins1_VxSxA = log_felsensteins1_VxSxA.detach()
         log_felsensteins2_VxSxA = log_felsensteins2_VxSxA.detach()
         site_positions_SxC = site_positions_SxC.detach()
+        # ...the children embeddings are detached explicitly in the loop
 
         p = children1_VxD
         q = children2_VxD
@@ -275,7 +274,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
             beta_Vx1 = beta_V.unsqueeze(1)
 
             for _ in range(self.iters):
-                midpoints_VxD = p * alpha_Vx1 + q * (1 - alpha_Vx1)
+                midpoints_VxD = p.detach() * alpha_Vx1 + q.detach() * (1 - alpha_Vx1)
                 parents_VxD = midpoints_VxD * beta_Vx1
 
                 Q_matrix_VxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
@@ -287,8 +286,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
                 ).detach()
                 log_stat_probs_VxSxA = stat_probs_VxSxA.log()
 
-                branch1_V = self.distance(children1_VxD, parents_VxD)
-                branch2_V = self.distance(children2_VxD, parents_VxD)
+                branch1_V = self.distance(children1_VxD.detach(), parents_VxD)
+                branch2_V = self.distance(children2_VxD.detach(), parents_VxD)
 
                 log_felsensteins_VxSxA = compute_log_felsenstein_likelihoods_KxSxA(
                     Q_matrix_VxSxAxA,
@@ -315,4 +314,13 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
                 alpha_V.data.clamp_(0, 1)
                 beta_V.data.clamp_(0, 1)
 
-        return parents_VxD.detach()  # type: ignore
+        # detach `alpha_Vx1` and `beta_Vx1` now that we've finished optimizing
+        # them; but, use `p` and `q` directly so that gradients of the returned
+        # `parents_VxD` can flow back to `children1_VxD` and `children2_VxD`
+
+        alpha_Vx1 = alpha_Vx1.detach()
+        beta_Vx1 = beta_Vx1.detach()
+
+        midpoints_VxD = p * alpha_Vx1 + q * (1 - alpha_Vx1)
+        parents_VxD = midpoints_VxD * beta_Vx1
+        return parents_VxD
