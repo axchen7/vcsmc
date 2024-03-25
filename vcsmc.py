@@ -20,10 +20,11 @@ class VCSMC_Result(TypedDict):
     log_Z_SMC: Tensor
     log_likelihood_K: Tensor
     best_newick_tree: str
-    best_merge1_indexes_N1: Tensor
-    best_merge2_indexes_N1: Tensor
-    best_branch1_lengths_N1: Tensor
-    best_branch2_lengths_N1: Tensor
+    best_merge1_indexes_N1: Tensor  # left node index at each step
+    best_merge2_indexes_N1: Tensor  # right node index at each step
+    best_branch1_lengths_N1: Tensor  # left branch length at each step
+    best_branch2_lengths_N1: Tensor  # right branch length at each step
+    best_embeddings_KxN1xD: Tensor  # merged embedding at each step
 
 
 class VCSMC(nn.Module):
@@ -97,6 +98,7 @@ class VCSMC(nn.Module):
         A = data_batched_NxSxA.shape[2]
 
         K = self.K
+        D = self.proposal.seq_encoder.D
 
         # compress site positions
         site_positions_SxC = self.q_matrix_decoder.site_positions_encoder(
@@ -111,8 +113,10 @@ class VCSMC(nn.Module):
         merge2_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int)
         branch1_lengths_Kxr = torch.zeros(K, 0)
         branch2_lengths_Kxr = torch.zeros(K, 0)
+        embeddings_KxrxD = torch.zeros(K, 0, D)  # merged embedding at each step
 
         leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int)
+        # embeddings of each tree currently in the forest
         embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
 
         # Felsenstein probabilities for computing pi(s)
@@ -129,9 +133,6 @@ class VCSMC(nn.Module):
         # for displaying at the end
         log_likelihood_K = torch.zeros(K)  # initial value isn't used
 
-        # for flattening embeddings
-        D = embeddings_KxtxD.shape[-1]
-
         # iterate over merge steps
         for _ in range(N - 1):
             # ===== resample =====
@@ -143,6 +144,7 @@ class VCSMC(nn.Module):
             merge2_indexes_Kxr = merge2_indexes_Kxr[indexes_K]
             branch1_lengths_Kxr = branch1_lengths_Kxr[indexes_K]
             branch2_lengths_Kxr = branch2_lengths_Kxr[indexes_K]
+            embeddings_KxrxD = embeddings_KxrxD[indexes_K]
             leaf_counts_Kxt = leaf_counts_Kxt[indexes_K]
             embeddings_KxtxD = embeddings_KxtxD[indexes_K]
             log_felsensteins_KxtxSxA = log_felsensteins_KxtxSxA[indexes_K]
@@ -179,6 +181,7 @@ class VCSMC(nn.Module):
             merge2_indexes_Kxr = concat_K(merge2_indexes_Kxr, idx2_K)
             branch1_lengths_Kxr = concat_K(branch1_lengths_Kxr, branch1_K)
             branch2_lengths_Kxr = concat_K(branch2_lengths_Kxr, branch2_K)
+            embeddings_KxrxD = concat_K(embeddings_KxrxD, embedding_KxD)
 
             leaf_counts_Kxt = merge_K(
                 leaf_counts_Kxt,
@@ -277,4 +280,5 @@ class VCSMC(nn.Module):
             "best_merge2_indexes_N1": merge2_indexes_Kxr[best_tree_idx],
             "best_branch1_lengths_N1": branch1_lengths_Kxr[best_tree_idx],
             "best_branch2_lengths_N1": branch2_lengths_Kxr[best_tree_idx],
+            "best_embeddings_KxN1xD": embeddings_KxrxD[best_tree_idx],
         }

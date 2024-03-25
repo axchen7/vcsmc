@@ -10,7 +10,7 @@ from torch import Tensor
 
 from proposals import EmbeddingProposal
 from train import batch_by_sites, get_site_positions_SxSfull
-from vcsmc import VCSMC
+from vcsmc import VCSMC, VCSMC_Result
 from vcsmc_utils import replace_with_merged_list
 
 
@@ -28,10 +28,13 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
         data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
 
-        result = vcsmc(data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
+        result: VCSMC_Result = vcsmc(
+            data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull
+        )
 
         merge1_indexes_N1 = result["best_merge1_indexes_N1"]
         merge2_indexes_N1 = result["best_merge2_indexes_N1"]
+        embeddings_KxN1xD = result["best_embeddings_KxN1xD"]
 
         points = []
         lines = []
@@ -46,16 +49,12 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         labels_t = taxa_N
 
         for r in range(N - 1):
-            idx1 = merge1_indexes_N1[r]
-            idx2 = merge2_indexes_N1[r]
+            idx1 = int(merge1_indexes_N1[r])
+            idx2 = int(merge2_indexes_N1[r])
 
             emb1_D = embeddings_txD[idx1]
             emb2_D = embeddings_txD[idx2]
-
-            parent_emb_1xD = proposal.merge_encoder(
-                emb1_D.unsqueeze(0), emb2_D.unsqueeze(0)
-            )
-            parent_emb_D = parent_emb_1xD[0]
+            parent_emb_D = embeddings_KxN1xD[r]
 
             # flip y coordinate to match matplotlib display orientation
             unpack = lambda x: (float(x[0]), -float(x[1]))
