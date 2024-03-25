@@ -199,7 +199,9 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
 class MaxLikelihoodMergeEncoder(MergeEncoder):
     """
     Finds the parent embedding that maximizes the likelihood as computed by the
-    Felsenstein algorithm. Performs gradient ascent to find the maximum.
+    Felsenstein algorithm. Performs gradient ascent to find the maximum. Search
+    region is bounded by the triangle formed by the children embeddings and the
+    origin.
     """
 
     def __init__(
@@ -212,7 +214,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
     ):
         """
         Args:
-            distance: Used to normalize the embeddings and compute distances.
+            distance: Used to compute distances for branch lengths.
             q_matrix_decoder: Used to decode Q matrices of child embeddings.
             iters: Number of iterations of gradient ascent.
             lr: Learning rate for gradient ascent.
@@ -240,13 +242,38 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         log_felsensteins2_VxSxA = log_felsensteins2_VxSxA.detach()
         site_positions_SxC = site_positions_SxC.detach()
 
+        p = children1_VxD
+        q = children2_VxD
+
+        p_norm = safe_norm(p, 1, True)
+        q_norm = safe_norm(q, 1, True)
+
+        # "pull" the further child to the same distance from the origin as the
+        # closer child
+        p = torch.where(p_norm > q_norm, p * q_norm / p_norm, p)
+        q = torch.where(q_norm > p_norm, q * p_norm / q_norm, q)
+
         # re-enable gradients, in case we are in a torch.no_grad() context
         with torch.enable_grad():
-            # to be optimized
-            raw_parents_VxD = torch.zeros_like(children1_VxD, requires_grad=True)
+            V = children1_VxD.shape[0]
+            dtype = children1_VxD.dtype
+            device = children1_VxD.device
+
+            # relative position between the first and second child; to be optimized
+            alpha_V = torch.full(
+                [V], 0.5, dtype=dtype, device=device, requires_grad=True
+            )
+            # relative distance from the origin; to be optimized
+            beta_V = torch.full(
+                [V], 0.5, dtype=dtype, device=device, requires_grad=True
+            )
+
+            alpha_Vx1 = alpha_V.unsqueeze(1)
+            beta_Vx1 = beta_V.unsqueeze(1)
 
             for _ in range(self.iters):
-                parents_VxD = self.distance.normalize(raw_parents_VxD)
+                midpoints_VxD = p * alpha_Vx1 + q * (1 - alpha_Vx1)
+                parents_VxD = midpoints_VxD * beta_Vx1
 
                 Q_matrix_VxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
                     parents_VxD, site_positions_SxC
@@ -276,8 +303,13 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
 
                 # maximize likelihood via gradient ascent
                 log_likelihood_V.backward(torch.ones_like(log_likelihood_V))
-                raw_parents_VxD.data += self.lr * raw_parents_VxD.grad  # type: ignore
-                raw_parents_VxD.grad.zero_()  # type: ignore
+                alpha_V.data += self.lr * alpha_V.grad  # type: ignore
+                beta_V.data += self.lr * beta_V.grad  # type: ignore
+                alpha_V.grad.zero_()  # type: ignore
+                beta_V.grad.zero_()  # type: ignore
 
-        parents_VxD = self.distance.normalize(raw_parents_VxD)
-        return parents_VxD.detach()
+                # clamp alpha and beta to limit search to triangular region
+                alpha_V.data.clamp_(0, 1)
+                beta_V.data.clamp_(0, 1)
+
+        return parents_VxD.detach()  # type: ignore
