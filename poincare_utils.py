@@ -34,7 +34,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
 
         merge1_indexes_N1 = result["best_merge1_indexes_N1"]
         merge2_indexes_N1 = result["best_merge2_indexes_N1"]
-        embeddings_KxN1xD = result["best_embeddings_KxN1xD"]
+        embeddings_N1xD = result["best_embeddings_N1xD"]
 
         points = []
         lines = []
@@ -54,7 +54,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
 
             emb1_D = embeddings_txD[idx1]
             emb2_D = embeddings_txD[idx2]
-            parent_emb_D = embeddings_KxN1xD[r]
+            parent_emb_D = embeddings_N1xD[r]
 
             # flip y coordinate to match matplotlib display orientation
             unpack = lambda x: (float(x[0]), -float(x[1]))

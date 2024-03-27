@@ -24,7 +24,7 @@ class VCSMC_Result(TypedDict):
     best_merge2_indexes_N1: Tensor  # right node index at each step
     best_branch1_lengths_N1: Tensor  # left branch length at each step
     best_branch2_lengths_N1: Tensor  # right branch length at each step
-    best_embeddings_KxN1xD: Tensor  # merged embedding at each step
+    best_embeddings_N1xD: Tensor  # merged embedding at each step
 
 
 class VCSMC(nn.Module):
@@ -280,5 +280,5 @@ class VCSMC(nn.Module):
             "best_merge2_indexes_N1": merge2_indexes_Kxr[best_tree_idx],
             "best_branch1_lengths_N1": branch1_lengths_Kxr[best_tree_idx],
             "best_branch2_lengths_N1": branch2_lengths_Kxr[best_tree_idx],
-            "best_embeddings_KxN1xD": embeddings_KxrxD[best_tree_idx],
+            "best_embeddings_N1xD": embeddings_KxrxD[best_tree_idx],
         }
