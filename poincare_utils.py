@@ -25,6 +25,16 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         distance = proposal.seq_encoder.distance
         assert isinstance(distance, Hyperbolic)
 
+        def normalize(embeddings_VxD: Tensor):
+            """Normalize and ensure |x| < 1"""
+            max_norm = 1 - 1e-6
+            embeddings_VxD = distance.normalize(embeddings_VxD)
+            norms_V = torch.norm(embeddings_VxD, dim=-1)
+            unit_vectors_VxD = embeddings_VxD / norms_V.unsqueeze(-1) * max_norm
+            return torch.where(
+                norms_V.unsqueeze(-1) < max_norm, embeddings_VxD, unit_vectors_VxD
+            )
+
         dataset = batch_by_sites(data_NxSxA, None)
 
         # batch is actually the full dataset
@@ -38,7 +48,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         merge1_indexes_N1 = result["best_merge1_indexes_N1"]
         merge2_indexes_N1 = result["best_merge2_indexes_N1"]
 
-        embeddings_N1xD = distance.normalize(result["best_embeddings_N1xD"])
+        embeddings_N1xD = normalize(result["best_embeddings_N1xD"])
 
         points = []
         lines = []
@@ -49,9 +59,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         min_y = math.inf
         max_y = -math.inf
 
-        embeddings_txD: list[Tensor] = list(
-            distance.normalize(proposal.seq_encoder(data_NxSxA))
-        )
+        embeddings_txD: list[Tensor] = list(normalize(proposal.seq_encoder(data_NxSxA)))
         labels_t = taxa_N
 
         for r in range(N - 1):
