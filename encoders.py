@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from distances import Distance, safe_norm
+from distances import Distance, Hyperbolic, safe_norm
 from encoder_utils import MLP
 from q_matrix_decoders import QMatrixDecoder
 from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
@@ -10,8 +10,16 @@ from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
 class SequenceEncoder(nn.Module):
     """Encodes sequences into embeddings."""
 
-    def __init__(self, *, D: int):
+    def __init__(self, distance: Distance | None, *, D: int):
+        """
+        Args:
+            distance: Used to normalize the embeddings.
+            D: Number of dimensions in sequence embeddings.
+        """
+
         super().__init__()
+
+        self.distance = distance
         self.D = D
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
@@ -28,7 +36,7 @@ class DummySequenceEncoder(SequenceEncoder):
     """A dummy encoder that returns zero embeddings."""
 
     def __init__(self):
-        super().__init__(D=0)
+        super().__init__(None, D=0)
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         V = sequences_VxSxA.shape[0]
@@ -51,13 +59,11 @@ class MLPSequenceEncoder(SequenceEncoder):
             depth: Number of hidden layers.
         """
 
-        super().__init__(D=D)
-
-        self.distance = distance
+        super().__init__(distance, D=D)
         self.mlp = MLP(S * A, D, width, depth)
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
-        return self.distance.normalize(self.mlp(sequences_VxSxA))
+        return self.mlp(sequences_VxSxA)
 
 
 class MergeEncoder(nn.Module):
@@ -90,7 +96,7 @@ class MLPMergeEncoder(MergeEncoder):
     ):
         """
         Args:
-            distance: Used to feature expand and normalize the embeddings.
+            distance: Used to feature expand the embeddings.
             S: Number of sites.
             A: Alphabet size.
             D: Number of dimensions in output embeddings.
@@ -116,9 +122,7 @@ class MLPMergeEncoder(MergeEncoder):
         expanded1_VxD1 = self.distance.feature_expand(children1_VxD)
         expanded2_VxD1 = self.distance.feature_expand(children2_VxD)
 
-        return self.distance.normalize(
-            self.mlp(torch.cat([expanded1_VxD1, expanded2_VxD1], -1))
-        )
+        return self.mlp(torch.cat([expanded1_VxD1, expanded2_VxD1], -1))
 
 
 class HyperbolicGeodesicMergeEncoder(MergeEncoder):
@@ -129,7 +133,7 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
     2.
     """
 
-    def __init__(self, *, D: int):
+    def __init__(self, distance: Distance, *, D: int):
         """
         Args:
             D: Number of dimensions sequence embeddings (must be 2).
@@ -138,6 +142,9 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         super().__init__()
 
         assert D == 2
+        assert isinstance(distance, Hyperbolic)
+
+        self.distance = distance
 
     def forward(
         self,
@@ -149,8 +156,8 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
     ) -> Tensor:
         # all values are vectors (shape=[V, 2]) unless otherwise stated
 
-        p = children1_VxD
-        q = children2_VxD
+        p = self.distance.normalize(children1_VxD)
+        q = self.distance.normalize(children2_VxD)
 
         p_norm = safe_norm(p, 1, True)
         q_norm = safe_norm(q, 1, True)
@@ -193,7 +200,7 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         # and q
         m = torch.where(ok.unsqueeze(1), m, r)
 
-        return m
+        return self.distance.unnormalize(m)
 
 
 class MaxLikelihoodMergeEncoder(MergeEncoder):

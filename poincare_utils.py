@@ -8,6 +8,7 @@ from IPython.display import display
 from ipywidgets import FloatSlider, interactive
 from torch import Tensor
 
+from distances import Hyperbolic
 from proposals import EmbeddingProposal
 from train import batch_by_sites, get_site_positions_SxSfull
 from vcsmc import VCSMC, VCSMC_Result
@@ -19,8 +20,10 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         N = len(taxa_N)
 
         proposal = vcsmc.proposal
-        if not isinstance(proposal, EmbeddingProposal):
-            raise ValueError("Only EmbeddingProposal is supported")
+        assert isinstance(proposal, EmbeddingProposal)
+
+        distance = proposal.seq_encoder.distance
+        assert isinstance(distance, Hyperbolic)
 
         dataset = batch_by_sites(data_NxSxA, None)
 
@@ -34,7 +37,8 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
 
         merge1_indexes_N1 = result["best_merge1_indexes_N1"]
         merge2_indexes_N1 = result["best_merge2_indexes_N1"]
-        embeddings_N1xD = result["best_embeddings_N1xD"]
+
+        embeddings_N1xD = distance.normalize(result["best_embeddings_N1xD"])
 
         points = []
         lines = []
@@ -45,7 +49,9 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
         min_y = math.inf
         max_y = -math.inf
 
-        embeddings_txD: list[Tensor] = list(proposal.seq_encoder(data_NxSxA))
+        embeddings_txD: list[Tensor] = list(
+            distance.normalize(proposal.seq_encoder(data_NxSxA))
+        )
         labels_t = taxa_N
 
         for r in range(N - 1):
@@ -133,7 +139,10 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
 
 def plot_embeddings(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
     with torch.no_grad():
-        embeddings: Tensor = vcsmc.proposal.seq_encoder(data_NxSxA)
+        distance = vcsmc.proposal.seq_encoder.distance
+        assert distance is not None
+
+        embeddings = distance.normalize(vcsmc.proposal.seq_encoder(data_NxSxA))
         embeddings = embeddings.cpu()
 
         fig = plt.figure(figsize=(10, 10))
@@ -150,6 +159,9 @@ def plot_embeddings(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
 def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
     S = data_NxSxA.shape[1]
 
+    distance = vcsmc.proposal.seq_encoder.distance
+    assert isinstance(distance, Hyperbolic)
+
     with torch.no_grad():
         site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
             get_site_positions_SxSfull(data_NxSxA)
@@ -159,7 +171,7 @@ def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
         with torch.no_grad():
             x = r * math.cos(theta)
             y = r * math.sin(theta)
-            embedding_1xD = torch.tensor([x, y]).unsqueeze(0)
+            embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
             q_matrix_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
                 embedding_1xD, site_positions_SxC
             )[0]
@@ -181,6 +193,9 @@ def interactive_stat_probs(vcsmc: VCSMC, data_NxSxA: Tensor):
     S = data_NxSxA.shape[1]
     A = data_NxSxA.shape[2]
 
+    distance = vcsmc.proposal.seq_encoder.distance
+    assert isinstance(distance, Hyperbolic)
+
     with torch.no_grad():
         site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
             get_site_positions_SxSfull(data_NxSxA)
@@ -190,7 +205,7 @@ def interactive_stat_probs(vcsmc: VCSMC, data_NxSxA: Tensor):
         with torch.no_grad():
             x = r * math.cos(theta)
             y = r * math.sin(theta)
-            embedding_1xD = torch.tensor([x, y]).unsqueeze(0)
+            embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
             stat_probs_SxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
                 embedding_1xD, site_positions_SxC
             )[0]
