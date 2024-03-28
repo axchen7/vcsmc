@@ -55,6 +55,7 @@ def train(
     taxa_N: list[str],
     data_NxSxA: Tensor,
     *,
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     root: str = "Healthy",
     epochs: int,
     start_epoch: int = 0,
@@ -118,6 +119,9 @@ def train(
 
             log_Z_SMC_sum = log_Z_SMC_sum + log_Z_SMC
             log_likelihood_sum = log_likelihood_sum + log_likelihood_avg
+
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
         if len(dataloader) > 1:
             log_likelihood_K = None
