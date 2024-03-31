@@ -1,3 +1,4 @@
+import os
 from io import StringIO
 
 import matplotlib.pyplot as plt
@@ -72,6 +73,26 @@ def train(
     writer = SummaryWriter()
 
     # ===== helper functions =====
+
+    def save_args():
+        args = {
+            "taxa_N": taxa_N,
+            "data_NxSxA": data_NxSxA,
+            "root": root,
+            "epochs": epochs,
+            "sites_batch_size": sites_batch_size,
+        }
+        os.makedirs("checkpoints", exist_ok=True)
+        torch.save(args, "checkpoints/args.pt")
+
+    def save_checkpoint(epoch: int):
+        checkpoint = {
+            "vcsmc": vcsmc,
+            "optimizer": optimizer,
+            "lr_scheduler": lr_scheduler,
+            "start_epoch": epoch,
+        }
+        torch.save(checkpoint, "checkpoints/checkpoint.pt")
 
     def train_step(
         dataloader: DataLoader,
@@ -173,8 +194,13 @@ def train(
 
     # ===== train =====
 
-    for epoch in tqdm(range(epochs)):
+    save_args()
+
+    for epoch in tqdm(range(epochs - start_epoch)):
         epoch += start_epoch
+
+        if epoch % 10 == 0:
+            save_checkpoint(epoch)
 
         log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
             train_step(dataloader)
@@ -217,3 +243,30 @@ def train(
     # ===== done training! =====
 
     print("Training complete!")
+
+
+def train_from_checkpoint() -> tuple[Tensor, list[str], VCSMC]:
+    """
+    Returns: data_NxSxA, taxa_N, vcsmc
+    """
+
+    args = torch.load("checkpoints/args.pt")
+    checkpoint = torch.load("checkpoints/checkpoint.pt")
+
+    data_NxSxA = args["data_NxSxA"]
+    taxa_N = args["taxa_N"]
+
+    vcsmc = checkpoint["vcsmc"]
+    optimizer = checkpoint["optimizer"]
+    lr_scheduler = checkpoint["lr_scheduler"]
+    start_epoch = checkpoint["start_epoch"]
+
+    train(
+        vcsmc,
+        optimizer,
+        lr_scheduler=lr_scheduler,
+        start_epoch=start_epoch,
+        **args,
+    )
+
+    return data_NxSxA, taxa_N, vcsmc
