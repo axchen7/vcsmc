@@ -245,9 +245,15 @@ def train(
     print("Training complete!")
 
 
-def train_from_checkpoint() -> tuple[Tensor, list[str], VCSMC]:
+def train_from_checkpoint(
+    *, epochs: int | None = None
+) -> tuple[Tensor, list[str], VCSMC]:
     """
-    Returns: data_NxSxA, taxa_N, vcsmc
+    Args:
+        epochs: If set, overrides the number of epochs in the checkpoint.
+
+    Returns:
+        data_NxSxA, taxa_N, vcsmc
     """
 
     args = torch.load("checkpoints/args.pt")
@@ -255,6 +261,9 @@ def train_from_checkpoint() -> tuple[Tensor, list[str], VCSMC]:
 
     data_NxSxA = args["data_NxSxA"]
     taxa_N = args["taxa_N"]
+
+    if epochs is not None:
+        args["epochs"] = epochs
 
     vcsmc = checkpoint["vcsmc"]
     optimizer = checkpoint["optimizer"]
