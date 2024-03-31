@@ -85,12 +85,12 @@ def train(
         os.makedirs("checkpoints", exist_ok=True)
         torch.save(args, "checkpoints/args.pt")
 
-    def save_checkpoint(epoch: int):
+    def save_checkpoint(start_epoch: int):
         checkpoint = {
             "vcsmc": vcsmc,
             "optimizer": optimizer,
             "lr_scheduler": lr_scheduler,
-            "start_epoch": epoch,
+            "start_epoch": start_epoch,
         }
         torch.save(checkpoint, "checkpoints/checkpoint.pt")
 
@@ -195,15 +195,16 @@ def train(
     # ===== train =====
 
     save_args()
+    save_checkpoint(start_epoch)
 
     for epoch in tqdm(range(epochs - start_epoch)):
         epoch += start_epoch
 
-        save_checkpoint(epoch)
-
         log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
             train_step(dataloader)
         )
+
+        save_checkpoint(epoch + 1)
 
         cosine_similarity = get_data_reconstruction_cosine_similarity()
 
@@ -245,11 +246,12 @@ def train(
 
 
 def train_from_checkpoint(
-    *, epochs: int | None = None
+    *, epochs: int | None = None, load_only: bool = False
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
         epochs: If set, overrides the number of epochs in the checkpoint.
+        load_only: If True, loads the checkpoint and returns the data and model without training.
 
     Returns:
         data_NxSxA, taxa_N, vcsmc
@@ -269,12 +271,13 @@ def train_from_checkpoint(
     lr_scheduler = checkpoint["lr_scheduler"]
     start_epoch = checkpoint["start_epoch"]
 
-    train(
-        vcsmc,
-        optimizer,
-        lr_scheduler=lr_scheduler,
-        start_epoch=start_epoch,
-        **args,
-    )
+    if not load_only:
+        train(
+            vcsmc,
+            optimizer,
+            lr_scheduler=lr_scheduler,
+            start_epoch=start_epoch,
+            **args,
+        )
 
     return data_NxSxA, taxa_N, vcsmc
