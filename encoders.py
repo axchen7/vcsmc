@@ -219,6 +219,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         iters: int,
         lr: float,
         clip: float,
+        sample: bool = False,
     ):
         """
         Args:
@@ -227,6 +228,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
             iters: Number of iterations of gradient ascent.
             lr: Learning rate for gradient ascent.
             clip: Clipping value for gradient ascent.
+            sample: Whether to sample a point near the maximum likelihood point.
+                If False, the maximum likelihood point is returned.
         """
 
         super().__init__()
@@ -236,6 +239,7 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         self.iters = iters
         self.lr = lr
         self.clip = clip
+        self.sample = sample
 
     def forward(
         self,
@@ -266,21 +270,16 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         with torch.enable_grad():
             V = children1_VxD.shape[0]
             dtype = children1_VxD.dtype
-            device = children1_VxD.device
 
             # relative position between the first and second child; to be optimized
-            alpha_V = torch.full(
-                [V], 0.5, dtype=dtype, device=device, requires_grad=True
-            )
+            alpha_V = torch.full([V], 0.5, dtype=dtype, requires_grad=True)
             # relative distance from the origin; to be optimized
-            beta_V = torch.full(
-                [V], 0.5, dtype=dtype, device=device, requires_grad=True
-            )
+            beta_V = torch.full([V], 0.5, dtype=dtype, requires_grad=True)
 
             alpha_Vx1 = alpha_V.unsqueeze(1)
             beta_Vx1 = beta_V.unsqueeze(1)
 
-            for _ in range(self.iters):
+            def compute_log_likelihood_V():
                 midpoints_VxD = p.detach() * alpha_Vx1 + q.detach() * (1 - alpha_Vx1)
                 parents_VxD = midpoints_VxD * beta_Vx1
 
@@ -309,17 +308,84 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
                     log_felsensteins_VxSxA + log_stat_probs_VxSxA, -1
                 )
                 log_likelihood_V = log_likelihoods_VxS.sum(-1)
+                return log_likelihood_V
+
+            for _ in range(self.iters):
+                log_likelihood_V = compute_log_likelihood_V()
 
                 # maximize likelihood via gradient ascent
                 log_likelihood_V.backward(torch.ones_like(log_likelihood_V))
                 alpha_V.data += self.lr * torch.clamp(alpha_V.grad, -self.clip, self.clip)  # type: ignore
                 beta_V.data += self.lr * torch.clamp(beta_V.grad, -self.clip, self.clip)  # type: ignore
-                alpha_V.grad.zero_()  # type: ignore
-                beta_V.grad.zero_()  # type: ignore
+                alpha_V.grad.data.zero_()  # type: ignore
+                beta_V.grad.data.zero_()  # type: ignore
 
                 # clamp alpha and beta to limit search to triangular region
                 alpha_V.data.clamp_(0, 1)
                 beta_V.data.clamp_(0, 1)
+
+            if self.sample:
+                # sample alpha' and beta' from independent normal distributions
+                # centered at the maximum likelihood alpha and beta; the
+                # distribution variances are such that the second derivative of
+                # the distributions match d^2(likelihood)/d(alpha^2) and
+                # d^2(likelihood)/d(beta^2) at the maximum likelihood point
+
+                log_likelihood_V = compute_log_likelihood_V()
+
+                # normalize likelihoods distribution such that f(x*) = 1, where
+                # f is the likelihood distribution over alpha/beta, and x* is
+                # the maximum likelihood alpha/beta
+                log_likelihood_V = log_likelihood_V - log_likelihood_V.detach()
+                likelihood_V = log_likelihood_V.exp()
+
+                # first derivative
+                likelihood_V.backward(  # must create graph for second derivative
+                    torch.ones_like(likelihood_V), create_graph=True
+                )
+                partial1_alpha_V: Tensor = alpha_V.grad  # type: ignore
+                partial1_beta_V: Tensor = beta_V.grad  # type: ignore
+                alpha_V.grad.data.zero_()  # type: ignore
+                beta_V.grad.data.zero_()  # type: ignore
+
+                # second derivative of alpha
+                partial1_alpha_V.backward(
+                    torch.ones_like(partial1_alpha_V),
+                    inputs=[alpha_V],
+                    retain_graph=True,
+                )
+                partial2_alpha_V: Tensor = alpha_V.grad  # type: ignore
+
+                # second derivative of beta
+                partial1_beta_V.backward(
+                    torch.ones_like(partial1_beta_V),
+                    inputs=[beta_V],
+                    retain_graph=False,
+                )
+                partial2_beta_V: Tensor = beta_V.grad  # type: ignore
+
+                # for normal distribution, variance = -f(x*)/f''(x*) = -1/f''(x*),
+                # as f(x*) = 1 by normalization
+                alpha_var_V = -1 / partial2_alpha_V
+                beta_var_V = -1 / partial2_beta_V
+
+                # prevent degenerate variances
+                alpha_var_V = torch.max(alpha_var_V, torch.tensor(1e-8))
+                beta_var_V = torch.max(beta_var_V, torch.tensor(1e-8))
+
+                # sample alpha' and beta' from normal distributions
+                alpha_dist = torch.distributions.Normal(alpha_V, alpha_var_V.sqrt())
+                beta_dist = torch.distributions.Normal(beta_V, beta_var_V.sqrt())
+                alpha_sample_V = alpha_dist.sample()
+                beta_sample_V = beta_dist.sample()
+
+                # clamp sampled values to triangular region
+                alpha_sample_V.clamp_(0, 1)
+                beta_sample_V.clamp_(0, 1)
+
+                # use sampled values in place of maximum likelihood values
+                alpha_Vx1 = alpha_sample_V.unsqueeze(1)
+                beta_Vx1 = beta_sample_V.unsqueeze(1)
 
         # detach `alpha_Vx1` and `beta_Vx1` now that we've finished optimizing
         # them; but, use `p` and `q` directly so that gradients of the returned
