@@ -217,8 +217,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         q_matrix_decoder: QMatrixDecoder,
         *,
         iters: int,
-        lr: float,
-        clip: float,
+        alpha_lr: float,
+        beta_lr: float,
         sample: bool = False,
     ):
         """
@@ -226,7 +226,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
             distance: Used to compute distances for branch lengths.
             q_matrix_decoder: Used to decode Q matrices of child embeddings.
             iters: Number of iterations of gradient ascent.
-            lr: Learning rate for gradient ascent.
+            alpha_lr: Learning rate for alpha, the relative position between the children.
+            beta_lr: Learning rate for beta, the relative distance from the origin.
             clip: Clipping value for gradient ascent.
             sample: Whether to sample a point near the maximum likelihood point.
                 If False, the maximum likelihood point is returned.
@@ -237,8 +238,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
         self.distance = distance
         self.q_matrix_decoder = q_matrix_decoder
         self.iters = iters
-        self.lr = lr
-        self.clip = clip
+        self.alpha_lr = alpha_lr
+        self.beta_lr = beta_lr
         self.sample = sample
 
     def forward(
@@ -315,8 +316,8 @@ class MaxLikelihoodMergeEncoder(MergeEncoder):
 
                 # maximize likelihood via gradient ascent
                 log_likelihood_V.backward(torch.ones_like(log_likelihood_V))
-                alpha_V.data += self.lr * torch.clamp(alpha_V.grad, -self.clip, self.clip)  # type: ignore
-                beta_V.data += self.lr * torch.clamp(beta_V.grad, -self.clip, self.clip)  # type: ignore
+                alpha_V.data += self.alpha_lr * alpha_V.grad  # type: ignore
+                beta_V.data += self.beta_lr * beta_V.grad  # type: ignore
                 alpha_V.grad.data.zero_()  # type: ignore
                 beta_V.grad.data.zero_()  # type: ignore
 
