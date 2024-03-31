@@ -199,8 +199,7 @@ def train(
     for epoch in tqdm(range(epochs - start_epoch)):
         epoch += start_epoch
 
-        if epoch % 10 == 0:
-            save_checkpoint(epoch)
+        save_checkpoint(epoch)
 
         log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
             train_step(dataloader)
