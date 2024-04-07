@@ -259,19 +259,27 @@ def train(
 
 
 def train_from_checkpoint(
-    *, epochs: int | None = None, load_only: bool = False
+    *,
+    epochs: int | None = None,
+    load_only: bool = False,
+    start_epoch: int | None = None,
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
         epochs: If set, overrides the number of epochs in the checkpoint.
         load_only: If True, loads the checkpoint and returns the data and model without training.
+        start_epoch: The epoch to start training from. If None, starts from the latest checkpoint.
 
     Returns:
         data_NxSxA, taxa_N, vcsmc
     """
 
+    checkpoint_glob = (
+        "checkpoint_*.pt" if start_epoch is None else f"checkpoint_{start_epoch}.pt"
+    )
+
     args = torch.load(find_most_recent_file("runs", "args.pt"))
-    checkpoint = torch.load(find_most_recent_file("runs", "checkpoint_*.pt"))
+    checkpoint = torch.load(find_most_recent_file("runs", checkpoint_glob))
 
     data_NxSxA = args["data_NxSxA"]
     taxa_N = args["taxa_N"]
@@ -280,16 +288,13 @@ def train_from_checkpoint(
         args["epochs"] = epochs
 
     vcsmc = checkpoint["vcsmc"]
-    optimizer = checkpoint["optimizer"]
-    lr_scheduler = checkpoint["lr_scheduler"]
-    start_epoch = checkpoint["start_epoch"]
 
     if not load_only:
         train(
             vcsmc,
-            optimizer,
-            lr_scheduler=lr_scheduler,
-            start_epoch=start_epoch,
+            checkpoint["optimizer"],
+            lr_scheduler=checkpoint["lr_scheduler"],
+            start_epoch=checkpoint["start_epoch"],
             **args,
         )
 
