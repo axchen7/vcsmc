@@ -105,7 +105,7 @@ class MLPMergeEncoder(MergeEncoder):
         self.distance = distance
 
         D1 = distance.feature_expand_shape(D)
-        self.mlp = MLP(2 * D1, D, width, depth)
+        self.mlp = MLP(2 * D1, 2, width, depth)
 
     def forward(
         self,
@@ -115,10 +115,32 @@ class MLPMergeEncoder(MergeEncoder):
         log_felsensteins2_VxSxA: Tensor,
         site_positions_SxC: Tensor,
     ) -> Tensor:
+        p = children1_VxD
+        q = children2_VxD
+
+        p_norm = safe_norm(p, 1, True)
+        q_norm = safe_norm(q, 1, True)
+
+        # "pull" the further child to the same distance from the origin as the
+        # closer child
+        p = torch.where(p_norm > q_norm, p * q_norm / p_norm, p)
+        q = torch.where(q_norm > p_norm, q * p_norm / q_norm, q)
+
+        # use original children embeddings for MLP
         expanded1_VxD1 = self.distance.feature_expand(children1_VxD)
         expanded2_VxD1 = self.distance.feature_expand(children2_VxD)
 
-        return self.mlp(torch.cat([expanded1_VxD1, expanded2_VxD1], -1))
+        alpha_beta_Vx2: Tensor = self.mlp(
+            torch.cat([expanded1_VxD1, expanded2_VxD1], -1)
+        )
+
+        # sigmoid to ensure alpha and beta are in [0, 1]
+        alpha_Vx1 = alpha_beta_Vx2[:, 0].sigmoid().unsqueeze(1)
+        beta_Vx1 = alpha_beta_Vx2[:, 1].sigmoid().unsqueeze(1)
+
+        midpoints_VxD = p * alpha_Vx1 + q * (1 - alpha_Vx1)
+        parents_VxD = midpoints_VxD * beta_Vx1
+        return parents_VxD
 
 
 class HyperbolicGeodesicMergeEncoder(MergeEncoder):
