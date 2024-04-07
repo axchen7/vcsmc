@@ -266,7 +266,8 @@ def train_from_checkpoint(
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
-        epochs: If set, overrides the number of epochs in the checkpoint.
+        epochs: The epoch to stop training at.
+            If set, overrides the number of epochs in the checkpoint.
         load_only: If True, loads the checkpoint and returns the data and model without training.
         start_epoch: The epoch to start training from. If None, starts from the latest checkpoint.
 
