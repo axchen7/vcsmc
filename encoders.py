@@ -91,14 +91,10 @@ class MergeEncoder(nn.Module):
 
 
 class MLPMergeEncoder(MergeEncoder):
-    def __init__(
-        self, distance: Distance, *, S: int, A: int, D: int, width: int, depth: int
-    ):
+    def __init__(self, distance: Distance, *, D: int, width: int, depth: int):
         """
         Args:
             distance: Used to feature expand the embeddings.
-            S: Number of sites.
-            A: Alphabet size.
             D: Number of dimensions in output embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
