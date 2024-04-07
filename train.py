@@ -75,6 +75,11 @@ def train(
 
     # ===== helper functions =====
 
+    def get_checkpoints_dir():
+        dirname = os.path.join(writer.get_logdir(), "checkpoints")
+        os.makedirs(dirname, exist_ok=True)
+        return dirname
+
     def save_args():
         args = {
             "taxa_N": taxa_N,
@@ -83,8 +88,8 @@ def train(
             "epochs": epochs,
             "sites_batch_size": sites_batch_size,
         }
-        os.makedirs("checkpoints", exist_ok=True)
-        torch.save(args, "checkpoints/args.pt")
+        filename = "args.pt"
+        torch.save(args, os.path.join(get_checkpoints_dir(), filename))
 
     def save_checkpoint(start_epoch: int):
         checkpoint = {
@@ -93,7 +98,8 @@ def train(
             "lr_scheduler": lr_scheduler,
             "start_epoch": start_epoch,
         }
-        torch.save(checkpoint, "checkpoints/checkpoint.pt")
+        filename = f"checkpoint_{start_epoch}.pt"
+        torch.save(checkpoint, os.path.join(get_checkpoints_dir(), filename))
 
     def train_step(
         dataloader: DataLoader,

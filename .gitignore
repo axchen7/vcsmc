@@ -3,6 +3,5 @@ venv
 .DS_Store
 runs
 saved_models
-checkpoints
 data/simulated.phy
 _*.ipynb
