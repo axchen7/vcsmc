@@ -27,20 +27,22 @@ class slow_start_lr_scheduler(LambdaLR):
         return self.scale if epoch < self.cutoff else 1.0
 
 
-def find_most_recent_file(dir: str, filename: str) -> str:
+def find_most_recent_path(search_dir: str, name: str) -> str:
     """
+    Finds the most recently created file or directory with the given name.
+
     Args:
-        dir: The path to the directory to recursively search. Can be a glob pattern.
-        filename: The name of the file to search for. Can be a glob pattern.
+        search_dir: The path to the directory to recursively search. Can be a glob pattern.
+        name: The name of the file or pattern to search for. Can be a glob pattern.
 
     Returns:
         The path of the most recently created file with the given name.
     """
-    file_list = glob.glob(f"{dir}/**/{filename}", recursive=True)
+    file_list = glob.glob(f"{search_dir}/**/{name}", recursive=True)
 
     if len(file_list) == 0:
         raise FileNotFoundError(
-            f'No files found with the name "{filename}" in directory "{dir}".'
+            f'No files or directories matching "{name}" found in "{search_dir}".'
         )
 
     return max(file_list, key=os.path.getctime)
