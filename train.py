@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
+from encoders import Hyperbolic
 from vcsmc import VCSMC, VCSMC_Result
 
 
@@ -215,6 +216,11 @@ def train(
             cosine_similarity,
             epoch,
         )
+
+        if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
+            writer.add_scalar(
+                "Hyperbolic scale", vcsmc.proposal.seq_encoder.distance.scale, epoch
+            )
 
         if log_likelihood_K is not None:
             writer.add_histogram("Log likelihoods", log_likelihood_K, epoch)
