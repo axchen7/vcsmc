@@ -30,8 +30,8 @@ class slow_start_lr_scheduler(LambdaLR):
 def find_most_recent_file(dir: str, filename: str) -> str:
     """
     Args:
-        dir: The path to the directory to recursively search.
-        filename: The name of the file to search for.
+        dir: The path to the directory to recursively search. Can be a glob pattern.
+        filename: The name of the file to search for. Can be a glob pattern.
 
     Returns:
         The path of the most recently created file with the given name.

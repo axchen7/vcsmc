@@ -10,6 +10,7 @@ from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from encoders import Hyperbolic
+from train_utils import find_most_recent_file
 from vcsmc import VCSMC, VCSMC_Result
 
 
@@ -269,8 +270,8 @@ def train_from_checkpoint(
         data_NxSxA, taxa_N, vcsmc
     """
 
-    args = torch.load("checkpoints/args.pt")
-    checkpoint = torch.load("checkpoints/checkpoint.pt")
+    args = torch.load(find_most_recent_file("runs", "args.pt"))
+    checkpoint = torch.load(find_most_recent_file("runs", "checkpoint_*.pt"))
 
     data_NxSxA = args["data_NxSxA"]
     taxa_N = args["taxa_N"]
