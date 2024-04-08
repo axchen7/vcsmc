@@ -129,7 +129,6 @@ def train(
                 data_NxSxA,
                 data_batched_NxSxA,
                 site_positions_batched_SxSfull,
-                log=True,
             )
 
             log_Z_SMC = result["log_Z_SMC"]

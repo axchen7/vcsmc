@@ -70,8 +70,6 @@ class VCSMC(nn.Module):
         data_NxSxA: Tensor,
         data_batched_NxSxA: Tensor,
         site_positions_batched_SxSfull: Tensor,
-        *,
-        log=False,
     ) -> VCSMC_Result:
         """
         Args:
@@ -83,7 +81,6 @@ class VCSMC(nn.Module):
             site_positions_SxSfull: One-hot encodings of the true site positions.
                 S = number of sites in the batch.
                 Sfull = total number of sites.
-            log: Whether to log to TensorBoard. Must be in a summary writer context.
         Returns a dict containing:
             log_Z_SMC: lower bound to the likelihood; should set cost = -log_Z_SMC
             log_likelihood_K: log likelihoods for each particle at the last merge step
@@ -168,7 +165,6 @@ class VCSMC(nn.Module):
                 embeddings_KxtxD,
                 log_felsensteins_KxtxSxA,
                 site_positions_SxC,
-                log,
             )
 
             # helper function

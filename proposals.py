@@ -23,7 +23,6 @@ class Proposal(nn.Module):
         embeddings_KxtxD: Tensor,
         log_felsensteins_KxtxSxA: Tensor,
         site_positions_SxC: Tensor,
-        log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
@@ -34,7 +33,6 @@ class Proposal(nn.Module):
             embeddings_KtxD: Embeddings of each subtree of each particle.
             log_felsensteins_KxtxSxA: Log Felsenstein likelihoods for each subtree of each particle.
             site_positions_SxC: Compressed site positions.
-            log: Whether to log to TensorBoard. Must be in a summary writer context.
         Returns:
             idx1_K: Indices of the first node to merge.
             idx2_K: Indices of the second node to merge.
@@ -96,7 +94,6 @@ class ExpBranchProposal(Proposal):
         embeddings_KxtxD: Tensor,
         log_felsensteins_KxtxSxA: Tensor,
         site_positions_SxC: Tensor,
-        log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
@@ -207,7 +204,6 @@ class EmbeddingProposal(Proposal):
         embeddings_KxtxD: Tensor,
         log_felsensteins_KxtxSxA: Tensor,
         site_positions_SxC: Tensor,
-        log: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
@@ -235,14 +231,6 @@ class EmbeddingProposal(Proposal):
         merge_log_weights_Kxtxt = merge_log_weights_Kxtxt.diagonal_scatter(
             torch.full([K, t], -torch.inf), dim1=1, dim2=2
         )
-
-        # TODO convert
-        # for debugging
-        # if log:
-        #     if t == N:
-        #         log_weights = tf.exp(merge_log_weights_Kxtxt[0, 0])
-        #         log_weights /= tf.reduce_sum(log_weights)
-        #         tf.summary.histogram("Merge weights", log_weights)
 
         flattened_log_weights_Kxtt = merge_log_weights_Kxtxt.view(K, t * t)
 
