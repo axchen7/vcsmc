@@ -74,19 +74,20 @@ class ExpBranchProposal(Proposal):
 
         super().__init__(encoders.DummySequenceEncoder())
 
-        initial_param = 1 / initial_branch_len
+        # under exponential distribution, E[branch] = 1/rate
+        initial_rate = 1 / initial_branch_len
         # value of variable is passed through exp() later
-        initial_log_param = torch.tensor(initial_param).log().repeat(N - 1)
+        initial_log_rates = torch.tensor(initial_rate).log().repeat(N - 1)
 
-        # N1 -> N-1
-        self.log_branch_params1_N1 = nn.Parameter(initial_log_param)
-        self.log_branch_params2_N1 = nn.Parameter(initial_log_param)
+        # exponential distribution rates for sampling branch lengths; N1 -> N-1
+        self.log_rates1_N1 = nn.Parameter(initial_log_rates)
+        self.log_rates2_N1 = nn.Parameter(initial_log_rates)
 
-    def branch_params(self, r: int):
-        # use exp to ensure params are positive
-        branch_param1 = self.log_branch_params1_N1[r].exp()
-        branch_param2 = self.log_branch_params2_N1[r].exp()
-        return branch_param1, branch_param2
+    def rates(self, r: int):
+        # use exp to ensure rates are positive
+        rate1 = self.log_rates1_N1[r].exp()
+        rate2 = self.log_rates2_N1[r].exp()
+        return rate1, rate2
 
     def forward(
         self,
@@ -111,7 +112,7 @@ class ExpBranchProposal(Proposal):
 
         # ===== sample branch lengths from exponential distributions =====
 
-        rate1, rate2 = self.branch_params(r)
+        rate1, rate2 = self.rates(r)
 
         # re-parameterization trick: sample from U[0, 1] and transform to
         # exponential distribution (so gradients can flow through the sample)
