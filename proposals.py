@@ -270,28 +270,33 @@ class EmbeddingProposal(Proposal):
 
         # ===== sample/get branches parameters =====
 
-        if self.sample_branches:
-            dist1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
-            dist2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
+        dist1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
+        dist2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
 
+        if self.sample_branches:
             # sample branch lengths from exp distributions whose expectations
             # are the distances between children and merged embeddings
 
             # EPSILON**0.5 is needed to prevent division by zero under float32
-            branch_param1_K = 1 / (dist1_K + distances.EPSILON**0.5)
-            branch_param2_K = 1 / (dist2_K + distances.EPSILON**0.5)
+            rate1_K = 1 / (dist1_K + distances.EPSILON**0.5)
+            rate2_K = 1 / (dist2_K + distances.EPSILON**0.5)
 
-            branch1_distr = torch.distributions.Exponential(rate=branch_param1_K)
-            branch2_distr = torch.distributions.Exponential(rate=branch_param2_K)
+            # re-parameterization trick: sample from U[0, 1] and transform to
+            # exponential distribution (so gradients can flow through the sample)
 
-            branch1_K = branch1_distr.sample()
-            branch2_K = branch2_distr.sample()
+            uniform1_K = torch.rand([K])
+            uniform2_K = torch.rand([K])
 
-            log_branch1_prior_K = branch1_distr.log_prob(branch1_K)
-            log_branch2_prior_K = branch2_distr.log_prob(branch2_K)
+            # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
+            branch1_K = -(1 / rate1_K) * uniform1_K.log()
+            branch2_K = -(1 / rate2_K) * uniform2_K.log()
+
+            # log of exponential pdf
+            log_branch1_prior_K = rate1_K.log() - rate1_K * branch1_K
+            log_branch2_prior_K = rate2_K.log() - rate2_K * branch2_K
         else:
-            branch1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
-            branch2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
+            branch1_K = dist1_K
+            branch2_K = dist2_K
 
             log_branch1_prior_K = 0
             log_branch2_prior_K = 0
