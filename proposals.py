@@ -111,16 +111,21 @@ class ExpBranchProposal(Proposal):
 
         # ===== sample branch lengths from exponential distributions =====
 
-        branch_param1, branch_param2 = self.branch_params(r)
+        rate1, rate2 = self.branch_params(r)
 
-        branch1_distr = torch.distributions.Exponential(rate=branch_param1)
-        branch1_distr = torch.distributions.Exponential(rate=branch_param2)
+        # re-parameterization trick: sample from U[0, 1] and transform to
+        # exponential distribution (so gradients can flow through the sample)
 
-        branch1_K = branch1_distr.sample(torch.Size([K]))
-        branch2_K = branch1_distr.sample(torch.Size([K]))
+        uniform1_K = torch.rand([K])
+        uniform2_K = torch.rand([K])
 
-        log_branch1_prior_K = branch1_distr.log_prob(branch1_K)
-        log_branch2_prior_K = branch1_distr.log_prob(branch2_K)
+        # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
+        branch1_K = -(1 / rate1) * uniform1_K.log()
+        branch2_K = -(1 / rate2) * uniform2_K.log()
+
+        # log of exponential pdf
+        log_branch1_prior_K = rate1.log() - rate1 * branch1_K
+        log_branch2_prior_K = rate2.log() - rate2 * branch2_K
 
         # ===== compute proposal probability =====
 
