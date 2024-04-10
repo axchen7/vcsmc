@@ -78,7 +78,10 @@ def filter_runs(filter_fn: Callable[[VCSMC, TrainArgs], bool]):
     shutil.rmtree("filtered_runs", ignore_errors=True)
     os.mkdir("filtered_runs")
 
-    for run in os.listdir("runs"):
+    runs = os.listdir("runs")
+    match_count = 0
+
+    for run in runs:
         checkpoints = f"runs/{run}/checkpoints"
         checkpoint_files = glob.glob(f"{checkpoints}/checkpoint_*.pt")
 
@@ -107,3 +110,6 @@ def filter_runs(filter_fn: Callable[[VCSMC, TrainArgs], bool]):
 
         if matches:
             os.symlink(f"../runs/{run}", f"filtered_runs/{run}")
+            match_count += 1
+
+    print(f"\nFiltered {match_count} runs out of {len(runs)} total runs.")
