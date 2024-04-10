@@ -57,6 +57,7 @@ def train(
     optimizer: torch.optim.Optimizer,
     taxa_N: list[str],
     data_NxSxA: Tensor,
+    file: str,
     *,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     root: str = "Healthy",
@@ -85,6 +86,7 @@ def train(
         args = {
             "taxa_N": taxa_N,
             "data_NxSxA": data_NxSxA,
+            "file": file,
             "root": root,
             "epochs": epochs,
             "sites_batch_size": sites_batch_size,
