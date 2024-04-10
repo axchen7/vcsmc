@@ -83,14 +83,27 @@ def filter_runs(filter_fn: Callable[[VCSMC, TrainArgs], bool]):
         checkpoint_files = glob.glob(f"{checkpoints}/checkpoint_*.pt")
 
         if len(checkpoint_files) == 0:
+            print(f"No checkpoints found for run {run}")
             continue
         try:
             args: TrainArgs = torch.load(f"{checkpoints}/args.pt")
+        except FileNotFoundError:
+            print(f"No args found for run {run}")
+            continue
+        try:
             checkpoint: TrainCheckpoint = torch.load(checkpoint_files[0])
         except FileNotFoundError:
+            print(f"No checkpoint found for run {run}")
             continue
 
         vcsmc = checkpoint["vcsmc"]
 
-        if filter_fn(vcsmc, args):
+        try:
+            matches = filter_fn(vcsmc, args)
+        except Exception as e:
+            print(f"Error filtering run {run}:")
+            print(f"{e.__class__.__name__}: {e}")
+            continue
+
+        if matches:
             os.symlink(f"../runs/{run}", f"filtered_runs/{run}")
