@@ -60,7 +60,7 @@ def train(
     file: str,
     *,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
-    root: str = "Healthy",
+    root: str | None = None,
     epochs: int,
     start_epoch: int = 0,
     sites_batch_size: int | None = None,
@@ -69,7 +69,13 @@ def train(
     # ===== setup =====
 
     N = data_NxSxA.shape[0]
-    root_idx = taxa_N.index(root)
+
+    if root is None:
+        actual_root = taxa_N[0]
+        root_idx = 0
+    else:
+        actual_root = root
+        root_idx = taxa_N.index(root)
 
     site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
 
@@ -241,7 +247,7 @@ def train(
             phylo_tree = Phylo.read(  # type: ignore
                 StringIO(best_newick_tree), "newick"
             )
-            phylo_tree.root_with_outgroup(root)
+            phylo_tree.root_with_outgroup(actual_root)
             Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
             writer.add_figure("Best tree", fig, epoch)

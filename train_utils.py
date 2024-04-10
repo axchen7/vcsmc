@@ -15,7 +15,7 @@ class TrainArgs(TypedDict):
     taxa_N: list[str]
     data_NxSxA: Tensor
     file: str
-    root: str
+    root: str | None
     epochs: int
     sites_batch_size: int | None
 
