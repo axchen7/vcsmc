@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from encoders import Hyperbolic
-from train_utils import find_most_recent_path
+from train_utils import TrainArgs, TrainCheckpoint, find_most_recent_path
 from vcsmc import VCSMC, VCSMC_Result
 
 
@@ -83,7 +83,7 @@ def train(
         return dirname
 
     def save_args():
-        args = {
+        args: TrainArgs = {
             "taxa_N": taxa_N,
             "data_NxSxA": data_NxSxA,
             "file": file,
@@ -95,7 +95,7 @@ def train(
         torch.save(args, os.path.join(get_checkpoints_dir(), filename))
 
     def save_checkpoint(start_epoch: int):
-        checkpoint = {
+        checkpoint: TrainCheckpoint = {
             "vcsmc": vcsmc,
             "optimizer": optimizer,
             "lr_scheduler": lr_scheduler,
@@ -281,8 +281,11 @@ def train_from_checkpoint(
     )
 
     checkpoints_dir = find_most_recent_path("runs", "checkpoints")
-    args = torch.load(find_most_recent_path(checkpoints_dir, "args.pt"))
-    checkpoint = torch.load(find_most_recent_path(checkpoints_dir, checkpoint_glob))
+
+    args: TrainArgs = torch.load(find_most_recent_path(checkpoints_dir, "args.pt"))
+    checkpoint: TrainCheckpoint = torch.load(
+        find_most_recent_path(checkpoints_dir, checkpoint_glob)
+    )
 
     print(f"Loaded checkpoint at epoch {checkpoint['start_epoch']}.")
 

@@ -1,8 +1,30 @@
 import glob
 import os
+import shutil
+from typing import Callable, TypedDict
 
+import torch
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
+
+from vcsmc import VCSMC
+
+
+class TrainArgs(TypedDict):
+    taxa_N: list[str]
+    data_NxSxA: Tensor
+    file: str
+    root: str
+    epochs: int
+    sites_batch_size: int | None
+
+
+class TrainCheckpoint(TypedDict):
+    vcsmc: VCSMC
+    optimizer: torch.optim.Optimizer
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None
+    start_epoch: int
 
 
 class slow_start_lr_scheduler(LambdaLR):
@@ -46,3 +68,29 @@ def find_most_recent_path(search_dir: str, name: str) -> str:
         )
 
     return max(file_list, key=os.path.getctime)
+
+
+def filter_runs(filter_fn: Callable[[VCSMC, TrainArgs], bool]):
+    """
+    Symlinks entries in `./runs` to `./filtered_runs` based on the `filter_fn`.
+    """
+
+    shutil.rmtree("filtered_runs", ignore_errors=True)
+    os.mkdir("filtered_runs")
+
+    for run in os.listdir("runs"):
+        checkpoints = f"runs/{run}/checkpoints"
+        checkpoint_files = glob.glob(f"{checkpoints}/checkpoint_*.pt")
+
+        if len(checkpoint_files) == 0:
+            continue
+        try:
+            args: TrainArgs = torch.load(f"{checkpoints}/args.pt")
+            checkpoint: TrainCheckpoint = torch.load(checkpoint_files[0])
+        except FileNotFoundError:
+            continue
+
+        vcsmc = checkpoint["vcsmc"]
+
+        if filter_fn(vcsmc, args):
+            os.symlink(f"../runs/{run}", f"filtered_runs/{run}")
