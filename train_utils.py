@@ -82,27 +82,16 @@ def filter_runs(filter_fn: Callable[[TrainCheckpoint, TrainArgs], bool]):
     match_count = 0
 
     for run in runs:
-        checkpoints = f"runs/{run}/checkpoints"
-        checkpoint_files = glob.glob(f"{checkpoints}/checkpoint_*.pt")
-
-        if len(checkpoint_files) == 0:
-            print(f"No checkpoints found for run {run}")
-            continue
-        try:
-            args: TrainArgs = torch.load(f"{checkpoints}/args.pt")
-        except FileNotFoundError:
-            print(f"No args found for run {run}")
-            continue
-        try:
-            checkpoint: TrainCheckpoint = torch.load(checkpoint_files[0])
-        except FileNotFoundError:
-            print(f"No checkpoint found for run {run}")
-            continue
-
-        vcsmc = checkpoint["vcsmc"]
-        optimizer = checkpoint["optimizer"]
+        checkpoints_dir = f"runs/{run}/checkpoints"
 
         try:
+            args: TrainArgs = torch.load(
+                find_most_recent_path(checkpoints_dir, "args.pt")
+            )
+            checkpoint: TrainCheckpoint = torch.load(
+                find_most_recent_path(checkpoints_dir, "checkpoint_*.pt")
+            )
+
             matches = filter_fn(checkpoint, args)
         except Exception as e:
             print(f"Error filtering run {run}:")
