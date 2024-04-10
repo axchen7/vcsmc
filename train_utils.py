@@ -70,7 +70,7 @@ def find_most_recent_path(search_dir: str, name: str) -> str:
     return max(file_list, key=os.path.getctime)
 
 
-def filter_runs(filter_fn: Callable[[VCSMC, Optimizer, TrainArgs], bool]):
+def filter_runs(filter_fn: Callable[[TrainCheckpoint, TrainArgs], bool]):
     """
     Symlinks entries in `./runs` to `./filtered_runs` based on the `filter_fn`.
     """
@@ -103,7 +103,7 @@ def filter_runs(filter_fn: Callable[[VCSMC, Optimizer, TrainArgs], bool]):
         optimizer = checkpoint["optimizer"]
 
         try:
-            matches = filter_fn(vcsmc, optimizer, args)
+            matches = filter_fn(checkpoint, args)
         except Exception as e:
             print(f"Error filtering run {run}:")
             print(f"{e.__class__.__name__}: {e}")
