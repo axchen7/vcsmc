@@ -6,7 +6,7 @@ from typing import Callable, TypedDict
 import torch
 from torch import Tensor
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
+from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
 from vcsmc import VCSMC
 
@@ -22,8 +22,8 @@ class TrainArgs(TypedDict):
 
 class TrainCheckpoint(TypedDict):
     vcsmc: VCSMC
-    optimizer: torch.optim.Optimizer
-    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None
+    optimizer: Optimizer
+    lr_scheduler: LRScheduler | None
     start_epoch: int
 
 
@@ -70,7 +70,7 @@ def find_most_recent_path(search_dir: str, name: str) -> str:
     return max(file_list, key=os.path.getctime)
 
 
-def filter_runs(filter_fn: Callable[[VCSMC, TrainArgs], bool]):
+def filter_runs(filter_fn: Callable[[VCSMC, Optimizer, TrainArgs], bool]):
     """
     Symlinks entries in `./runs` to `./filtered_runs` based on the `filter_fn`.
     """
@@ -100,9 +100,10 @@ def filter_runs(filter_fn: Callable[[VCSMC, TrainArgs], bool]):
             continue
 
         vcsmc = checkpoint["vcsmc"]
+        optimizer = checkpoint["optimizer"]
 
         try:
-            matches = filter_fn(vcsmc, args)
+            matches = filter_fn(vcsmc, optimizer, args)
         except Exception as e:
             print(f"Error filtering run {run}:")
             print(f"{e.__class__.__name__}: {e}")
