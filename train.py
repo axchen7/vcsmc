@@ -1,5 +1,6 @@
 import os
 from io import StringIO
+from typing import Callable
 
 import matplotlib.pyplot as plt
 import torch
@@ -270,6 +271,7 @@ def train_from_checkpoint(
     epochs: int | None = None,
     load_only: bool = False,
     start_epoch: int | None = None,
+    modify_args: Callable[[TrainArgs, TrainCheckpoint], None] | None = None,
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
@@ -277,6 +279,7 @@ def train_from_checkpoint(
             If set, overrides the number of epochs in the checkpoint.
         load_only: If True, loads the checkpoint and returns the data and model without training.
         start_epoch: The epoch to start training from. If None, starts from the latest checkpoint.
+        modify_args: A function that modifies the args and checkpoint before training.
 
     Returns:
         data_NxSxA, taxa_N, vcsmc
@@ -292,6 +295,9 @@ def train_from_checkpoint(
     checkpoint: TrainCheckpoint = torch.load(
         find_most_recent_path(checkpoints_dir, checkpoint_glob)
     )
+
+    if modify_args is not None:
+        modify_args(args, checkpoint)
 
     print(f"Loaded checkpoint at epoch {checkpoint['start_epoch']}.")
 
