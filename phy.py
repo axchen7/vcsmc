@@ -1,3 +1,5 @@
+from typing import Mapping, Sequence
+
 import numpy as np
 import torch
 from torch import Tensor
@@ -9,8 +11,10 @@ A4_ALPHABET = {
     "C": [0, 1, 0, 0],
     "G": [0, 0, 1, 0],
     "T": [0, 0, 0, 1],
-    "N": [1 / 4] * 4,  # blank
-    "-": [1 / 4] * 4,  # blank
+    "N": [1] * 4,  # blank
+    "-": [1] * 4,  # blank
+    ".": [1] * 4,  # blank
+    "?": [1] * 4,  # blank
 }
 
 GT10_ALPHABET = {
@@ -33,7 +37,7 @@ GT10_ALPHABET = {
 
 
 def load_phy(
-    file: str, alphabet: dict[str, list[float]]
+    file: str, alphabet: Mapping[str, Sequence[float]]
 ) -> tuple[int, int, int, Tensor, list[str], str]:
     """
     Returns:
