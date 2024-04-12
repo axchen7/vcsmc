@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from distances import Distance, Hyperbolic, safe_norm
+from distances import EPSILON, Distance, Hyperbolic, safe_norm
 from encoder_utils import MLP
 from q_matrix_decoders import QMatrixDecoder
 from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
@@ -143,7 +143,7 @@ class MLPMergeEncoder(MergeEncoder):
         return parents_VxD
 
 
-class HyperbolicGeodesicMergeEncoder(MergeEncoder):
+class HyperbolicGeodesicClosestMergeEncoder(MergeEncoder):
     """
     Uses the point on the geodesic between the two children closest to the
     origin as the parent embedding. The parent embedding is thus a deterministic
@@ -221,7 +221,87 @@ class HyperbolicGeodesicMergeEncoder(MergeEncoder):
         return self.distance.unnormalize(m)
 
 
-class HyperbolicGeodesicMLPMergeEncoder(HyperbolicGeodesicMergeEncoder):
+class HyperbolicGeodesicMidpointMergeEncoder(MergeEncoder):
+    """
+    Uses the midpoint along the geodesic between the two children. The parent
+    embedding is thus a deterministic function of the children embeddings. Works
+    for any dimension of embeddings.
+    """
+
+    def __init__(self, distance: Distance):
+        """
+        Args:
+            distance: Used to normalize the embeddings.
+        """
+
+        super().__init__()
+
+        assert isinstance(distance, Hyperbolic)
+        self.distance = distance
+
+    def forward(
+        self,
+        children1_VxD: Tensor,
+        children2_VxD: Tensor,
+        log_felsensteins1_VxSxA: Tensor,
+        log_felsensteins2_VxSxA: Tensor,
+        site_positions_SxC: Tensor,
+    ) -> Tensor:
+        # all values are vectors (shape=[V, D]) unless otherwise stated
+
+        p = self.distance.normalize(children1_VxD)
+        q = self.distance.normalize(children2_VxD)
+
+        p_norm = safe_norm(p, 1, True)
+        q_norm = safe_norm(q, 1, True)
+
+        closer_point = torch.where(p_norm < q_norm, p, q)
+
+        # "pull" the further child to the same distance from the origin as the
+        # closer child
+        p = torch.where(p_norm > q_norm, p * q_norm / p_norm, p)
+        q = torch.where(q_norm > p_norm, q * p_norm / q_norm, q)
+
+        m = (p + q) / 2  # midpoint
+
+        # ===== scalars (shape=[V] because of vectorization) =====
+        m_norm_sq = torch.sum(m**2, 1)
+        # use norm squared of the closer point
+        p_norm_sq = torch.sum(closer_point**2, 1)
+        # dot product between m and the closer point
+        k = torch.sum(m * closer_point, 1)
+
+        # okay only if m_norm_sq != 0 and k != 0
+        ok = (m_norm_sq != 0) * (k != 0)
+
+        # replace with 1 to ensure that m ultimately has no NaNs
+        m_norm_sq = torch.where(ok, m_norm_sq, torch.ones_like(m_norm_sq))
+        k = torch.where(ok, k, torch.ones_like(k))
+
+        radicand = (1 + p_norm_sq) ** 2 - 4 * (k**2) / m_norm_sq
+
+        # okay if radicand >= 0
+        ok = ok * (radicand >= 0)
+
+        # replace with 1 to ensure that m ultimately has no NaNs
+        radicand = torch.where(ok, radicand, torch.ones_like(radicand))
+
+        numerator = (1 + p_norm_sq) - torch.sqrt(radicand + EPSILON)
+        denominator = 2 * k
+
+        alpha = numerator / denominator
+        # ===== end scalars =====
+
+        s = m * alpha.unsqueeze(1)
+
+        # if any resulting vector is degenerate, replace with midpoint between p
+        # and q
+        s = torch.where(ok.unsqueeze(1), s, m)
+
+        return self.distance.unnormalize(s)
+
+
+class HyperbolicGeodesicClosestMLPMergeEncoder(HyperbolicGeodesicClosestMergeEncoder):
     """
     Like the HyperbolicGeodesicMergeEncoder, but after computing the midpoint,
     applies an MLP on the child embeddings to determine parent as a point along
