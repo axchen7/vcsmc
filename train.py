@@ -163,7 +163,7 @@ def train(
         if len(dataloader) > 1:
             log_likelihood_K = None
 
-        return (log_Z_SMC_sum, log_likelihood_K, log_likelihood_sum, best_newick_tree)
+        return log_Z_SMC_sum, log_likelihood_K, log_likelihood_sum, best_newick_tree
 
     def get_avg_root_Q_matrix_AxA():
         with torch.no_grad():
