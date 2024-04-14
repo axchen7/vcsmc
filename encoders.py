@@ -13,7 +13,7 @@ class SequenceEncoder(nn.Module):
     def __init__(self, distance: Distance | None, *, D: int):
         """
         Args:
-            distance: Used to normalize the embeddings.
+            distance: Stored for external use.
             D: Number of dimensions in sequence embeddings.
         """
 
@@ -51,7 +51,7 @@ class MLPSequenceEncoder(SequenceEncoder):
     ):
         """
         Args:
-            distance: Used to normalize the embeddings.
+            distance: Stored for external use.
             S: Number of sites.
             A: Alphabet size.
             D: Number of dimensions sequence embeddings.
