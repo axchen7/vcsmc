@@ -4,6 +4,7 @@ Imports everything relevant for training the model.
 
 import torch
 
+from distance_utils import *
 from distances import *
 from encoder_utils import *
 from encoders import *

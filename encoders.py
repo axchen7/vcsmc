@@ -1,7 +1,8 @@
 import torch
 from torch import Tensor, nn
 
-from distances import EPSILON, Distance, Hyperbolic, safe_norm
+from distance_utils import EPSILON, safe_norm
+from distances import Distance, Hyperbolic
 from encoder_utils import MLP
 from q_matrix_decoders import QMatrixDecoder
 from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
