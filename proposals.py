@@ -304,6 +304,17 @@ class EmbeddingProposal(Proposal):
         idx1_K = flattened_sample_K // t
         idx2_K = flattened_sample_K % t
 
+        # merge prob = merge weight * 2 / sum of all weights
+
+        # the factor of 2 is because merging (idx1, idx2) is equivalent to
+        # merging (idx2, idx1)
+
+        log_merge_prob_K = gather_K2(merge_log_weights_Kxtxt, idx1_K, idx2_K)
+        log_merge_prob_K = log_merge_prob_K + torch.log(torch.tensor(2))
+        log_merge_prob_K = log_merge_prob_K - torch.logsumexp(
+            merge_log_weights_Kxtxt, [1, 2]
+        )
+
         # ===== get merged embedding =====
 
         child1_KxD = gather_K(embeddings_KxtxD, idx1_K)
@@ -354,17 +365,6 @@ class EmbeddingProposal(Proposal):
             log_branch2_prior_K = 0
 
         # ===== compute proposal probability =====
-
-        # merge prob = merge weight * 2 / sum of all weights
-
-        # the factor of 2 is because merging (idx1, idx2) is equivalent to
-        # merging (idx2, idx1)
-
-        log_merge_prob_K = gather_K2(merge_log_weights_Kxtxt, idx1_K, idx2_K)
-        log_merge_prob_K = log_merge_prob_K + torch.log(torch.tensor(2))
-        log_merge_prob_K = log_merge_prob_K - torch.logsumexp(
-            merge_log_weights_Kxtxt, [1, 2]
-        )
 
         log_v_plus_K = log_merge_prob_K + log_branch1_prior_K + log_branch2_prior_K
 
