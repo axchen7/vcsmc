@@ -43,6 +43,46 @@ class DummySequenceEncoder(SequenceEncoder):
         return torch.zeros([V, 0])
 
 
+class EmbeddingTableSequenceEncoder(SequenceEncoder):
+    """
+    Uses a fixed-size lookup table that stores each taxon's embedding.
+    Ignores the sequences entirely.
+    """
+
+    def __init__(self, distance: Distance, data_NxSxA: Tensor, *, D: int):
+        """
+        Args:
+            distance: Stored for external use.
+            data_NxSxA: fixed sequences to support.
+                On the forward pass, an error is thrown if the input sequences
+                don't match these sequences exactly.
+            D: Number of dimensions sequence embeddings.
+        """
+
+        super().__init__(distance, D=D)
+
+        N = data_NxSxA.shape[0]
+
+        self.data_NxSxA = data_NxSxA
+        self.embedding_table = nn.Embedding(N, D)
+
+    def forward(self, sequences_VxSxA: Tensor) -> Tensor:
+        if torch.equal(sequences_VxSxA, self.data_NxSxA):
+            # shortcut for exact match
+            return self.embedding_table.weight
+        else:
+            # find the indices of the sequences in the data
+            indices_V = []
+            for sequence_SxA in sequences_VxSxA:
+                for i, data_sequence_SxA in enumerate(self.data_NxSxA):
+                    if torch.equal(sequence_SxA, data_sequence_SxA):
+                        indices_V.append(i)
+                        break
+                else:
+                    raise ValueError("Sequence not found in data.")
+            return self.embedding_table(torch.tensor(indices_V))
+
+
 class MLPSequenceEncoder(SequenceEncoder):
     """Uses a multi-layer perceptron."""
 
