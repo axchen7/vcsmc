@@ -129,9 +129,13 @@ class CrossingPenaltyVcsmcRegularization(VcsmcRegularization):
             branch_parent_B_KVVxD,
         )
 
+        penalties_K_V_V = penalties_KVV.view(K, V, V)
+
+        # zero out penalties for self-comparisons (e.g. diagonal)
+        penalties_K_V_V[:, torch.arange(V), torch.arange(V)] = 0
+
         # add penalties across pairwise comparisons
-        penalties_K_VV = penalties_KVV.view(K, V * V)
-        penalties_K = penalties_K_VV.sum(-1)
+        penalties_K = penalties_K_V_V.sum([1, 2])
 
         # average across particles
         avg_penalty = penalties_K.mean()
