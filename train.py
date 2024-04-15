@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from encoders import Hyperbolic
 from train_utils import TrainArgs, TrainCheckpoint, find_most_recent_path
-from vcsmc import VCSMC, VCSMC_Result
+from vcsmc import VCSMC, VcsmcResult
 
 
 def get_site_positions_SxSfull(data_NxSxA: Tensor) -> Tensor:
@@ -136,7 +136,7 @@ def train(
         for data_batched_SxNxA, site_positions_batched_SxSfull in dataloader:
             data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
 
-            result: VCSMC_Result = vcsmc(
+            result: VcsmcResult = vcsmc(
                 data_NxSxA,
                 data_batched_NxSxA,
                 site_positions_batched_SxSfull,

@@ -17,7 +17,7 @@ from vcsmc_utils import (
 )
 
 
-class VCSMC_Result(TypedDict):
+class VcsmcResult(TypedDict):
     loss: Tensor
     regularization: Tensor  # proportional to S, the number of sites in the batch
     log_Z_SMC: Tensor
@@ -75,7 +75,7 @@ class VCSMC(nn.Module):
         data_NxSxA: Tensor,
         data_batched_NxSxA: Tensor,
         site_positions_batched_SxSfull: Tensor,
-    ) -> VCSMC_Result:
+    ) -> VcsmcResult:
         """
         Args:
             data_NxSxA: Tensor of N full sequences (not batched).
