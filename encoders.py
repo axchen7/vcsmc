@@ -50,7 +50,14 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
     Ignores the sequences entirely.
     """
 
-    def __init__(self, distance: Distance, data_NxSxA: Tensor, *, D: int):
+    def __init__(
+        self,
+        distance: Distance,
+        data_NxSxA: Tensor,
+        *,
+        D: int,
+        initial_std: float = 0.1,
+    ):
         """
         Args:
             distance: Stored for external use.
@@ -58,6 +65,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
                 On the forward pass, an error is thrown if the input sequences
                 don't match these sequences exactly.
             D: Number of dimensions sequence embeddings.
+            initial_std: Std dev of the normal distribution used to initialize the embeddings.
         """
 
         super().__init__(distance, D=D)
@@ -66,6 +74,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
 
         self.data_NxSxA = data_NxSxA
         self.embedding_table = nn.Embedding(N, D)
+        nn.init.normal_(self.embedding_table.weight, mean=0, std=initial_std)
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         if torch.equal(sequences_VxSxA, self.data_NxSxA):
