@@ -5,6 +5,7 @@ from torch import Tensor, nn
 
 from proposals import Proposal
 from q_matrix_decoders import QMatrixDecoder
+from vcsmc_regularization import VcsmcRegularization
 from vcsmc_utils import (
     build_newick_tree,
     compute_log_double_factorials_2N,
@@ -17,6 +18,8 @@ from vcsmc_utils import (
 
 
 class VCSMC_Result(TypedDict):
+    loss: Tensor
+    regularization: Tensor  # proportional to S, the number of sites in the batch
     log_Z_SMC: Tensor
     log_likelihood_K: Tensor
     best_newick_tree: str
@@ -37,6 +40,7 @@ class VCSMC(nn.Module):
         K: int,
         prior_dist: Literal["gamma", "exp"] = "exp",
         prior_branch_len: float = 1.0,
+        regularization: VcsmcRegularization | None = None,
     ):
         """
         Args:
@@ -56,6 +60,7 @@ class VCSMC(nn.Module):
         self.K = K
         self.prior_dist: Literal["gamma", "exp"] = prior_dist
         self.prior_branch_len = prior_branch_len
+        self.regularization = regularization
 
         N = len(taxa_N)
         self.log_double_factorials_2N = compute_log_double_factorials_2N(N)
@@ -91,8 +96,8 @@ class VCSMC(nn.Module):
             best_branch2_lengths_r: right branch lengths for the best tree
         """
 
-        N = data_batched_NxSxA.shape[0]
-        A = data_batched_NxSxA.shape[2]
+        # S = number of sites in the batch
+        N, S, A = data_batched_NxSxA.shape
 
         K = self.K
         D = self.proposal.seq_encoder.D
@@ -111,6 +116,10 @@ class VCSMC(nn.Module):
         branch1_lengths_Kxr = torch.zeros(K, 0)
         branch2_lengths_Kxr = torch.zeros(K, 0)
         embeddings_KxrxD = torch.zeros(K, 0, D)  # merged embedding at each step
+        branch1_child_KxrxD = torch.zeros(K, 0, D)
+        branch1_parent_KxrxD = torch.zeros(K, 0, D)
+        branch2_child_KxrxD = torch.zeros(K, 0, D)
+        branch2_parent_KxrxD = torch.zeros(K, 0, D)
 
         leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int)
         # embeddings of each tree currently in the forest
@@ -127,7 +136,7 @@ class VCSMC(nn.Module):
         # must record all weights to compute Z_SMC
         log_weights_list_rxK: list[Tensor] = []
 
-        # for displaying at the end
+        # for returning at the end
         log_likelihood_K = torch.zeros(K)  # initial value isn't used
 
         # iterate over merge steps
@@ -142,6 +151,10 @@ class VCSMC(nn.Module):
             branch1_lengths_Kxr = branch1_lengths_Kxr[indexes_K]
             branch2_lengths_Kxr = branch2_lengths_Kxr[indexes_K]
             embeddings_KxrxD = embeddings_KxrxD[indexes_K]
+            branch1_child_KxrxD = branch1_child_KxrxD[indexes_K]
+            branch1_parent_KxrxD = branch1_parent_KxrxD[indexes_K]
+            branch2_child_KxrxD = branch2_child_KxrxD[indexes_K]
+            branch2_parent_KxrxD = branch2_parent_KxrxD[indexes_K]
             leaf_counts_Kxt = leaf_counts_Kxt[indexes_K]
             embeddings_KxtxD = embeddings_KxtxD[indexes_K]
             log_felsensteins_KxtxSxA = log_felsensteins_KxtxSxA[indexes_K]
@@ -178,6 +191,15 @@ class VCSMC(nn.Module):
             branch1_lengths_Kxr = concat_K(branch1_lengths_Kxr, branch1_K)
             branch2_lengths_Kxr = concat_K(branch2_lengths_Kxr, branch2_K)
             embeddings_KxrxD = concat_K(embeddings_KxrxD, embedding_KxD)
+
+            branch1_child_KxrxD = concat_K(
+                branch1_child_KxrxD, gather_K(embeddings_KxtxD, idx1_K)
+            )
+            branch1_parent_KxrxD = concat_K(branch1_parent_KxrxD, embedding_KxD)
+            branch2_child_KxrxD = concat_K(
+                branch2_child_KxrxD, gather_K(embeddings_KxtxD, idx2_K)
+            )
+            branch2_parent_KxrxD = concat_K(branch2_parent_KxrxD, embedding_KxD)
 
             leaf_counts_Kxt = merge_K(
                 leaf_counts_Kxt,
@@ -255,7 +277,23 @@ class VCSMC(nn.Module):
         log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
         log_Z_SMC = torch.sum(log_sum_weights_r)
 
-        # ==== build best Newick tree ====
+        # ===== compute regularization and loss =====
+
+        regularization = torch.tensor(0.0)
+
+        if self.regularization:
+            regularization = self.regularization(
+                S,
+                branch1_child_KxrxD,
+                branch1_parent_KxrxD,
+                branch2_child_KxrxD,
+                branch2_parent_KxrxD,
+            )
+            regularization = regularization * self.regularization.coeff
+
+        loss = -log_Z_SMC + regularization
+
+        # ===== build best Newick tree =====
 
         best_tree_idx = torch.argmax(log_likelihood_K)
         best_newick_tree = build_newick_tree(
@@ -269,6 +307,8 @@ class VCSMC(nn.Module):
         # ===== return final results =====
 
         return {
+            "loss": loss,
+            "regularization": regularization,
             "log_Z_SMC": log_Z_SMC,
             "log_likelihood_K": log_likelihood_K,
             "best_newick_tree": best_newick_tree,
