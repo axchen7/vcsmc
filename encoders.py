@@ -251,7 +251,7 @@ class HyperbolicGeodesicClosestMergeEncoder(MergeEncoder):
         # although we intend to replace m with r in such cases anyway, m must
         # not contain NaNs as calling torch.where() with NaNs may cause NaN
         # gradients.
-        ok = p_dot_nhat != 0
+        ok = p_dot_nhat.abs() > EPSILON
         p_dot_nhat = torch.where(ok, p_dot_nhat, torch.ones_like(p_dot_nhat))
 
         alpha = (p_dot_p - 2 * p_dot_r + 1) / (2 * p_dot_nhat)
@@ -322,7 +322,7 @@ class HyperbolicGeodesicMidpointMergeEncoder(MergeEncoder):
         k = torch.sum(m * closer_point, 1)
 
         # okay only if m_norm_sq != 0 and k != 0
-        ok = (m_norm_sq != 0) * (k != 0)
+        ok = torch.logical_and(m_norm_sq.abs() > EPSILON, k.abs() > EPSILON)
 
         # replace with 1 to ensure that m ultimately has no NaNs
         m_norm_sq = torch.where(ok, m_norm_sq, torch.ones_like(m_norm_sq))
@@ -331,7 +331,7 @@ class HyperbolicGeodesicMidpointMergeEncoder(MergeEncoder):
         radicand = (1 + p_norm_sq) ** 2 - 4 * (k**2) / m_norm_sq
 
         # okay if radicand >= 0
-        ok = ok * (radicand >= 0)
+        ok = torch.logical_and(ok, radicand >= 0)
 
         # replace with 1 to ensure that m ultimately has no NaNs
         radicand = torch.where(ok, radicand, torch.ones_like(radicand))
