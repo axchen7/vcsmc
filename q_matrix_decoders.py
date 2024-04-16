@@ -34,6 +34,44 @@ class QMatrixDecoder(nn.Module):
         raise NotImplementedError
 
 
+class JC69QMatrixDecoder(QMatrixDecoder):
+    """
+    Uses the Jukes-Cantor 69 model, which assumes equal stationary frequencies
+    and equal exchange rates. Thus, there is a global, fully fixed Q matrix (all
+    entries are equal except for the diagonal).
+    """
+
+    def __init__(self, *, A: int):
+        """
+        Args:
+            A: The alphabet size.
+        """
+
+        super().__init__()
+
+        # make off-diagonal entries sum to 1 within each row, matching the
+        # normalization used in DenseStationaryQMatrixDecoder
+        fill_value = 1 / (A - 1)
+        Q_matrix_AxA = torch.full([A, A], fill_value)
+        # set diagonal to -1 (sum of off-diagonal entries)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(A))
+        self.Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
+
+        # stationary probabilities are uniform
+        stat_probs_A = torch.full([A], 1 / A)
+        self.stat_probs_1x1xA = stat_probs_A[None, None]
+
+    def Q_matrix_VxSxAxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
+        return self.Q_matrix_1x1xAxA
+
+    def stat_probs_VxSxA(
+        self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
+    ) -> Tensor:
+        return self.stat_probs_1x1xA
+
+
 class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     """
     Use a trainable variable for every entry in the Q matrix (except the
