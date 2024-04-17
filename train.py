@@ -333,3 +333,17 @@ def train_from_checkpoint(
         )
 
     return data_NxSxA, taxa_N, vcsmc
+
+
+@torch.no_grad()
+def evaluate(
+    vcsmc: VCSMC,
+    data_NxSxA: Tensor,
+) -> VcsmcResult:
+    dataset = batch_by_sites(data_NxSxA, None)
+
+    # batch is actually the full dataset
+    data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
+    data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
+
+    return vcsmc(data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)

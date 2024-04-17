@@ -10,8 +10,8 @@ from torch import Tensor
 
 from distances import Hyperbolic
 from proposals import EmbeddingProposal
-from train import batch_by_sites, get_site_positions_SxSfull
-from vcsmc import VCSMC, VcsmcResult
+from train import evaluate, get_site_positions_SxSfull
+from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged_list
 
 
@@ -35,15 +35,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
                 norms_V.unsqueeze(-1) < max_norm, embeddings_VxD, unit_vectors_VxD
             )
 
-        dataset = batch_by_sites(data_NxSxA, None)
-
-        # batch is actually the full dataset
-        data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
-        data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
-
-        result: VcsmcResult = vcsmc(
-            data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull
-        )
+        result = evaluate(vcsmc, data_NxSxA)
 
         merge1_indexes_N1 = result["best_merge1_indexes_N1"]
         merge2_indexes_N1 = result["best_merge2_indexes_N1"]
