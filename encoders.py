@@ -2,7 +2,7 @@ import torch
 from torch import Tensor, nn
 
 from distance_utils import EPSILON, safe_norm
-from distances import Distance, Hyperbolic
+from distances import Distance, Euclidean, Hyperbolic
 from encoder_utils import MLP
 from q_matrix_decoders import QMatrixDecoder
 from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
@@ -193,6 +193,34 @@ class MLPMergeEncoder(MergeEncoder):
         return parents_VxD
 
 
+class EuclideanMidpointMergeEncoder(MergeEncoder):
+    """
+    Uses the euclidean midpoint between the two children embeddings as the
+    parent embedding. The parent embedding is thus a deterministic function of
+    the children embeddings. Works for any dimension of embeddings.
+    """
+
+    def __init__(self, distance: Distance):
+        """
+        Args:
+            distance: Must be Euclidean.
+        """
+
+        super().__init__()
+        assert isinstance(distance, Euclidean)
+
+    def forward(
+        self,
+        children1_VxD: Tensor,
+        children2_VxD: Tensor,
+        log_felsensteins1_VxSxA: Tensor,
+        log_felsensteins2_VxSxA: Tensor,
+        site_positions_SxC: Tensor,
+    ) -> Tensor:
+        midpoints_VxD = (children1_VxD + children2_VxD) / 2
+        return midpoints_VxD
+
+
 class HyperbolicGeodesicClosestMergeEncoder(MergeEncoder):
     """
     Uses the point on the geodesic between the two children closest to the
@@ -273,9 +301,9 @@ class HyperbolicGeodesicClosestMergeEncoder(MergeEncoder):
 
 class HyperbolicGeodesicMidpointMergeEncoder(MergeEncoder):
     """
-    Uses the midpoint along the geodesic between the two children. The parent
-    embedding is thus a deterministic function of the children embeddings. Works
-    for any dimension of embeddings.
+    Uses the hyperbolic midpoint along the geodesic between the two children.
+    The parent embedding is thus a deterministic function of the children
+    embeddings. Works for any dimension of embeddings.
     """
 
     def __init__(self, distance: Distance):
