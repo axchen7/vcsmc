@@ -174,31 +174,31 @@ def train(
             best_newick_tree,
         )
 
+    @torch.no_grad()
     def get_avg_root_Q_matrix_AxA():
-        with torch.no_grad():
-            root_embedding_1xD = vcsmc.proposal.seq_encoder(
-                data_NxSxA[root_idx].unsqueeze(0)
-            )
-            site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
-                site_positions_SxSfull
-            )
-            root_Q_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
-                root_embedding_1xD, site_positions_SxC
-            ).squeeze(0)
-            avg_root_Q_AxA = root_Q_SxAxA.mean(0)
+        root_embedding_1xD = vcsmc.proposal.seq_encoder(
+            data_NxSxA[root_idx].unsqueeze(0)
+        )
+        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+            site_positions_SxSfull
+        )
+        root_Q_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
+            root_embedding_1xD, site_positions_SxC
+        ).squeeze(0)
+        avg_root_Q_AxA = root_Q_SxAxA.mean(0)
         return avg_root_Q_AxA
 
+    @torch.no_grad()
     def get_data_reconstruction_cosine_similarity():
-        with torch.no_grad():
-            embeddings_NxD = vcsmc.proposal.seq_encoder(data_NxSxA)
-            site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
-                site_positions_SxSfull
-            )
-            reconstructed_NxSxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
-                embeddings_NxD, site_positions_SxC
-            )
-            sim = torch.sum(data_NxSxA * reconstructed_NxSxA)
-            sim = sim / (data_NxSxA.norm() * reconstructed_NxSxA.norm())
+        embeddings_NxD = vcsmc.proposal.seq_encoder(data_NxSxA)
+        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+            site_positions_SxSfull
+        )
+        reconstructed_NxSxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
+            embeddings_NxD, site_positions_SxC
+        )
+        sim = torch.sum(data_NxSxA * reconstructed_NxSxA)
+        sim = sim / (data_NxSxA.norm() * reconstructed_NxSxA.norm())
         return sim
 
     # ===== batch data =====

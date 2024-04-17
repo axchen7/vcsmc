@@ -15,99 +15,99 @@ from vcsmc import VCSMC
 from vcsmc_utils import replace_with_merged_list
 
 
+@torch.no_grad()
 def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
-    with torch.no_grad():
-        N = len(taxa_N)
+    N = len(taxa_N)
 
-        proposal = vcsmc.proposal
-        assert isinstance(proposal, EmbeddingProposal)
+    proposal = vcsmc.proposal
+    assert isinstance(proposal, EmbeddingProposal)
 
-        distance = proposal.seq_encoder.distance
-        assert isinstance(distance, Hyperbolic)
+    distance = proposal.seq_encoder.distance
+    assert isinstance(distance, Hyperbolic)
 
-        def normalize(embeddings_VxD: Tensor):
-            """Normalize and ensure |x| < 1"""
-            max_norm = 1 - 1e-6
-            embeddings_VxD = distance.normalize(embeddings_VxD)
-            norms_V = torch.norm(embeddings_VxD, dim=-1)
-            unit_vectors_VxD = embeddings_VxD / norms_V.unsqueeze(-1) * max_norm
-            return torch.where(
-                norms_V.unsqueeze(-1) < max_norm, embeddings_VxD, unit_vectors_VxD
-            )
+    def normalize(embeddings_VxD: Tensor):
+        """Normalize and ensure |x| < 1"""
+        max_norm = 1 - 1e-6
+        embeddings_VxD = distance.normalize(embeddings_VxD)
+        norms_V = torch.norm(embeddings_VxD, dim=-1)
+        unit_vectors_VxD = embeddings_VxD / norms_V.unsqueeze(-1) * max_norm
+        return torch.where(
+            norms_V.unsqueeze(-1) < max_norm, embeddings_VxD, unit_vectors_VxD
+        )
 
-        result = evaluate(vcsmc, data_NxSxA)
+    result = evaluate(vcsmc, data_NxSxA)
 
-        merge1_indexes_N1 = result["best_merge1_indexes_N1"]
-        merge2_indexes_N1 = result["best_merge2_indexes_N1"]
+    merge1_indexes_N1 = result["best_merge1_indexes_N1"]
+    merge2_indexes_N1 = result["best_merge2_indexes_N1"]
 
-        embeddings_N1xD = normalize(result["best_embeddings_N1xD"])
+    embeddings_N1xD = normalize(result["best_embeddings_N1xD"])
 
-        points = []
-        lines = []
-        texts = []
+    points = []
+    lines = []
+    texts = []
 
-        min_x = math.inf
-        max_x = -math.inf
-        min_y = math.inf
-        max_y = -math.inf
+    min_x = math.inf
+    max_x = -math.inf
+    min_y = math.inf
+    max_y = -math.inf
 
-        embeddings_txD: list[Tensor] = list(normalize(proposal.seq_encoder(data_NxSxA)))
-        labels_t = taxa_N
+    embeddings_txD: list[Tensor] = list(normalize(proposal.seq_encoder(data_NxSxA)))
+    labels_t = taxa_N
 
-        for r in range(N - 1):
-            idx1 = int(merge1_indexes_N1[r])
-            idx2 = int(merge2_indexes_N1[r])
+    for r in range(N - 1):
+        idx1 = int(merge1_indexes_N1[r])
+        idx2 = int(merge2_indexes_N1[r])
 
-            emb1_D = embeddings_txD[idx1]
-            emb2_D = embeddings_txD[idx2]
-            parent_emb_D = embeddings_N1xD[r]
+        emb1_D = embeddings_txD[idx1]
+        emb2_D = embeddings_txD[idx2]
+        parent_emb_D = embeddings_N1xD[r]
 
-            # flip y coordinate to match matplotlib display orientation
-            unpack = lambda x: (float(x[0]), -float(x[1]))
+        # flip y coordinate to match matplotlib display orientation
+        unpack = lambda x: (float(x[0]), -float(x[1]))
 
-            emb1 = unpack(emb1_D)
-            emb2 = unpack(emb2_D)
-            parent_embed = unpack(parent_emb_D)
+        emb1 = unpack(emb1_D)
+        emb2 = unpack(emb2_D)
+        parent_embed = unpack(parent_emb_D)
 
-            label1 = labels_t[idx1]
-            label2 = labels_t[idx2]
+        label1 = labels_t[idx1]
+        label2 = labels_t[idx2]
 
-            p1 = poincare.Point(emb1[0], emb1[1])
-            p2 = poincare.Point(emb2[0], emb2[1])
-            p3 = poincare.Point(parent_embed[0], parent_embed[1])
-            points.extend([p1, p2, p3])
+        p1 = poincare.Point(emb1[0], emb1[1])
+        p2 = poincare.Point(emb2[0], emb2[1])
+        p3 = poincare.Point(parent_embed[0], parent_embed[1])
+        points.extend([p1, p2, p3])
 
-            if p1 != p3:
-                l1 = poincare.Line.from_points(*p1, *p3, segment=True)
-                lines.append(l1)
-            if p2 != p3:
-                l2 = poincare.Line.from_points(*p2, *p3, segment=True)
-                lines.append(l2)
+        if p1 != p3:
+            l1 = poincare.Line.from_points(*p1, *p3, segment=True)
+            lines.append(l1)
+        if p2 != p3:
+            l2 = poincare.Line.from_points(*p2, *p3, segment=True)
+            lines.append(l2)
 
-            if label1 != "":
-                t1 = (label1, emb1[0], emb1[1])
-                texts.append(t1)
-            if label2 != "":
-                t2 = (label2, emb2[0], emb2[1])
-                texts.append(t2)
+        if label1 != "":
+            t1 = (label1, emb1[0], emb1[1])
+            texts.append(t1)
+        if label2 != "":
+            t2 = (label2, emb2[0], emb2[1])
+            texts.append(t2)
 
-            min_x = min(min_x, emb1[0], emb2[0], parent_embed[0])
-            max_x = max(max_x, emb1[0], emb2[0], parent_embed[0])
-            min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
-            max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
+        min_x = min(min_x, emb1[0], emb2[0], parent_embed[0])
+        max_x = max(max_x, emb1[0], emb2[0], parent_embed[0])
+        min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
+        max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
 
-            embeddings_txD = replace_with_merged_list(
-                embeddings_txD, idx1, idx2, parent_emb_D
-            )
-            labels_t = replace_with_merged_list(labels_t, idx1, idx2, "")
+        embeddings_txD = replace_with_merged_list(
+            embeddings_txD, idx1, idx2, parent_emb_D
+        )
+        labels_t = replace_with_merged_list(labels_t, idx1, idx2, "")
 
-        dx = max_x - min_x
-        dy = max_y - min_y
+    dx = max_x - min_x
+    dy = max_y - min_y
 
-        initial_size = max(dx, dy) * 1.1
+    initial_size = max(dx, dy) * 1.1
 
-        initial_origin_x = -initial_size / 2 + (min_x + max_x) / 2
-        initial_origin_y = -initial_size / 2 + (min_y + max_y) / 2
+    initial_origin_x = -initial_size / 2 + (min_x + max_x) / 2
+    initial_origin_y = -initial_size / 2 + (min_y + max_y) / 2
 
     def plot_poincare(size, origin_x, origin_y):
         stroke_width = size / 500
@@ -137,47 +137,47 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
     )
 
 
+@torch.no_grad()
 def plot_embeddings(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
-    with torch.no_grad():
-        distance = vcsmc.proposal.seq_encoder.distance
-        assert distance is not None
+    distance = vcsmc.proposal.seq_encoder.distance
+    assert distance is not None
 
-        embeddings = distance.normalize(vcsmc.proposal.seq_encoder(data_NxSxA))
-        embeddings = embeddings.cpu()
+    embeddings = distance.normalize(vcsmc.proposal.seq_encoder(data_NxSxA))
+    embeddings = embeddings.cpu()
 
-        fig = plt.figure(figsize=(10, 10))
-        ax = fig.add_subplot(111)
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111)
 
-        ax.scatter(embeddings[:, 0], embeddings[:, 1])
+    ax.scatter(embeddings[:, 0], embeddings[:, 1])
 
-        for i, txt in enumerate(taxa_N):
-            ax.text(float(embeddings[i, 0]), float(embeddings[i, 1]), txt, fontsize=6)
+    for i, txt in enumerate(taxa_N):
+        ax.text(float(embeddings[i, 0]), float(embeddings[i, 1]), txt, fontsize=6)
 
-        plt.show()
+    plt.show()
 
 
+@torch.no_grad()
 def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
     S = data_NxSxA.shape[1]
 
     distance = vcsmc.proposal.seq_encoder.distance
     assert isinstance(distance, Hyperbolic)
 
-    with torch.no_grad():
-        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
-            get_site_positions_SxSfull(data_NxSxA)
-        )
+    site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+        get_site_positions_SxSfull(data_NxSxA)
+    )
 
+    @torch.no_grad()
     def plot_q_matrix(r, theta, s):
-        with torch.no_grad():
-            x = r * math.cos(theta)
-            y = r * math.sin(theta)
-            embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
-            q_matrix_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
-                embedding_1xD, site_positions_SxC
-            )[0]
-            q_matrix_AxA = q_matrix_SxAxA[s]
-            plt.imshow(q_matrix_AxA.cpu())
-            plt.show()
+        x = r * math.cos(theta)
+        y = r * math.sin(theta)
+        embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
+        q_matrix_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
+            embedding_1xD, site_positions_SxC
+        )[0]
+        q_matrix_AxA = q_matrix_SxAxA[s]
+        plt.imshow(q_matrix_AxA.cpu())
+        plt.show()
 
     return interactive(
         plot_q_matrix,
@@ -187,6 +187,7 @@ def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
     )
 
 
+@torch.no_grad()
 def interactive_stat_probs(vcsmc: VCSMC, data_NxSxA: Tensor):
     S_RANGE = 10
 
@@ -196,33 +197,32 @@ def interactive_stat_probs(vcsmc: VCSMC, data_NxSxA: Tensor):
     distance = vcsmc.proposal.seq_encoder.distance
     assert isinstance(distance, Hyperbolic)
 
-    with torch.no_grad():
-        site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
-            get_site_positions_SxSfull(data_NxSxA)
-        )
+    site_positions_SxC = vcsmc.q_matrix_decoder.site_positions_encoder(
+        get_site_positions_SxSfull(data_NxSxA)
+    )
 
+    @torch.no_grad()
     def plot_stat_probs(r, theta, s_start):
-        with torch.no_grad():
-            x = r * math.cos(theta)
-            y = r * math.sin(theta)
-            embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
-            stat_probs_SxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
-                embedding_1xD, site_positions_SxC
-            )[0]
+        x = r * math.cos(theta)
+        y = r * math.sin(theta)
+        embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
+        stat_probs_SxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
+            embedding_1xD, site_positions_SxC
+        )[0]
 
-            fig = plt.figure(figsize=(20, 4))
-            ax = fig.add_subplot(111)
+        fig = plt.figure(figsize=(20, 4))
+        ax = fig.add_subplot(111)
 
-            ax.set_xticks(range(S_RANGE))
-            ax.set_xticklabels(range(s_start, s_start + S_RANGE))  # type: ignore
-            ax.set_yticks(range(A))
-            ax.set_yticklabels(["A", "C", "G", "T"])
+        ax.set_xticks(range(S_RANGE))
+        ax.set_xticklabels(range(s_start, s_start + S_RANGE))  # type: ignore
+        ax.set_yticks(range(A))
+        ax.set_yticklabels(["A", "C", "G", "T"])
 
-            im = ax.imshow(
-                stat_probs_SxA.T[:, s_start : s_start + S_RANGE].cpu(), cmap="Blues"
-            )
-            plt.colorbar(im)
-            plt.show()
+        im = ax.imshow(
+            stat_probs_SxA.T[:, s_start : s_start + S_RANGE].cpu(), cmap="Blues"
+        )
+        plt.colorbar(im)
+        plt.show()
 
     return interactive(
         plot_stat_probs,
