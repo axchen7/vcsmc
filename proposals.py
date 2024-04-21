@@ -188,7 +188,8 @@ class EmbeddingProposal(Proposal):
             merge_encoder: Merge encoder.
             q_matrix_decoder: Q matrix decoder.
             lookahead_merge: Whether to use lookahead likelihoods for sampling merge pairs.
-                If false, pairwise distances are used as merge weights.
+                If false, pairwise distances are used as merge weights. If true, then
+                `sample_branches` must be false.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. Only used if
@@ -196,10 +197,16 @@ class EmbeddingProposal(Proposal):
             sample_branches: Whether to sample branch lengths from an exponential distribution.
                 If false, simply use the distance between embeddings as the branch length.
             merge_indexes_N1x2: If not None, always use these merge indexes instead of sampling.
-                This fixes the tree topology. Also causes `lookahead_merge` to be ignored.
+                This fixes the tree topology. If true, then `lookahead_merge` must be false.
         """
 
         super().__init__(seq_encoder)
+
+        if merge_indexes_N1x2 is not None:
+            assert not lookahead_merge
+
+        if lookahead_merge:
+            assert not sample_branches
 
         self.distance = distance
         self.merge_encoder = merge_encoder
