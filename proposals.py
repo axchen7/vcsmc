@@ -371,18 +371,18 @@ class EmbeddingProposal(Proposal):
             branch2_K = -(1 / rate2_K) * uniform2_K.log()
 
             # log of exponential pdf
-            log_branch1_prior_K = rate1_K.log() - rate1_K * branch1_K
-            log_branch2_prior_K = rate2_K.log() - rate2_K * branch2_K
+            log_branch1_prob_K = rate1_K.log() - rate1_K * branch1_K
+            log_branch2_prob_K = rate2_K.log() - rate2_K * branch2_K
         else:
             branch1_K = dist1_K
             branch2_K = dist2_K
 
-            log_branch1_prior_K = torch.zeros([K])
-            log_branch2_prior_K = torch.zeros([K])
+            log_branch1_prob_K = torch.zeros([K])
+            log_branch2_prob_K = torch.zeros([K])
 
         # ===== compute proposal probability =====
 
-        log_v_plus_K = log_merge_prob_K + log_branch1_prior_K + log_branch2_prior_K
+        log_v_plus_K = log_merge_prob_K + log_branch1_prob_K + log_branch2_prob_K
 
         # ===== compute over-counting correction factor =====
 
