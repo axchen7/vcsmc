@@ -18,7 +18,7 @@ epochs = 100
 file = "../data/primates.phy"
 
 
-def train_with_proposal(proposal_type: type[Proposal], *, K: int):
+def train_with_proposal(proposal_type: type[Proposal], K: int):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
 
     if proposal_type is ExpBranchProposal:
@@ -47,5 +47,5 @@ def train_with_proposal(proposal_type: type[Proposal], *, K: int):
 K_vals = [4, 8, 16, 32, 64, 128, 256, 512]
 
 for K in K_vals:
-    train_with_proposal(ExpBranchProposal, K=K)
-    train_with_proposal(EmbeddingProposal, K=K)
+    train_with_proposal(ExpBranchProposal, K)
+    train_with_proposal(EmbeddingProposal, K)
