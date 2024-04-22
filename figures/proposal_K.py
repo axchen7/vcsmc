@@ -11,7 +11,8 @@ from vcsmc import *
 
 
 D = 2
-lr = 0.01
+lr_exp_branch_proposal = 0.1
+lr_embedding_proposal = 0.01
 epochs = 100
 
 file = "../data/primates.phy"
@@ -22,12 +23,14 @@ def train_with_proposal(proposal_type: type[Proposal], *, K: int):
 
     if proposal_type is ExpBranchProposal:
         proposal = ExpBranchProposal(N=N)
+        lr = lr_exp_branch_proposal
         run_name = f"VCSMC_K{K}"
     elif proposal_type is EmbeddingProposal:
         distance = Hyperbolic()
         seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
         merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
         proposal = EmbeddingProposal(distance, seq_encoder, merge_encoder)
+        lr = lr_embedding_proposal
         run_name = f"Hyp_SMC_K{K}"
     else:
         raise ValueError()
@@ -41,7 +44,7 @@ def train_with_proposal(proposal_type: type[Proposal], *, K: int):
     train(vcsmc, optimizer, taxa_N, data_NxSxA, file, epochs=epochs, run_name=run_name)
 
 
-K_vals = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+K_vals = [4, 8, 16, 32, 64, 128, 256, 512]
 
 for K in K_vals:
     train_with_proposal(ExpBranchProposal, K=K)
