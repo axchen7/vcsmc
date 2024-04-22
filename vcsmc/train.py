@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from .encoders import Hyperbolic
-from .train_utils import TrainArgs, TrainCheckpoint, find_most_recent_path
+from .train_utils import TrainArgs, TrainCheckpoint, TrainResults, find_most_recent_path
 from .vcsmc import VCSMC, VcsmcResult
 
 
@@ -65,6 +65,7 @@ def train(
     epochs: int,
     start_epoch: int = 0,
     sites_batch_size: int | None = None,
+    run_name: str | None = None,
     graph_and_profile: bool = False,
 ):
     # ===== setup =====
@@ -80,7 +81,13 @@ def train(
 
     site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
 
-    writer = SummaryWriter()
+    writer = SummaryWriter(
+        comment=f"-{run_name}" if run_name is not None else "",
+    )
+
+    # track data across epochs
+    elbos = []
+    log_likelihood_avgs = []
 
     # ===== helper functions =====
 
@@ -97,6 +104,7 @@ def train(
             "root": root,
             "epochs": epochs,
             "sites_batch_size": sites_batch_size,
+            "run_name": run_name,
         }
         filename = "args.pt"
         torch.save(args, os.path.join(get_checkpoints_dir(), filename))
@@ -110,6 +118,14 @@ def train(
         }
         filename = f"checkpoint_{start_epoch}.pt"
         torch.save(checkpoint, os.path.join(get_checkpoints_dir(), filename))
+
+    def save_results():
+        results: TrainResults = {
+            "elbos": elbos,
+            "log_likelihood_avgs": log_likelihood_avgs,
+        }
+        filename = "results.pt"
+        torch.save(results, os.path.join(get_checkpoints_dir(), filename))
 
     def train_step(
         dataloader: DataLoader,
@@ -237,6 +253,9 @@ def train(
 
         cosine_similarity = get_data_reconstruction_cosine_similarity()
 
+        elbos.append(log_Z_SMC_sum)
+        log_likelihood_avgs.append(log_likelihood_avg)
+
         writer.add_scalar("Regularization", reg_sum, epoch)
         writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
         writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
@@ -278,6 +297,7 @@ def train(
     # ===== done training! =====
 
     print("Training complete!")
+    save_results()
 
 
 def train_from_checkpoint(

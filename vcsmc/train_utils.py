@@ -18,6 +18,7 @@ class TrainArgs(TypedDict):
     root: str | None
     epochs: int
     sites_batch_size: int | None
+    run_name: str | None
 
 
 class TrainCheckpoint(TypedDict):
@@ -25,6 +26,11 @@ class TrainCheckpoint(TypedDict):
     optimizer: Optimizer
     lr_scheduler: LRScheduler | None
     start_epoch: int
+
+
+class TrainResults(TypedDict):
+    elbos: list[float]
+    log_likelihood_avgs: list[float]
 
 
 class slow_start_lr_scheduler(LambdaLR):
