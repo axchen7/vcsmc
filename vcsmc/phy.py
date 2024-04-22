@@ -38,7 +38,7 @@ GT10_ALPHABET = {
 
 def load_phy(
     file: str, alphabet: Mapping[str, Sequence[float]]
-) -> tuple[int, int, int, Tensor, list[str], str]:
+) -> tuple[int, int, int, Tensor, list[str]]:
     """
     Returns:
         N: Number of taxa.
@@ -46,7 +46,6 @@ def load_phy(
         A: Alphabet size.
         data_NxSxA: Tensor of shape (N, S, A).
         taxa_N: Length of taxa names of length N.
-        file: Path to the file.
     """
 
     with open(file) as f:
@@ -72,4 +71,4 @@ def load_phy(
 
     data_NxSxA = torch.tensor(data_NxSxA, dtype=torch.float)
 
-    return N, S, A, data_NxSxA, taxa_N, file
+    return N, S, A, data_NxSxA, taxa_N
