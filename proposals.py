@@ -243,57 +243,68 @@ class EmbeddingProposal(Proposal):
             if self.lookahead_merge:
                 # ===== compute lookahead likelihoods for merge weights =====
 
-                # repeat like 123123123...
-                flat_log_felsensteins1_KttxSxA = log_felsensteins_KxtxSxA.repeat(
-                    1, t, 1, 1
-                ).view(Ktt, S, -1)
-                # repeat like 111222333...
-                flat_log_felsensteins2_KttxSxA = log_felsensteins_KxtxSxA.repeat(
-                    1, 1, t, 1
-                ).view(Ktt, S, -1)
+                with torch.no_grad():
+                    # repeat like 123123123...
+                    flat_log_felsensteins1_KttxSxA = log_felsensteins_KxtxSxA.repeat(
+                        1, t, 1, 1
+                    ).view(Ktt, S, -1)
+                    # repeat like 111222333...
+                    flat_log_felsensteins2_KttxSxA = log_felsensteins_KxtxSxA.repeat(
+                        1, 1, t, 1
+                    ).view(Ktt, S, -1)
 
-                lookahead_parents_KttxD = self.merge_encoder(
-                    flat_embeddings1_KttxD,
-                    flat_embeddings2_KttxD,
-                    flat_log_felsensteins1_KttxSxA,
-                    flat_log_felsensteins2_KttxSxA,
-                    site_positions_SxC,
-                )
-
-                lookahead_branches1_Ktt = self.distance(
-                    flat_embeddings1_KttxD, lookahead_parents_KttxD
-                )
-                lookahead_branches2_Ktt = self.distance(
-                    flat_embeddings2_KttxD, lookahead_parents_KttxD
-                )
-
-                lookahead_Q_matrices_KttxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
-                    lookahead_parents_KttxD, site_positions_SxC
-                )
-                lookahead_stat_probs_KttxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
-                    lookahead_parents_KttxD, site_positions_SxC
-                )
-                lookahead_log_stat_probs_KttxSxA = lookahead_stat_probs_KttxSxA.log()
-
-                lookahead_log_felsensteins_KttxSxA = (
-                    compute_log_felsenstein_likelihoods_KxSxA(
-                        lookahead_Q_matrices_KttxSxAxA,
+                    lookahead_parents_KttxD = self.merge_encoder(
+                        flat_embeddings1_KttxD,
+                        flat_embeddings2_KttxD,
                         flat_log_felsensteins1_KttxSxA,
                         flat_log_felsensteins2_KttxSxA,
-                        lookahead_branches1_Ktt,
-                        lookahead_branches2_Ktt,
+                        site_positions_SxC,
                     )
-                )
 
-                # dot Felsenstein probabilities with stationary probabilities (along axis A)
-                lookahead_log_likelihoods_KttxS = torch.logsumexp(
-                    lookahead_log_felsensteins_KttxSxA
-                    + lookahead_log_stat_probs_KttxSxA,
-                    -1,
-                )
-                lookahead_log_likelihoods_Ktt = lookahead_log_likelihoods_KttxS.sum(-1)
+                    lookahead_branches1_Ktt = self.distance(
+                        flat_embeddings1_KttxD, lookahead_parents_KttxD
+                    )
+                    lookahead_branches2_Ktt = self.distance(
+                        flat_embeddings2_KttxD, lookahead_parents_KttxD
+                    )
 
-                merge_log_weights_Kxtxt = lookahead_log_likelihoods_Ktt.view(K, t, t)
+                    lookahead_Q_matrices_KttxSxAxA = (
+                        self.q_matrix_decoder.Q_matrix_VxSxAxA(
+                            lookahead_parents_KttxD, site_positions_SxC
+                        )
+                    )
+                    lookahead_stat_probs_KttxSxA = (
+                        self.q_matrix_decoder.stat_probs_VxSxA(
+                            lookahead_parents_KttxD, site_positions_SxC
+                        )
+                    )
+                    lookahead_log_stat_probs_KttxSxA = (
+                        lookahead_stat_probs_KttxSxA.log()
+                    )
+
+                    lookahead_log_felsensteins_KttxSxA = (
+                        compute_log_felsenstein_likelihoods_KxSxA(
+                            lookahead_Q_matrices_KttxSxAxA,
+                            flat_log_felsensteins1_KttxSxA,
+                            flat_log_felsensteins2_KttxSxA,
+                            lookahead_branches1_Ktt,
+                            lookahead_branches2_Ktt,
+                        )
+                    )
+
+                    # dot Felsenstein probabilities with stationary probabilities (along axis A)
+                    lookahead_log_likelihoods_KttxS = torch.logsumexp(
+                        lookahead_log_felsensteins_KttxSxA
+                        + lookahead_log_stat_probs_KttxSxA,
+                        -1,
+                    )
+                    lookahead_log_likelihoods_Ktt = lookahead_log_likelihoods_KttxS.sum(
+                        -1
+                    )
+
+                    merge_log_weights_Kxtxt = lookahead_log_likelihoods_Ktt.view(
+                        K, t, t
+                    )
             else:
                 # ===== compute pairwise distances for merge weights =====
 
