@@ -183,7 +183,7 @@ class EmbeddingProposal(Proposal):
         *,
         lookahead_merge: bool = False,
         q_matrix_decoder: QMatrixDecoder | None = None,
-        sample_merge_temp: float = 1.0,
+        sample_merge_temp: float | None = None,
         sample_branches: bool = False,
         merge_indexes_N1x2: Tensor | None = None,
     ):
@@ -197,8 +197,8 @@ class EmbeddingProposal(Proposal):
             q_matrix_decoder: Q matrix decoder. Must be provided if `lookahead_merge` is true.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
-                Set to a large value to effectively sample nodes uniformly. Only used if
-                `lookahead_merge` is false.
+                Set to a large value to effectively sample nodes uniformly. If None, then a
+                pair of nodes will be sampled uniformly. Only used if `lookahead_merge`is false.
             sample_branches: Whether to sample branch lengths from an exponential distribution.
                 If false, simply use the distance between embeddings as the branch length.
             merge_indexes_N1x2: If not None, always use these merge indexes instead of sampling.
@@ -316,7 +316,7 @@ class EmbeddingProposal(Proposal):
                     merge_log_weights_Kxtxt = lookahead_log_likelihoods_Ktt.view(
                         K, t, t
                     )
-            else:
+            elif self.sample_merge_temp is not None:
                 # ===== compute pairwise distances for merge weights =====
 
                 pairwise_distances_Ktt: Tensor = self.distance(
@@ -326,6 +326,10 @@ class EmbeddingProposal(Proposal):
                 merge_log_weights_Kxtxt = (
                     -pairwise_distances_Kxtxt / self.sample_merge_temp
                 )
+            else:
+                # ===== sample merge pairs uniformly =====
+
+                merge_log_weights_Kxtxt = torch.zeros([K, t, t])
 
             # set diagonal entries to -inf to prevent self-merges
             merge_log_weights_Kxtxt = merge_log_weights_Kxtxt.diagonal_scatter(
