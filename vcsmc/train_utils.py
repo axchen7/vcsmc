@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
-from vcsmc import VCSMC
+from .vcsmc import VCSMC
 
 
 class TrainArgs(TypedDict):

@@ -3,10 +3,10 @@ from typing import Literal, TypedDict
 import torch
 from torch import Tensor, nn
 
-from proposals import Proposal
-from q_matrix_decoders import QMatrixDecoder
-from vcsmc_regularization import VcsmcRegularization
-from vcsmc_utils import (
+from .proposals import Proposal
+from .q_matrix_decoders import QMatrixDecoder
+from .vcsmc_regularization import VcsmcRegularization
+from .vcsmc_utils import (
     build_newick_tree,
     compute_log_double_factorials_2N,
     compute_log_felsenstein_likelihoods_KxSxA,

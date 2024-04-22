@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from distance_utils import EPSILON
+from .distance_utils import EPSILON
 
 
 class VcsmcRegularization(nn.Module):

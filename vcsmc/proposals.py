@@ -1,9 +1,15 @@
 import torch
 from torch import Tensor, nn
 
-import distances
-import encoders
-from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA, gather_K, gather_K2
+from .distance_utils import EPSILON
+from .distances import Distance
+from .encoders import (
+    DummySequenceEncoder,
+    MergeEncoder,
+    QMatrixDecoder,
+    SequenceEncoder,
+)
+from .vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA, gather_K, gather_K2
 
 
 class Proposal(nn.Module):
@@ -11,7 +17,7 @@ class Proposal(nn.Module):
     Proposal distribution for selecting two nodes to merge and sampling branch lengths.
     """
 
-    def __init__(self, seq_encoder: encoders.SequenceEncoder):
+    def __init__(self, seq_encoder: SequenceEncoder):
         super().__init__()
 
         self.seq_encoder = seq_encoder
@@ -70,7 +76,7 @@ class ExpBranchProposal(Proposal):
                 sampled will initially have lambda = 1/initial_branch_len.
         """
 
-        super().__init__(encoders.DummySequenceEncoder())
+        super().__init__(DummySequenceEncoder())
 
         # under exponential distribution, E[branch] = 1/rate
         initial_rate = 1 / initial_branch_len
@@ -171,10 +177,10 @@ class EmbeddingProposal(Proposal):
 
     def __init__(
         self,
-        distance: distances.Distance,
-        seq_encoder: encoders.SequenceEncoder,
-        merge_encoder: encoders.MergeEncoder,
-        q_matrix_decoder: encoders.QMatrixDecoder,
+        distance: Distance,
+        seq_encoder: SequenceEncoder,
+        merge_encoder: MergeEncoder,
+        q_matrix_decoder: QMatrixDecoder,
         *,
         lookahead_merge: bool = False,
         sample_merge_temp: float = 1.0,
@@ -368,8 +374,8 @@ class EmbeddingProposal(Proposal):
             # are the distances between children and merged embeddings
 
             # EPSILON**0.5 is needed to prevent division by zero under float32
-            rate1_K = 1 / (dist1_K + distances.EPSILON**0.5)
-            rate2_K = 1 / (dist2_K + distances.EPSILON**0.5)
+            rate1_K = 1 / (dist1_K + EPSILON**0.5)
+            rate2_K = 1 / (dist2_K + EPSILON**0.5)
 
             # re-parameterization trick: sample from U[0, 1] and transform to
             # exponential distribution (so gradients can flow through the sample)

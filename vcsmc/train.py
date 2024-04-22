@@ -10,9 +10,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
-from encoders import Hyperbolic
-from train_utils import TrainArgs, TrainCheckpoint, find_most_recent_path
-from vcsmc import VCSMC, VcsmcResult
+from .encoders import Hyperbolic
+from .train_utils import TrainArgs, TrainCheckpoint, find_most_recent_path
+from .vcsmc import VCSMC, VcsmcResult
 
 
 def get_site_positions_SxSfull(data_NxSxA: Tensor) -> Tensor:

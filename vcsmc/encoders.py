@@ -1,11 +1,11 @@
 import torch
 from torch import Tensor, nn
 
-from distance_utils import EPSILON, safe_norm
-from distances import Distance, Euclidean, Hyperbolic
-from encoder_utils import MLP
-from q_matrix_decoders import QMatrixDecoder
-from vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
+from .distance_utils import EPSILON, safe_norm
+from .distances import Distance, Euclidean, Hyperbolic
+from .encoder_utils import MLP
+from .q_matrix_decoders import QMatrixDecoder
+from .vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA
 
 
 class SequenceEncoder(nn.Module):
