@@ -4,5 +4,6 @@ venv
 runs
 filtered_runs
 saved_models
+playground
 data/simulated.phy
 _*.ipynb
