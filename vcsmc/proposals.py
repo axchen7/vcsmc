@@ -180,9 +180,9 @@ class EmbeddingProposal(Proposal):
         distance: Distance,
         seq_encoder: SequenceEncoder,
         merge_encoder: MergeEncoder,
-        q_matrix_decoder: QMatrixDecoder,
         *,
         lookahead_merge: bool = False,
+        q_matrix_decoder: QMatrixDecoder | None = None,
         sample_merge_temp: float = 1.0,
         sample_branches: bool = False,
         merge_indexes_N1x2: Tensor | None = None,
@@ -192,9 +192,9 @@ class EmbeddingProposal(Proposal):
             distance: The distance function to use for embedding.
             seq_encoder: Sequence encoder.
             merge_encoder: Merge encoder.
-            q_matrix_decoder: Q matrix decoder.
             lookahead_merge: Whether to use lookahead likelihoods for sampling merge pairs.
                 If false, pairwise distances are used as merge weights.
+            q_matrix_decoder: Q matrix decoder. Must be provided if `lookahead_merge` is true.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. Only used if
@@ -206,6 +206,9 @@ class EmbeddingProposal(Proposal):
         """
 
         super().__init__(seq_encoder)
+
+        if lookahead_merge:
+            assert q_matrix_decoder is not None
 
         self.distance = distance
         self.merge_encoder = merge_encoder
@@ -247,6 +250,8 @@ class EmbeddingProposal(Proposal):
             log_merge_prob_K = torch.zeros([K])
         else:
             if self.lookahead_merge:
+                assert self.q_matrix_decoder is not None
+
                 # ===== compute lookahead likelihoods for merge weights =====
 
                 with torch.no_grad():
