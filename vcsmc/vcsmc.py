@@ -38,7 +38,7 @@ class VCSMC(nn.Module):
         taxa_N: list[str],
         *,
         K: int,
-        prior_dist: Literal["gamma", "exp"] = "exp",
+        prior_dist: Literal["gamma", "exp", "unif"] = "exp",
         prior_branch_len: float = 1.0,
         regularization: VcsmcRegularization | None = None,
     ):
@@ -58,7 +58,7 @@ class VCSMC(nn.Module):
         self.proposal = proposal
         self.taxa_N = taxa_N
         self.K = K
-        self.prior_dist: Literal["gamma", "exp"] = prior_dist
+        self.prior_dist: Literal["gamma", "exp", "unif"] = prior_dist
         self.prior_branch_len = prior_branch_len
         self.regularization = regularization
 

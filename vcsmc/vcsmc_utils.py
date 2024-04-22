@@ -67,7 +67,7 @@ def compute_log_likelihood_and_pi_K(
     leaf_counts_Kxt: Tensor,
     log_felsensteins_KxtxSxA: Tensor,
     log_stat_probs_KxtxSxA: Tensor,
-    prior_dist: Literal["gamma", "exp"],
+    prior_dist: Literal["gamma", "exp", "unif"],
     prior_branch_len: float,
     log_double_factorials_2N: Tensor,
 ) -> tuple[Tensor, Tensor]:
@@ -109,6 +109,11 @@ def compute_log_likelihood_and_pi_K(
         # distribution has a mean of prior_branch_len
         branch_prior_distr = torch.distributions.Gamma(
             concentration=2.0, rate=2.0 / prior_branch_len
+        )
+    elif prior_dist == "unif":
+        # distribution has a mean of prior_branch_len
+        branch_prior_distr = torch.distributions.Uniform(
+            low=0.0, high=2.0 * prior_branch_len
         )
     else:
         raise ValueError
