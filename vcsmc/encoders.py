@@ -56,6 +56,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
         data_NxSxA: Tensor,
         *,
         D: int,
+        initial_mean: float = 0.0,
         initial_std: float = 0.1,
     ):
         """
@@ -65,6 +66,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
                 On the forward pass, an error is thrown if the input sequences
                 don't match these sequences exactly.
             D: Number of dimensions sequence embeddings.
+            initial_mean: Mean of the normal distribution used to initialize the embeddings.
             initial_std: Std dev of the normal distribution used to initialize the embeddings.
         """
 
@@ -74,7 +76,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
 
         self.data_NxSxA = data_NxSxA
         self.embedding_table = nn.Embedding(N, D)
-        nn.init.normal_(self.embedding_table.weight, mean=0, std=initial_std)
+        nn.init.normal_(self.embedding_table.weight, mean=initial_mean, std=initial_std)
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         if torch.equal(sequences_VxSxA, self.data_NxSxA):
