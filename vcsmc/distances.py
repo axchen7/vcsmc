@@ -60,7 +60,7 @@ class Hyperbolic(Distance):
         if fixed_scale:
             self.scale = initial_scale
         else:
-            self.scale = nn.Parameter(torch.tensor(initial_scale))
+            self.scale = nn.Parameter(torch.tensor(float(initial_scale)))
 
     def normalize(self, vectors_VxD: Tensor) -> Tensor:
         # return a vector with the same direction but with the norm passed
