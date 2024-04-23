@@ -56,7 +56,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
         data_NxSxA: Tensor,
         *,
         D: int,
-        initial_mean: float = 0.0,
+        initial_mean: float = 0.9,  # this default works well empirically
         initial_std: float = 0.1,
     ):
         """
