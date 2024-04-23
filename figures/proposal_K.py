@@ -16,7 +16,7 @@ from vcsmc import *
 D = 2
 lr_exp_branch_proposal = 0.1
 lr_embedding_proposal = 0.01
-epochs = 100
+epochs = 200
 
 file = "data/primates.phy"
 
@@ -38,7 +38,7 @@ def train_with_proposal(proposal_type: type[Proposal], K: int):
     else:
         raise ValueError()
 
-    q_matrix_decoder = JC69QMatrixDecoder(A=A)
+    q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
     vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
