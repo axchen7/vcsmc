@@ -54,10 +54,13 @@ class Hyperbolic(Distance):
     function f(|x|)=sqrt(1-exp(-|x|^2)) makes computing distances easier.
     """
 
-    def __init__(self, *, initial_scale: float = 0.1):
+    def __init__(self, *, initial_scale: float = 0.1, fixed_scale: bool = False):
         super().__init__()
 
-        self.scale = nn.Parameter(torch.tensor(initial_scale))
+        if fixed_scale:
+            self.scale = initial_scale
+        else:
+            self.scale = nn.Parameter(torch.tensor(initial_scale))
 
     def normalize(self, vectors_VxD: Tensor) -> Tensor:
         # return a vector with the same direction but with the norm passed
