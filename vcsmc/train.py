@@ -86,8 +86,8 @@ def train(
     )
 
     # track data across epochs
-    elbos = []
-    log_likelihood_avgs = []
+    elbos: list[float] = []
+    log_likelihood_avgs: list[float] = []
 
     # ===== helper functions =====
 
@@ -253,8 +253,8 @@ def train(
 
         cosine_similarity = get_data_reconstruction_cosine_similarity()
 
-        elbos.append(log_Z_SMC_sum)
-        log_likelihood_avgs.append(log_likelihood_avg)
+        elbos.append(log_Z_SMC_sum.item())
+        log_likelihood_avgs.append(log_likelihood_avg.item())
 
         writer.add_scalar("Regularization", reg_sum, epoch)
         writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
