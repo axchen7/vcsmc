@@ -1,6 +1,6 @@
-import sys
+import os
 
-sys.path.append("..")
+os.chdir("..")
 
 from vcsmc import *
 
@@ -14,7 +14,7 @@ K = 128
 lr = 0.01
 epochs = 100
 
-file = "../data/primates.phy"
+file = "data/primates.phy"
 
 
 def train_with_proposal(D: int):

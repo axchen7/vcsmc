@@ -1,6 +1,6 @@
-import sys
+import os
 
-sys.path.append("..")
+os.chdir("..")
 
 from vcsmc import *
 
@@ -15,7 +15,7 @@ lr_exp_branch_proposal = 0.1
 lr_embedding_proposal = 0.01
 epochs = 100
 
-file = "../data/primates.phy"
+file = "data/primates.phy"
 
 
 def train_with_proposal(proposal_type: type[Proposal], K: int):
