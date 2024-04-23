@@ -306,6 +306,7 @@ def train_from_checkpoint(
     load_only: bool = False,
     start_epoch: int | None = None,
     modify_args: Callable[[TrainArgs, TrainCheckpoint], None] | None = None,
+    search_dir: str = "runs",
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
@@ -314,6 +315,7 @@ def train_from_checkpoint(
         load_only: If True, loads the checkpoint and returns the data and model without training.
         start_epoch: The epoch to start training from. If None, starts from the latest checkpoint.
         modify_args: A function that modifies the args and checkpoint before training.
+        search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
 
     Returns:
         data_NxSxA, taxa_N, vcsmc
@@ -323,7 +325,7 @@ def train_from_checkpoint(
         "checkpoint_*.pt" if start_epoch is None else f"checkpoint_{start_epoch}.pt"
     )
 
-    checkpoints_dir = find_most_recent_path("runs", "checkpoints")
+    checkpoints_dir = find_most_recent_path(search_dir, "checkpoints")
 
     args: TrainArgs = torch.load(find_most_recent_path(checkpoints_dir, "args.pt"))
     checkpoint: TrainCheckpoint = torch.load(
