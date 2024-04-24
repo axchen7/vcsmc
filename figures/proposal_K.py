@@ -96,8 +96,10 @@ for i, K in enumerate(K_vals):
 plt.tight_layout()
 
 file = f"{make_output_dir()}/proposal_K.png"
-if os.path.exists(file):
+try:
     os.remove(file)
+except FileNotFoundError:
+    pass
 
 plt.savefig(file)
 plt.show()

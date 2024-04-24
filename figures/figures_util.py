@@ -11,5 +11,8 @@ def set_path():
 def make_output_dir():
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(cur_dir, "output")
-    os.mkdir(output_dir)
+    try:
+        os.mkdir(output_dir)
+    except FileExistsError:
+        pass
     return output_dir
