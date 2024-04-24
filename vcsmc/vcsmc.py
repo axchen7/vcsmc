@@ -38,8 +38,9 @@ class VCSMC(nn.Module):
         taxa_N: list[str],
         *,
         K: int,
+        # assume Exp(10) branch length prior
         prior_dist: Literal["gamma", "exp", "unif"] = "exp",
-        prior_branch_len: float = 1.0,
+        prior_branch_len: float = 0.1,
         regularization: VcsmcRegularization | None = None,
     ):
         """
