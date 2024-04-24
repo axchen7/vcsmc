@@ -1,9 +1,6 @@
-import os
-import sys
+from figures_util import set_path
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-os.chdir("..")
-sys.path.append(".")
+set_path()
 
 from vcsmc import *
 
