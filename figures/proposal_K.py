@@ -74,8 +74,7 @@ def load_log_likelihoods(proposal_type: type[Proposal], K: int):
     results: TrainResults = torch.load(
         find_most_recent_path(f"runs/*{run_name}", "results.pt")
     )
-    log_likelihoods_avgs = results["log_likelihood_avgs"]
-    return [float(x) for x in log_likelihoods_avgs]
+    return results["log_likelihood_avgs"]
 
 
 K_vals = [4, 8, 16, 32, 64, 128, 256, 512]
