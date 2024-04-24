@@ -80,6 +80,7 @@ def load_log_likelihoods(proposal_type: type[Proposal], K: int):
 K_vals = [4, 8, 16, 32, 64, 128, 256, 512]
 
 fig, axs = plt.subplots(4, 2, figsize=(10, 10))
+fig.suptitle("VCSMC vs Hyp SMC with Different K")
 
 for i, K in enumerate(K_vals):
     vcsmc_ll = load_log_likelihoods(ExpBranchProposal, K)
