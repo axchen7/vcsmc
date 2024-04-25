@@ -35,6 +35,17 @@ def compute_log_double_factorials_2N(N: int) -> Tensor:
     return torch.tensor(all_values)
 
 
+def compute_log_v_minus_K(N: int, leaf_counts_Kxt: Tensor) -> Tensor:
+    """
+    Computes the over-counting correction term of the given topology.
+    """
+
+    num_subtrees_with_one_leaf_K = torch.sum(leaf_counts_Kxt == 1, 1)
+    v_minus_K = N - num_subtrees_with_one_leaf_K
+    log_v_minus_K = v_minus_K.log()
+    return log_v_minus_K
+
+
 def compute_log_felsenstein_likelihoods_KxSxA(
     Q_matrix_KxSxAxA: Tensor,
     log_felsensteins1_KxSxA: Tensor,

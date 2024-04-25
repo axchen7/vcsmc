@@ -11,6 +11,7 @@ from .vcsmc_utils import (
     compute_log_double_factorials_2N,
     compute_log_felsenstein_likelihoods_KxSxA,
     compute_log_likelihood_and_pi_K,
+    compute_log_v_minus_K,
     concat_K,
     gather_K,
     replace_with_merged_K,
@@ -172,7 +173,6 @@ class VCSMC(nn.Module):
                 branch2_K,
                 embedding_KxD,
                 log_v_plus_K,
-                log_v_minus_K,
             ) = self.proposal(
                 N,
                 leaf_counts_Kxt,
@@ -260,6 +260,9 @@ class VCSMC(nn.Module):
                 self.prior_branch_len,
                 self.log_double_factorials_2N,
             )
+
+            # compute over-counting correction
+            log_v_minus_K = compute_log_v_minus_K(N, leaf_counts_Kxt)
 
             # equation (7) in the VCSMC paper
             log_weight_K = log_pi_K - prev_log_pi_K + log_v_minus_K - log_v_plus_K

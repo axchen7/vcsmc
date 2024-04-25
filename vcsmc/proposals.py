@@ -29,7 +29,7 @@ class Proposal(nn.Module):
         embeddings_KxtxD: Tensor,
         log_felsensteins_KxtxSxA: Tensor,
         site_positions_SxC: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose two nodes to merge, as well as their branch lengths.
 
@@ -46,7 +46,6 @@ class Proposal(nn.Module):
             branch2_K: Branch lengths of the second node.
             embedding_KxD: Embeddings of the merged subtree.
             log_v_plus_K: Log probabilities of the returned proposal.
-            log_v_minus_K: Log of the over-counting correction factors.
         Note:
             At each step r, there are t = N-r >= 2 trees in the forest.
         """
@@ -100,7 +99,7 @@ class ExpBranchProposal(Proposal):
         embeddings_KxtxD: Tensor,
         log_felsensteins_KxtxSxA: Tensor,
         site_positions_SxC: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
         r = N - t  # merge step
@@ -139,31 +138,12 @@ class ExpBranchProposal(Proposal):
 
         log_v_plus_K = log_merge_prob + log_branch1_prior_K + log_branch2_prior_K
 
-        # ===== compute over-counting correction factor =====
-
-        num_subtrees_with_one_leaf_K = torch.sum(leaf_counts_Kxt == 1, 1)
-
-        # exclude trees currently being merged from the count
-        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx1_K) == 1).int()
-        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx2_K) == 1).int()
-
-        v_minus_K = N - num_subtrees_with_one_leaf_K
-        log_v_minus_K = v_minus_K.log()
-
         # ===== return proposal =====
 
         # dummy embedding
         embedding_KxD = torch.zeros([K, 0])
 
-        return (
-            idx1_K,
-            idx2_K,
-            branch1_K,
-            branch2_K,
-            embedding_KxD,
-            log_v_plus_K,
-            log_v_minus_K,
-        )
+        return idx1_K, idx2_K, branch1_K, branch2_K, embedding_KxD, log_v_plus_K
 
 
 class EmbeddingProposal(Proposal):
@@ -225,7 +205,7 @@ class EmbeddingProposal(Proposal):
         embeddings_KxtxD: Tensor,
         log_felsensteins_KxtxSxA: Tensor,
         site_positions_SxC: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
         S = site_positions_SxC.shape[0]  # number of sites
@@ -410,25 +390,6 @@ class EmbeddingProposal(Proposal):
 
         log_v_plus_K = log_merge_prob_K + log_branch1_prob_K + log_branch2_prob_K
 
-        # ===== compute over-counting correction factor =====
-
-        num_subtrees_with_one_leaf_K = torch.sum(leaf_counts_Kxt == 1, 1)
-
-        # exclude trees currently being merged from the count
-        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx1_K) == 1).int()
-        num_subtrees_with_one_leaf_K -= (gather_K(leaf_counts_Kxt, idx2_K) == 1).int()
-
-        v_minus_K = N - num_subtrees_with_one_leaf_K
-        log_v_minus_K = v_minus_K.log()
-
         # ===== return proposal =====
 
-        return (
-            idx1_K,
-            idx2_K,
-            branch1_K,
-            branch2_K,
-            embedding_KxD,
-            log_v_plus_K,
-            log_v_minus_K,
-        )
+        return idx1_K, idx2_K, branch1_K, branch2_K, embedding_KxD, log_v_plus_K
