@@ -67,6 +67,7 @@ class ExpBranchProposal(Proposal):
         *,
         N: int,
         initial_branch_len: float = 1.0,
+        lookahead: bool = False,
     ):
         """
         Args:
@@ -74,6 +75,8 @@ class ExpBranchProposal(Proposal):
             initial_branch_len: The initial expected value of the branch lengths.
                 The exponential distribution from which branch lengths are
                 sampled will initially have lambda = 1/initial_branch_len.
+            lookahead: if True, will return a particle for each of the J=(t choose 2) possible merges.
+                An independent pair of branch lengths will be sampled for each particle.
         """
 
         super().__init__(DummySequenceEncoder())
@@ -82,6 +85,8 @@ class ExpBranchProposal(Proposal):
         initial_rate = 1 / initial_branch_len
         # value of variable is passed through exp() later
         initial_log_rates = torch.tensor(initial_rate).log().repeat(N - 1)
+
+        self.lookahead = lookahead
 
         # exponential distribution rates for sampling branch lengths; N1 -> N-1
         self.log_rates1_N1 = nn.Parameter(initial_log_rates)
@@ -105,13 +110,40 @@ class ExpBranchProposal(Proposal):
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
         r = N - t  # merge step
 
-        # ===== uniformly sample 2 distinct nodes to merge =====
+        t_choose_2 = t * (t - 1) // 2
 
-        idx1_K = torch.randint(0, t, [K])
-        idx2_K = torch.randint(0, t - 1, [K])
+        # ===== determine nodes to merge =====
 
-        # shift to guarantee idx2 > idx1
-        idx2_K = torch.where(idx2_K >= idx1_K, idx2_K + 1, idx2_K)
+        if self.lookahead:
+            # take all possible n choose 2 merge pairs
+            J = t_choose_2
+
+            take_J = (
+                torch.ones([t, t], dtype=torch.bool)
+                .triu(1)
+                .flatten()
+                .nonzero()
+                .flatten()
+            )
+            idx1_J = take_J // t
+            idx2_J = take_J % t
+
+            idx1_KxJ = idx1_J.repeat(K, 1)
+            idx2_KxJ = idx2_J.repeat(K, 1)
+
+            log_merge_prob = 0
+        else:
+            # uniformly sample 2 distinct nodes to merge
+            J = 1
+
+            idx1_KxJ = torch.randint(0, t, [K]).unsqueeze(1)
+            idx2_KxJ = torch.randint(0, t - 1, [K]).unsqueeze(1)
+
+            # shift to guarantee idx2 > idx1
+            idx2_KxJ = torch.where(idx2_KxJ >= idx1_KxJ, idx2_KxJ + 1, idx2_KxJ)
+
+            # merge prob = 1 / (t choose 2)
+            log_merge_prob = -torch.log(torch.tensor(t_choose_2))
 
         # ===== sample branch lengths from exponential distributions =====
 
@@ -120,37 +152,25 @@ class ExpBranchProposal(Proposal):
         # re-parameterization trick: sample from U[0, 1] and transform to
         # exponential distribution (so gradients can flow through the sample)
 
-        uniform1_K = torch.rand([K])
-        uniform2_K = torch.rand([K])
+        uniform1_KxJ = torch.rand([K, J])
+        uniform2_KxJ = torch.rand([K, J])
 
         # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
-        branch1_K = -(1 / rate1) * uniform1_K.log()
-        branch2_K = -(1 / rate2) * uniform2_K.log()
+        branch1_KxJ = -(1 / rate1) * uniform1_KxJ.log()
+        branch2_KxJ = -(1 / rate2) * uniform2_KxJ.log()
 
         # log of exponential pdf
-        log_branch1_prior_K = rate1.log() - rate1 * branch1_K
-        log_branch2_prior_K = rate2.log() - rate2 * branch2_K
+        log_branch1_prior_KxJ = rate1.log() - rate1 * branch1_KxJ
+        log_branch2_prior_KxJ = rate2.log() - rate2 * branch2_KxJ
 
         # ===== compute proposal probability =====
 
-        # log(t choose 2)
-        log_num_merge_choices = torch.log(torch.tensor(t * (t - 1) / 2))
-        log_merge_prob = -log_num_merge_choices
-
-        log_v_plus_K = log_merge_prob + log_branch1_prior_K + log_branch2_prior_K
+        log_v_plus_KxJ = log_merge_prob + log_branch1_prior_KxJ + log_branch2_prior_KxJ
 
         # ===== return proposal =====
 
         # dummy embedding
-        embedding_KxD = torch.zeros([K, 0])
-
-        # add singleton dimension for J (propose only one particle)
-        idx1_KxJ = idx1_K.unsqueeze(1)
-        idx2_KxJ = idx2_K.unsqueeze(1)
-        branch1_KxJ = branch1_K.unsqueeze(1)
-        branch2_KxJ = branch2_K.unsqueeze(1)
-        embedding_KxJxD = embedding_KxD.unsqueeze(1)
-        log_v_plus_KxJ = log_v_plus_K.unsqueeze(1)
+        embedding_KxJxD = torch.zeros([K, J, 0])
 
         return (
             idx1_KxJ,
