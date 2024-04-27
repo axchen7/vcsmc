@@ -3,13 +3,8 @@ from torch import Tensor, nn
 
 from .distance_utils import EPSILON
 from .distances import Distance
-from .encoders import (
-    DummySequenceEncoder,
-    MergeEncoder,
-    QMatrixDecoder,
-    SequenceEncoder,
-)
-from .vcsmc_utils import compute_log_felsenstein_likelihoods_KxSxA, gather_K, gather_K2
+from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
+from .vcsmc_utils import gather_K, gather_K2
 
 
 class Proposal(nn.Module):
@@ -23,12 +18,7 @@ class Proposal(nn.Module):
         self.seq_encoder = seq_encoder
 
     def forward(
-        self,
-        N: int,
-        leaf_counts_Kxt: Tensor,
-        embeddings_KxtxD: Tensor,
-        log_felsensteins_KxtxSxA: Tensor,
-        site_positions_SxC: Tensor,
+        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose J different particles, each defined by the two nodes being
@@ -38,8 +28,6 @@ class Proposal(nn.Module):
             N: The number of leaf nodes.
             leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
-            log_felsensteins_KxtxSxA: Log Felsenstein likelihoods for each subtree of each particle.
-            site_positions_SxC: Compressed site positions.
         Returns:
             idx1_KxJ: Indices of the first node to merge.
             idx2_KxJ: Indices of the second node to merge.
@@ -99,12 +87,7 @@ class ExpBranchProposal(Proposal):
         return rate1, rate2
 
     def forward(
-        self,
-        N: int,
-        leaf_counts_Kxt: Tensor,
-        embeddings_KxtxD: Tensor,
-        log_felsensteins_KxtxSxA: Tensor,
-        site_positions_SxC: Tensor,
+        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
@@ -231,12 +214,7 @@ class EmbeddingProposal(Proposal):
         self.merge_indexes_N1x2 = merge_indexes_N1x2
 
     def forward(
-        self,
-        N: int,
-        leaf_counts_Kxt: Tensor,
-        embeddings_KxtxD: Tensor,
-        log_felsensteins_KxtxSxA: Tensor,
-        site_positions_SxC: Tensor,
+        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
@@ -301,16 +279,7 @@ class EmbeddingProposal(Proposal):
         child1_KxD = gather_K(embeddings_KxtxD, idx1_K)
         child2_KxD = gather_K(embeddings_KxtxD, idx2_K)
 
-        log_felsensteins1_VxSxA = gather_K(log_felsensteins_KxtxSxA, idx1_K)
-        log_felsensteins2_VxSxA = gather_K(log_felsensteins_KxtxSxA, idx2_K)
-
-        embedding_KxD = self.merge_encoder(
-            child1_KxD,
-            child2_KxD,
-            log_felsensteins1_VxSxA,
-            log_felsensteins2_VxSxA,
-            site_positions_SxC,
-        )
+        embedding_KxD = self.merge_encoder(child1_KxD, child2_KxD)
 
         # ===== sample/get branches parameters =====
 
