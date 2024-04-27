@@ -237,8 +237,10 @@ class VCSMC(nn.Module):
             # ===== compute new likelihood and pi values =====
 
             def compute_log_stat_probs_KJxtxSxA():
+                t = embeddings_KxtxD.shape[1]
+
                 # flatten embeddings to compute stat_probs, then reshape back
-                embeddings_KJtxD = embeddings_KJxtxD.reshape(-1, D)
+                embeddings_KJtxD = embeddings_KJxtxD.reshape(K * J * t, D)
                 stat_probs_KJtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
                     embeddings_KJtxD, site_positions_SxC
                 )
