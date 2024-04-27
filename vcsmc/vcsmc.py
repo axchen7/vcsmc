@@ -237,7 +237,7 @@ class VCSMC(nn.Module):
             # ===== compute new likelihood and pi values =====
 
             def compute_log_stat_probs_KJxtxSxA():
-                t = embeddings_KxtxD.shape[1]
+                t = embeddings_KJxtxD.shape[1]
 
                 # flatten embeddings to compute stat_probs, then reshape back
                 embeddings_KJtxD = embeddings_KJxtxD.reshape(K * J * t, D)
