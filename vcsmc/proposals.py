@@ -203,19 +203,22 @@ class EmbeddingProposal(Proposal):
         merge_indexes_N1x2: Tensor | None = None,
     ):
         """
+        Only one of `lookahead_merge`, `sample_merge_temp`, and `merge_indexes_N1x2`
+        should be set.
+
         Args:
             distance: The distance function to use for embedding.
             seq_encoder: Sequence encoder.
             merge_encoder: Merge encoder.
             lookahead_merge: if True, will return a particle for each of the J=(t choose 2) possible merges.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
-                Negative pairwise node distances divided by `sample_temp` are used log weights.
+                Negative pairwise node distances divided by `sample_merge_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. If None, then a
                 pair of nodes will be sampled uniformly. Only used if `lookahead_merge`is false.
             sample_branches: Whether to sample branch lengths from an exponential distribution.
                 If false, simply use the distance between embeddings as the branch length.
             merge_indexes_N1x2: If not None, always use these merge indexes instead of sampling.
-                This fixes the tree topology. Also causes `lookahead_merge` to be ignored.
+                This fixes the tree topology.
         """
 
         super().__init__(seq_encoder)
@@ -237,20 +240,9 @@ class EmbeddingProposal(Proposal):
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
-
         r = N - t  # merge step
 
-        # ===== sample 2 distinct nodes to merge =====
-
-        # randomly select two subtrees to merge, using pairwise distances as
-        # negative log probabilities, and incorporating the sample
-        # temperature
-
-        Ktt = K * t * t  # for brevity
-        # repeat like 123123123...
-        flat_embeddings1_KttxD = embeddings_KxtxD.repeat(1, t, 1).view(Ktt, -1)
-        # repeat like 111222333...
-        flat_embeddings2_KttxD = embeddings_KxtxD.repeat(1, 1, t).view(Ktt, -1)
+        # ===== determine nodes to merge =====
 
         if self.merge_indexes_N1x2 is not None:
             idx1_K = self.merge_indexes_N1x2[r, 0].repeat(K)
@@ -258,7 +250,14 @@ class EmbeddingProposal(Proposal):
             log_merge_prob_K = torch.zeros([K])
         else:
             if self.sample_merge_temp is not None:
-                # ===== compute pairwise distances for merge weights =====
+                # randomly select two subtrees to merge, using pairwise distances as
+                # negative log probabilities, and incorporating the sample
+                # temperature
+                Ktt = K * t * t  # for brevity
+                # repeat like 123123123...
+                flat_embeddings1_KttxD = embeddings_KxtxD.repeat(1, t, 1).view(Ktt, -1)
+                # repeat like 111222333...
+                flat_embeddings2_KttxD = embeddings_KxtxD.repeat(1, 1, t).view(Ktt, -1)
 
                 pairwise_distances_Ktt: Tensor = self.distance(
                     flat_embeddings1_KttxD, flat_embeddings2_KttxD
@@ -268,8 +267,7 @@ class EmbeddingProposal(Proposal):
                     -pairwise_distances_Kxtxt / self.sample_merge_temp
                 )
             else:
-                # ===== sample merge pairs uniformly =====
-
+                # uniformly sample 2 distinct nodes to merge
                 merge_log_weights_Kxtxt = torch.zeros([K, t, t])
 
             # set diagonal entries to -inf to prevent self-merges
