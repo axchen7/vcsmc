@@ -7,6 +7,20 @@ from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
 from .vcsmc_utils import gather_K, gather_K2
 
 
+def get_lookahead_merge_indexes(*, K, t: int) -> tuple[int, Tensor, Tensor]:
+    # take all possible (n choose 2) merge pairs
+    J = t * (t - 1) // 2
+
+    take_J = torch.ones([t, t], dtype=torch.bool).triu(1).flatten().nonzero().flatten()
+    idx1_J = take_J // t
+    idx2_J = take_J % t
+
+    idx1_KxJ = idx1_J.repeat(K, 1)
+    idx2_KxJ = idx2_J.repeat(K, 1)
+
+    return J, idx1_KxJ, idx2_KxJ
+
+
 class Proposal(nn.Module):
     """
     Proposal distribution for selecting two nodes to merge and sampling branch lengths.
@@ -93,27 +107,10 @@ class ExpBranchProposal(Proposal):
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
         r = N - t  # merge step
 
-        t_choose_2 = t * (t - 1) // 2
-
         # ===== determine nodes to merge =====
 
         if self.lookahead_merge:
-            # take all possible n choose 2 merge pairs
-            J = t_choose_2
-
-            take_J = (
-                torch.ones([t, t], dtype=torch.bool)
-                .triu(1)
-                .flatten()
-                .nonzero()
-                .flatten()
-            )
-            idx1_J = take_J // t
-            idx2_J = take_J % t
-
-            idx1_KxJ = idx1_J.repeat(K, 1)
-            idx2_KxJ = idx2_J.repeat(K, 1)
-
+            J, idx1_KxJ, idx2_KxJ = get_lookahead_merge_indexes(K=K, t=t)
             log_merge_prob = 0
         else:
             # uniformly sample 2 distinct nodes to merge
@@ -126,7 +123,7 @@ class ExpBranchProposal(Proposal):
             idx2_KxJ = torch.where(idx2_KxJ >= idx1_KxJ, idx2_KxJ + 1, idx2_KxJ)
 
             # merge prob = 1 / (t choose 2)
-            log_merge_prob = -torch.log(torch.tensor(t_choose_2))
+            log_merge_prob = -torch.log(torch.tensor(t * (t - 1) // 2))
 
         # ===== sample branch lengths from exponential distributions =====
 
