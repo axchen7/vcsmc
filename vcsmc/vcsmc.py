@@ -182,7 +182,7 @@ class VCSMC(nn.Module):
                     # construct new embeddings to hash
                     embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
                     embeddings_KJxtxD = replace_with_merged_K(
-                        embeddings_KJxtxD, embedding_KJxD, idx1_KJ, idx2_KJ
+                        embeddings_KJxtxD, idx1_KJ, idx2_KJ, embedding_KJxD
                     )
 
                     embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
