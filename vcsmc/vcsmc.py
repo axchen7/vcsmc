@@ -161,7 +161,6 @@ class VCSMC(nn.Module):
             embeddings_KxtxD = embeddings_KxtxD[indexes_K]
             log_felsensteins_KxtxSxA = log_felsensteins_KxtxSxA[indexes_K]
             log_pi_K = log_pi_K[indexes_K]
-            log_weight_K = log_weight_K[indexes_K]
 
             # ===== extend partial states using proposal =====
 
@@ -209,69 +208,154 @@ class VCSMC(nn.Module):
             )
             embeddings_KJxtxD = merge_KJ(embeddings_KJxtxD, embedding_KJxD)
 
+            # ===== handle particles with matching hashes together =====
+
+            with torch.no_grad():
+                embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
+                # sort first for predictable sum
+                embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
+                # use sum of norm square embeddings as hashes
+                hashes_KJ = torch.sum(embedding_norm_sqs_KJxt, 1)
+
+                sorted_hashes_KJ, hash_sort_idx_KJ = torch.sort(hashes_KJ)
+                hash_unsort_idx_KJ = torch.argsort(hash_sort_idx_KJ)
+                # Z = number of unique hashes
+                _, hash_counts_Z = sorted_hashes_KJ.unique_consecutive(
+                    return_counts=True
+                )
+                # first occurrence index of each unique hash within the sorted hashes
+                sorted_unique_hash_idx_Z = (
+                    torch.cumsum(hash_counts_Z, 0) - hash_counts_Z[0]
+                )
+
+                Z = hash_counts_Z.shape[0]
+
+                # first occurrence index of each unique hash within the original hashes
+                unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
+                # undo the above mapping
+                undo_unique_hash_idx_KJ = torch.arange(Z).repeat_interleave(
+                    hash_counts_Z, 0
+                )[hash_unsort_idx_KJ]
+
+            def squeeze_Z(arr_KJ: Tensor):
+                """
+                Returns unique values with respect to the hashes (and sorting).
+                """
+                return arr_KJ[unique_hash_idx_Z]
+
+            def unsqueeze_KJ(arr_Z: Tensor):
+                """
+                Expands unique values to original size (and undoing the sorting).
+                """
+                return arr_Z[undo_unique_hash_idx_KJ]
+
+            # ===== squeeze particles with matching hashes =====
+
+            idx1_Z = squeeze_Z(idx1_KJ)
+            idx2_Z = squeeze_Z(idx2_KJ)
+            branch1_Z = squeeze_Z(branch1_KJ)
+            branch2_Z = squeeze_Z(branch2_KJ)
+            embedding_ZxD = squeeze_Z(embedding_KJxD)
+            log_v_plus_Z = squeeze_Z(log_v_plus_KJ)
+            branch1_lengths_Zxr = squeeze_Z(branch1_lengths_KJxr)
+            branch2_lengths_Zxr = squeeze_Z(branch2_lengths_KJxr)
+            leaf_counts_Zxt = squeeze_Z(leaf_counts_KJxt)
+            embeddings_ZxtxD = squeeze_Z(embeddings_KJxtxD)
+            log_felsensteins_ZxtxSxA = squeeze_Z(log_felsensteins_KJxtxSxA)
+            log_pi_Z = squeeze_Z(log_pi_KJ)
+
             # ===== compute Felsenstein likelihoods =====
 
-            Q_matrix_KJxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
-                embedding_KJxD, site_positions_SxC
+            # helper function
+            def merge_Z(arr_Z: Tensor, new_val_Z: Tensor):
+                return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z)
+
+            Q_matrix_ZxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
+                embedding_ZxD, site_positions_SxC
             )
 
-            log_felsensteins_KJxSxA = compute_log_felsenstein_likelihoods_KxSxA(
-                Q_matrix_KJxSxAxA,
-                gather_K(log_felsensteins_KJxtxSxA, idx1_KJ),
-                gather_K(log_felsensteins_KJxtxSxA, idx2_KJ),
-                branch1_KJ,
-                branch2_KJ,
+            log_felsensteins_ZxSxA = compute_log_felsenstein_likelihoods_KxSxA(
+                Q_matrix_ZxSxAxA,
+                gather_K(log_felsensteins_ZxtxSxA, idx1_Z),
+                gather_K(log_felsensteins_ZxtxSxA, idx2_Z),
+                branch1_Z,
+                branch2_Z,
             )
-            log_felsensteins_KJxtxSxA = merge_KJ(
-                log_felsensteins_KJxtxSxA, log_felsensteins_KJxSxA
+            log_felsensteins_ZxtxSxA = merge_Z(
+                log_felsensteins_ZxtxSxA, log_felsensteins_ZxSxA
             )
 
             # ===== compute new likelihood and pi values =====
 
-            def compute_log_stat_probs_KJxtxSxA():
-                t = embeddings_KJxtxD.shape[1]
+            def compute_log_stat_probs_ZxtxSxA():
+                t = embeddings_ZxtxD.shape[1]
 
                 # flatten embeddings to compute stat_probs, then reshape back
-                embeddings_KJtxD = embeddings_KJxtxD.reshape(K * J * t, D)
-                stat_probs_KJtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
-                    embeddings_KJtxD, site_positions_SxC
+                embeddings_ZtxD = embeddings_ZxtxD.reshape(Z * t, D)
+                stat_probs_ZtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
+                    embeddings_ZtxD, site_positions_SxC
                 )
-                log_stat_probs_KJtxSxA = stat_probs_KJtxSxA.log()
+                log_stat_probs_ZtxSxA = stat_probs_ZtxSxA.log()
 
-                KJt = stat_probs_KJtxSxA.shape[0]  # broadcasting is possible (KJt=1)
-                S = stat_probs_KJtxSxA.shape[1]  # broadcasting is possible (S=1)
+                Zt = stat_probs_ZtxSxA.shape[0]  # broadcasting is possible (Zt=1)
+                S = stat_probs_ZtxSxA.shape[1]  # broadcasting is possible (S=1)
 
                 # handle special case of stat_probs_VxSxA() broadcasting along
                 # the batch dimension
-                if KJt == 1:
-                    return log_stat_probs_KJtxSxA.reshape(1, 1, S, A)
+                if Zt == 1:
+                    return log_stat_probs_ZtxSxA.reshape(1, 1, S, A)
                 else:
-                    return log_stat_probs_KJtxSxA.reshape(K * J, -1, S, A)
+                    return log_stat_probs_ZtxSxA.reshape(Z, -1, S, A)
 
-            prev_log_pi_KJ = log_pi_KJ
-            log_stat_probs_KJxtxSxA = compute_log_stat_probs_KJxtxSxA()
+            prev_log_pi_Z = log_pi_Z
+            log_stat_probs_ZxtxSxA = compute_log_stat_probs_ZxtxSxA()
 
-            log_likelihood_KJ, log_pi_KJ = compute_log_likelihood_and_pi_K(
-                branch1_lengths_KJxr,
-                branch2_lengths_KJxr,
-                leaf_counts_KJxt,
-                log_felsensteins_KJxtxSxA,
-                log_stat_probs_KJxtxSxA,
+            log_likelihood_Z, log_pi_Z = compute_log_likelihood_and_pi_K(
+                branch1_lengths_Zxr,
+                branch2_lengths_Zxr,
+                leaf_counts_Zxt,
+                log_felsensteins_ZxtxSxA,
+                log_stat_probs_ZxtxSxA,
                 self.prior_dist,
                 self.prior_branch_len,
                 self.log_double_factorials_2N,
             )
 
-            # ===== compute weights =====
+            # ===== compute sub-particle weights =====
 
             # compute over-counting correction
-            log_v_minus_KJ = compute_log_v_minus_K(N, leaf_counts_KJxt)
+            log_v_minus_Z = compute_log_v_minus_K(N, leaf_counts_Zxt)
 
             # equation (7) in the VCSMC paper
-            log_weight_KJ = log_pi_KJ - prev_log_pi_KJ + log_v_minus_KJ - log_v_plus_KJ
+            log_weight_Z = log_pi_Z - prev_log_pi_Z + log_v_minus_Z - log_v_plus_Z
+
+            # ===== un-squeeze particles =====
+
+            idx1_KJ = unsqueeze_KJ(idx1_Z)
+            idx2_KJ = unsqueeze_KJ(idx2_Z)
+            branch1_KJ = unsqueeze_KJ(branch1_Z)
+            branch2_KJ = unsqueeze_KJ(branch2_Z)
+            embedding_KJxD = unsqueeze_KJ(embedding_ZxD)
+            log_felsensteins_KJxtxSxA = unsqueeze_KJ(log_felsensteins_ZxtxSxA)
+            log_likelihood_KJ = unsqueeze_KJ(log_likelihood_Z)
+            log_pi_KJ = unsqueeze_KJ(log_pi_Z)
+            log_weight_KJ = unsqueeze_KJ(log_weight_Z)
+
+            idx1_KxJ = idx1_KJ.reshape(K, J)
+            idx2_KxJ = idx2_KJ.reshape(K, J)
+            branch1_KxJ = branch1_KJ.reshape(K, J)
+            branch2_KxJ = branch2_KJ.reshape(K, J)
+            embedding_KxJxD = embedding_KJxD.reshape(K, J, D)
+            log_felsensteins_KxJxtxSxA = log_felsensteins_KJxtxSxA.reshape(
+                K, J, -1, S, A
+            )
+            log_likelihood_KxJ = log_likelihood_KJ.reshape(K, J)
+            log_pi_KxJ = log_pi_KJ.reshape(K, J)
+            log_weight_KxJ = log_weight_KJ.reshape(K, J)
+
+            # ===== compute particle weights =====
 
             # for each initial particle, average over sub-particle weights
-            log_weight_KxJ = log_weight_KJ.reshape(K, J)
             log_weight_K = torch.logsumexp(log_weight_KxJ, 1)
             log_weight_K = log_weight_K - torch.log(torch.tensor(J))  # divide by J
 
@@ -293,13 +377,6 @@ class VCSMC(nn.Module):
             branch1_K = gather_K(branch1_KxJ, sub_indexes_K)
             branch2_K = gather_K(branch2_KxJ, sub_indexes_K)
             embedding_KxD = gather_K(embedding_KxJxD, sub_indexes_K)
-
-            log_felsensteins_KxJxtxSxA = log_felsensteins_KJxtxSxA.reshape(
-                K, J, -1, S, A
-            )
-            log_likelihood_KxJ = log_likelihood_KJ.reshape(K, J)
-            log_pi_KxJ = log_pi_KJ.reshape(K, J)
-
             log_felsensteins_KxtxSxA = gather_K(
                 log_felsensteins_KxJxtxSxA, sub_indexes_K
             )
