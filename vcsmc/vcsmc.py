@@ -188,7 +188,6 @@ class VCSMC(nn.Module):
 
             branch1_lengths_KJxr = branch1_lengths_Kxr.repeat_interleave(J, 0)
             branch2_lengths_KJxr = branch2_lengths_Kxr.repeat_interleave(J, 0)
-            embeddings_KJxrxD = embeddings_KxrxD.repeat_interleave(J, 0)
             leaf_counts_KJxt = leaf_counts_Kxt.repeat_interleave(J, 0)
             embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
             log_felsensteins_KJxtxSxA = log_felsensteins_KxtxSxA.repeat_interleave(J, 0)
@@ -202,7 +201,6 @@ class VCSMC(nn.Module):
 
             branch1_lengths_KJxr = concat_K(branch1_lengths_KJxr, branch1_KJ)
             branch2_lengths_KJxr = concat_K(branch2_lengths_KJxr, branch2_KJ)
-            embeddings_KJxrxD = concat_K(embeddings_KJxrxD, embedding_KJxD)
 
             leaf_counts_KJxt = merge_KJ(
                 leaf_counts_KJxt,
