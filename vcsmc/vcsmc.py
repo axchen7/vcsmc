@@ -39,6 +39,7 @@ class VCSMC(nn.Module):
         taxa_N: list[str],
         *,
         K: int,
+        hash_trick: bool = False,
         # assume Exp(10) branch length prior
         prior_dist: Literal["gamma", "exp", "unif"] = "exp",
         prior_branch_len: float = 0.1,
@@ -50,6 +51,7 @@ class VCSMC(nn.Module):
             proposal: Proposal object
             taxa_N: List of taxa names of length N
             K: Number of particles
+            hash_trick: Whether to use the hash trick to speed up computation
             prior_dist: Prior distribution for branch lengths
             prior_branch_len: Expected branch length under the prior
         """
@@ -60,6 +62,7 @@ class VCSMC(nn.Module):
         self.proposal = proposal
         self.taxa_N = taxa_N
         self.K = K
+        self.hash_trick = hash_trick
         self.prior_dist: Literal["gamma", "exp", "unif"] = prior_dist
         self.prior_branch_len = prior_branch_len
         self.regularization = regularization
@@ -210,44 +213,54 @@ class VCSMC(nn.Module):
 
             # ===== handle particles with matching hashes together =====
 
-            with torch.no_grad():
-                embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
-                # sort first for predictable sum
-                embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
-                # use sum of norm square embeddings as hashes
-                hashes_KJ = torch.sum(embedding_norm_sqs_KJxt, 1)
+            if self.hash_trick:
+                with torch.no_grad():
+                    embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
+                    # sort first for predictable sum
+                    embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
+                    # use sum of norm square embeddings as hashes
+                    hashes_KJ = torch.sum(embedding_norm_sqs_KJxt, 1)
 
-                sorted_hashes_KJ, hash_sort_idx_KJ = torch.sort(hashes_KJ)
-                hash_unsort_idx_KJ = torch.argsort(hash_sort_idx_KJ)
-                # Z = number of unique hashes
-                _, hash_counts_Z = sorted_hashes_KJ.unique_consecutive(
-                    return_counts=True
-                )
-                # first occurrence index of each unique hash within the sorted hashes
-                sorted_unique_hash_idx_Z = (
-                    torch.cumsum(hash_counts_Z, 0) - hash_counts_Z[0]
-                )
+                    sorted_hashes_KJ, hash_sort_idx_KJ = torch.sort(hashes_KJ)
+                    hash_unsort_idx_KJ = torch.argsort(hash_sort_idx_KJ)
+                    # Z = number of unique hashes
+                    _, hash_counts_Z = sorted_hashes_KJ.unique_consecutive(
+                        return_counts=True
+                    )
+                    # first occurrence index of each unique hash within the sorted hashes
+                    sorted_unique_hash_idx_Z = (
+                        torch.cumsum(hash_counts_Z, 0) - hash_counts_Z[0]
+                    )
 
-                Z = hash_counts_Z.shape[0]
+                    Z = hash_counts_Z.shape[0]
 
-                # first occurrence index of each unique hash within the original hashes
-                unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
-                # undo the above mapping
-                undo_unique_hash_idx_KJ = torch.arange(Z).repeat_interleave(
-                    hash_counts_Z, 0
-                )[hash_unsort_idx_KJ]
+                    # first occurrence index of each unique hash within the original hashes
+                    unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
+                    # undo the above mapping
+                    undo_unique_hash_idx_KJ = torch.arange(Z).repeat_interleave(
+                        hash_counts_Z, 0
+                    )[hash_unsort_idx_KJ]
 
-            def squeeze_Z(arr_KJ: Tensor):
-                """
-                Returns unique values with respect to the hashes (and sorting).
-                """
-                return arr_KJ[unique_hash_idx_Z]
+                def squeeze_Z(arr_KJ: Tensor):
+                    """
+                    Returns unique values with respect to the hashes (and sorting).
+                    """
+                    return arr_KJ[unique_hash_idx_Z]
 
-            def unsqueeze_KJ(arr_Z: Tensor):
-                """
-                Expands unique values to original size (and undoing the sorting).
-                """
-                return arr_Z[undo_unique_hash_idx_KJ]
+                def unsqueeze_KJ(arr_Z: Tensor):
+                    """
+                    Expands unique values to original size (and undoing the sorting).
+                    """
+                    return arr_Z[undo_unique_hash_idx_KJ]
+
+            else:
+                Z = K * J
+
+                def squeeze_Z(arr_KJ: Tensor):
+                    return arr_KJ
+
+                def unsqueeze_KJ(arr_Z: Tensor):
+                    return arr_Z
 
             # ===== squeeze particles with matching hashes =====
 
