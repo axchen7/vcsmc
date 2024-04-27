@@ -14,5 +14,4 @@ from .site_positions_encoders import *
 from .train import *
 from .train_utils import *
 from .vcsmc import *
-from .vcsmc_regularization import *
 from .vcsmc_utils import *

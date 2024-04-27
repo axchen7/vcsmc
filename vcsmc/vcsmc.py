@@ -5,7 +5,6 @@ from torch import Tensor, nn
 
 from .proposals import Proposal
 from .q_matrix_decoders import QMatrixDecoder
-from .vcsmc_regularization import VcsmcRegularization
 from .vcsmc_utils import (
     build_newick_tree,
     compute_log_double_factorials_2N,
@@ -19,8 +18,6 @@ from .vcsmc_utils import (
 
 
 class VcsmcResult(TypedDict):
-    loss: Tensor
-    regularization: Tensor  # proportional to S, the number of sites in the batch
     log_Z_SMC: Tensor
     log_likelihood_K: Tensor
     best_newick_tree: str
@@ -43,7 +40,6 @@ class VCSMC(nn.Module):
         # assume Exp(10) branch length prior
         prior_dist: Literal["gamma", "exp", "unif"] = "exp",
         prior_branch_len: float = 0.1,
-        regularization: VcsmcRegularization | None = None,
     ):
         """
         Args:
@@ -65,7 +61,6 @@ class VCSMC(nn.Module):
         self.hash_trick = hash_trick
         self.prior_dist: Literal["gamma", "exp", "unif"] = prior_dist
         self.prior_branch_len = prior_branch_len
-        self.regularization = regularization
 
         N = len(taxa_N)
         self.log_double_factorials_2N = compute_log_double_factorials_2N(N)
@@ -101,8 +96,8 @@ class VCSMC(nn.Module):
             best_branch2_lengths_r: right branch lengths for the best tree
         """
 
-        # S = number of sites in the batch
-        N, S, A = data_batched_NxSxA.shape
+        N = data_batched_NxSxA.shape[0]
+        A = data_batched_NxSxA.shape[2]
 
         K = self.K
         D = self.proposal.seq_encoder.D
@@ -121,10 +116,6 @@ class VCSMC(nn.Module):
         branch1_lengths_Kxr = torch.zeros(K, 0)
         branch2_lengths_Kxr = torch.zeros(K, 0)
         embeddings_KxrxD = torch.zeros(K, 0, D)  # merged embedding at each step
-        branch1_child_KxrxD = torch.zeros(K, 0, D)
-        branch1_parent_KxrxD = torch.zeros(K, 0, D)
-        branch2_child_KxrxD = torch.zeros(K, 0, D)
-        branch2_parent_KxrxD = torch.zeros(K, 0, D)
 
         leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int)
         # embeddings of each tree currently in the forest
@@ -156,10 +147,6 @@ class VCSMC(nn.Module):
             branch1_lengths_Kxr = branch1_lengths_Kxr[indexes_K]
             branch2_lengths_Kxr = branch2_lengths_Kxr[indexes_K]
             embeddings_KxrxD = embeddings_KxrxD[indexes_K]
-            branch1_child_KxrxD = branch1_child_KxrxD[indexes_K]
-            branch1_parent_KxrxD = branch1_parent_KxrxD[indexes_K]
-            branch2_child_KxrxD = branch2_child_KxrxD[indexes_K]
-            branch2_parent_KxrxD = branch2_parent_KxrxD[indexes_K]
             leaf_counts_Kxt = leaf_counts_Kxt[indexes_K]
             embeddings_KxtxD = embeddings_KxtxD[indexes_K]
             log_felsensteins_KxtxSxA = log_felsensteins_KxtxSxA[indexes_K]
@@ -188,33 +175,16 @@ class VCSMC(nn.Module):
             embedding_KJxD = embedding_KxJxD.reshape(K * J, D)
             log_v_plus_KJ = log_v_plus_KxJ.flatten()
 
-            branch1_lengths_KJxr = branch1_lengths_Kxr.repeat_interleave(J, 0)
-            branch2_lengths_KJxr = branch2_lengths_Kxr.repeat_interleave(J, 0)
-            leaf_counts_KJxt = leaf_counts_Kxt.repeat_interleave(J, 0)
-            embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
-            log_felsensteins_KJxtxSxA = log_felsensteins_KxtxSxA.repeat_interleave(J, 0)
-            log_pi_KJ = log_pi_K.repeat_interleave(J, 0)
-
-            # ===== post-proposal bookkeeping =====
-
-            # helper function
-            def merge_KJ(arr_KJ: Tensor, new_val_KJ: Tensor):
-                return replace_with_merged_K(arr_KJ, idx1_KJ, idx2_KJ, new_val_KJ)
-
-            branch1_lengths_KJxr = concat_K(branch1_lengths_KJxr, branch1_KJ)
-            branch2_lengths_KJxr = concat_K(branch2_lengths_KJxr, branch2_KJ)
-
-            leaf_counts_KJxt = merge_KJ(
-                leaf_counts_KJxt,
-                gather_K(leaf_counts_KJxt, idx1_KJ)
-                + gather_K(leaf_counts_KJxt, idx2_KJ),
-            )
-            embeddings_KJxtxD = merge_KJ(embeddings_KJxtxD, embedding_KJxD)
-
             # ===== handle particles with matching hashes together =====
 
             if self.hash_trick:
                 with torch.no_grad():
+                    # construct new embeddings to hash
+                    embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
+                    embeddings_KJxtxD = replace_with_merged_K(
+                        embeddings_KJxtxD, embedding_KJxD, idx1_KJ, idx2_KJ
+                    )
+
                     embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
                     # sort first for predictable sum
                     embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
@@ -264,24 +234,43 @@ class VCSMC(nn.Module):
 
             # ===== squeeze particles with matching hashes =====
 
+            # helper function
+            def K_to_Z(arr_K: Tensor):
+                arr_KJ = arr_K.repeat_interleave(J, 0)
+                return squeeze_Z(arr_KJ)
+
             idx1_Z = squeeze_Z(idx1_KJ)
             idx2_Z = squeeze_Z(idx2_KJ)
             branch1_Z = squeeze_Z(branch1_KJ)
             branch2_Z = squeeze_Z(branch2_KJ)
             embedding_ZxD = squeeze_Z(embedding_KJxD)
             log_v_plus_Z = squeeze_Z(log_v_plus_KJ)
-            branch1_lengths_Zxr = squeeze_Z(branch1_lengths_KJxr)
-            branch2_lengths_Zxr = squeeze_Z(branch2_lengths_KJxr)
-            leaf_counts_Zxt = squeeze_Z(leaf_counts_KJxt)
-            embeddings_ZxtxD = squeeze_Z(embeddings_KJxtxD)
-            log_felsensteins_ZxtxSxA = squeeze_Z(log_felsensteins_KJxtxSxA)
-            log_pi_Z = squeeze_Z(log_pi_KJ)
 
-            # ===== compute Felsenstein likelihoods =====
+            merge1_indexes_Zxr = K_to_Z(merge1_indexes_Kxr)
+            merge2_indexes_Zxr = K_to_Z(merge2_indexes_Kxr)
+            branch1_lengths_Zxr = K_to_Z(branch1_lengths_Kxr)
+            branch2_lengths_Zxr = K_to_Z(branch2_lengths_Kxr)
+            embeddings_ZxrxD = K_to_Z(embeddings_KxrxD)
+            leaf_counts_Zxt = K_to_Z(leaf_counts_Kxt)
+            embeddings_ZxtxD = K_to_Z(embeddings_KxtxD)
+            log_felsensteins_ZxtxSxA = K_to_Z(log_felsensteins_KxtxSxA)
+            log_pi_Z = K_to_Z(log_pi_K)
+
+            # ===== post-proposal bookkeeping =====
 
             # helper function
             def merge_Z(arr_Z: Tensor, new_val_Z: Tensor):
                 return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z)
+
+            branch1_lengths_Zxr = concat_K(branch1_lengths_Zxr, branch1_Z)
+            branch2_lengths_Zxr = concat_K(branch2_lengths_Zxr, branch2_Z)
+            leaf_counts_Zxt = merge_Z(
+                leaf_counts_Zxt,
+                gather_K(leaf_counts_Zxt, idx1_Z) + gather_K(leaf_counts_Zxt, idx2_Z),
+            )
+            embeddings_ZxtxD = merge_Z(embeddings_ZxtxD, embedding_ZxD)
+
+            # ===== compute Felsenstein likelihoods =====
 
             Q_matrix_ZxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
                 embedding_ZxD, site_positions_SxC
@@ -342,31 +331,9 @@ class VCSMC(nn.Module):
             # equation (7) in the VCSMC paper
             log_weight_Z = log_pi_Z - prev_log_pi_Z + log_v_minus_Z - log_v_plus_Z
 
-            # ===== un-squeeze particles =====
-
-            idx1_KJ = unsqueeze_KJ(idx1_Z)
-            idx2_KJ = unsqueeze_KJ(idx2_Z)
-            branch1_KJ = unsqueeze_KJ(branch1_Z)
-            branch2_KJ = unsqueeze_KJ(branch2_Z)
-            embedding_KJxD = unsqueeze_KJ(embedding_ZxD)
-            log_felsensteins_KJxtxSxA = unsqueeze_KJ(log_felsensteins_ZxtxSxA)
-            log_likelihood_KJ = unsqueeze_KJ(log_likelihood_Z)
-            log_pi_KJ = unsqueeze_KJ(log_pi_Z)
-            log_weight_KJ = unsqueeze_KJ(log_weight_Z)
-
-            idx1_KxJ = idx1_KJ.reshape(K, J)
-            idx2_KxJ = idx2_KJ.reshape(K, J)
-            branch1_KxJ = branch1_KJ.reshape(K, J)
-            branch2_KxJ = branch2_KJ.reshape(K, J)
-            embedding_KxJxD = embedding_KJxD.reshape(K, J, D)
-            log_felsensteins_KxJxtxSxA = log_felsensteins_KJxtxSxA.reshape(
-                K, J, -1, S, A
-            )
-            log_likelihood_KxJ = log_likelihood_KJ.reshape(K, J)
-            log_pi_KxJ = log_pi_KJ.reshape(K, J)
-            log_weight_KxJ = log_weight_KJ.reshape(K, J)
-
             # ===== compute particle weights =====
+
+            log_weight_KxJ = unsqueeze_KJ(log_weight_Z).reshape(K, J)
 
             # for each initial particle, average over sub-particle weights
             log_weight_K = torch.logsumexp(log_weight_KxJ, 1)
@@ -385,43 +352,34 @@ class VCSMC(nn.Module):
             else:
                 sub_indexes_K = torch.zeros(K, dtype=torch.int)
 
-            idx1_K = gather_K(idx1_KxJ, sub_indexes_K)
-            idx2_K = gather_K(idx2_KxJ, sub_indexes_K)
-            branch1_K = gather_K(branch1_KxJ, sub_indexes_K)
-            branch2_K = gather_K(branch2_KxJ, sub_indexes_K)
-            embedding_KxD = gather_K(embedding_KxJxD, sub_indexes_K)
-            log_felsensteins_KxtxSxA = gather_K(
-                log_felsensteins_KxJxtxSxA, sub_indexes_K
-            )
-            log_likelihood_K = gather_K(log_likelihood_KxJ, sub_indexes_K)
-            log_pi_K = gather_K(log_pi_KxJ, sub_indexes_K)
-
             # ===== post sub-particle resampling bookkeeping =====
 
             # helper function
-            def merge_K(arr_K: Tensor, new_val_K: Tensor):
-                return replace_with_merged_K(arr_K, idx1_K, idx2_K, new_val_K)
+            def gather_sub_K(arr_Z: Tensor):
+                arr_KJ = unsqueeze_KJ(arr_Z)
+                arr_KxJ = arr_KJ.reshape((K, J) + arr_KJ.shape[1:])
+                return gather_K(arr_KxJ, sub_indexes_K)
 
-            merge1_indexes_Kxr = concat_K(merge1_indexes_Kxr, idx1_K)
-            merge2_indexes_Kxr = concat_K(merge2_indexes_Kxr, idx2_K)
-            branch1_lengths_Kxr = concat_K(branch1_lengths_Kxr, branch1_K)
-            branch2_lengths_Kxr = concat_K(branch2_lengths_Kxr, branch2_K)
-            embeddings_KxrxD = concat_K(embeddings_KxrxD, embedding_KxD)
+            # helper function
+            def concat_sub_K(arr_Zxr, val_K):
+                arr_Kxr = gather_sub_K(arr_Zxr)
+                return concat_K(arr_Kxr, val_K)
 
-            branch1_child_KxrxD = concat_K(
-                branch1_child_KxrxD, gather_K(embeddings_KxtxD, idx1_K)
-            )
-            branch1_parent_KxrxD = concat_K(branch1_parent_KxrxD, embedding_KxD)
-            branch2_child_KxrxD = concat_K(
-                branch2_child_KxrxD, gather_K(embeddings_KxtxD, idx2_K)
-            )
-            branch2_parent_KxrxD = concat_K(branch2_parent_KxrxD, embedding_KxD)
-
-            leaf_counts_Kxt = merge_K(
-                leaf_counts_Kxt,
-                gather_K(leaf_counts_Kxt, idx1_K) + gather_K(leaf_counts_Kxt, idx2_K),
-            )
-            embeddings_KxtxD = merge_K(embeddings_KxtxD, embedding_KxD)
+            idx1_K = gather_sub_K(idx1_Z)
+            idx2_K = gather_sub_K(idx2_Z)
+            branch1_K = gather_sub_K(branch1_Z)
+            branch2_K = gather_sub_K(branch2_Z)
+            embedding_KxD = gather_sub_K(embedding_ZxD)
+            merge1_indexes_Kxr = concat_sub_K(merge1_indexes_Zxr, idx1_K)
+            merge2_indexes_Kxr = concat_sub_K(merge2_indexes_Zxr, idx2_K)
+            branch1_lengths_Kxr = concat_sub_K(branch1_lengths_Zxr, branch1_K)
+            branch2_lengths_Kxr = concat_sub_K(branch2_lengths_Zxr, branch2_K)
+            embeddings_KxrxD = concat_sub_K(embeddings_ZxrxD, embedding_KxD)
+            leaf_counts_Kxt = gather_sub_K(leaf_counts_Zxt)
+            embeddings_KxtxD = gather_sub_K(embeddings_ZxtxD)
+            log_felsensteins_KxtxSxA = gather_sub_K(log_felsensteins_ZxtxSxA)
+            log_likelihood_K = gather_sub_K(log_likelihood_Z)
+            log_pi_K = gather_sub_K(log_pi_Z)
 
         # ===== compute Z_SMC =====
 
@@ -434,22 +392,6 @@ class VCSMC(nn.Module):
         log_scaled_weights_rxK = log_weights_rxK - torch.log(torch.tensor(K))
         log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
         log_Z_SMC = torch.sum(log_sum_weights_r)
-
-        # ===== compute regularization and loss =====
-
-        regularization = torch.tensor(0.0)
-
-        if self.regularization:
-            regularization = self.regularization(
-                S,
-                branch1_child_KxrxD,
-                branch1_parent_KxrxD,
-                branch2_child_KxrxD,
-                branch2_parent_KxrxD,
-            )
-            regularization = regularization * self.regularization.coeff
-
-        loss = -log_Z_SMC + regularization
 
         # ===== build best Newick tree =====
 
@@ -465,8 +407,6 @@ class VCSMC(nn.Module):
         # ===== return final results =====
 
         return {
-            "loss": loss,
-            "regularization": regularization,
             "log_Z_SMC": log_Z_SMC,
             "log_likelihood_K": log_likelihood_K,
             "best_newick_tree": best_newick_tree,

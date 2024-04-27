@@ -129,19 +129,17 @@ def train(
 
     def train_step(
         dataloader: DataLoader,
-    ) -> tuple[Tensor, Tensor, Tensor | None, Tensor, str]:
+    ) -> tuple[Tensor, Tensor | None, Tensor, str]:
         """
         Trains one epoch, iterating through batches.
 
         Returns:
-            reg_sum: Sum across batches of regularization terms.
             log_Z_SMC_sum: Sum across batches of log_Z_SMC.
             log_likelihood_K: log likelihoods, or None if there are multiple batches.
             log_likelihood_sum: Sum across batches of log likelihoods averaged across particles.
             best_newick_tree: best of the K newick trees from the first epoch.
         """
 
-        reg_sum = torch.tensor(0.0)
         log_Z_SMC_sum = torch.tensor(0.0)
         log_likelihood_sum = torch.tensor(0.0)
 
@@ -158,8 +156,6 @@ def train(
                 site_positions_batched_SxSfull,
             )
 
-            loss = result["loss"]
-            regularization = result["regularization"]
             log_Z_SMC = result["log_Z_SMC"]
             log_likelihood_K = result["log_likelihood_K"]
 
@@ -168,11 +164,12 @@ def train(
             if best_newick_tree == "":
                 best_newick_tree = result["best_newick_tree"]
 
+            loss = -log_Z_SMC
+
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
-            reg_sum = reg_sum + regularization
             log_Z_SMC_sum = log_Z_SMC_sum + log_Z_SMC
             log_likelihood_sum = log_likelihood_sum + log_likelihood_avg
 
@@ -182,13 +179,7 @@ def train(
         if len(dataloader) > 1:
             log_likelihood_K = None
 
-        return (
-            reg_sum,
-            log_Z_SMC_sum,
-            log_likelihood_K,
-            log_likelihood_sum,
-            best_newick_tree,
-        )
+        return log_Z_SMC_sum, log_likelihood_K, log_likelihood_sum, best_newick_tree
 
     @torch.no_grad()
     def get_avg_root_Q_matrix_AxA():
@@ -241,13 +232,9 @@ def train(
     for epoch in tqdm(range(epochs - start_epoch)):
         epoch += start_epoch
 
-        (
-            reg_sum,
-            log_Z_SMC_sum,
-            log_likelihood_K,
-            log_likelihood_avg,
-            best_newick_tree,
-        ) = train_step(dataloader)
+        log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
+            train_step(dataloader)
+        )
 
         save_checkpoint(epoch + 1)
 
@@ -256,7 +243,6 @@ def train(
         elbos.append(log_Z_SMC_sum.item())
         log_likelihood_avgs.append(log_likelihood_avg.item())
 
-        writer.add_scalar("Regularization", reg_sum, epoch)
         writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
         writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
         writer.add_scalar(
