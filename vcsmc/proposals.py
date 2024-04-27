@@ -31,7 +31,8 @@ class Proposal(nn.Module):
         site_positions_SxC: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
-        Propose two nodes to merge, as well as their branch lengths.
+        Propose J different particles, each defined by the two nodes being
+        merged and their branch lengths.
 
         Args:
             N: The number of leaf nodes.
@@ -40,12 +41,12 @@ class Proposal(nn.Module):
             log_felsensteins_KxtxSxA: Log Felsenstein likelihoods for each subtree of each particle.
             site_positions_SxC: Compressed site positions.
         Returns:
-            idx1_K: Indices of the first node to merge.
-            idx2_K: Indices of the second node to merge.
-            branch1_K: Branch lengths of the first node.
-            branch2_K: Branch lengths of the second node.
-            embedding_KxD: Embeddings of the merged subtree.
-            log_v_plus_K: Log probabilities of the returned proposal.
+            idx1_KxJ: Indices of the first node to merge.
+            idx2_KxJ: Indices of the second node to merge.
+            branch1_KxJ: Branch lengths of the first node.
+            branch2_KxJ: Branch lengths of the second node.
+            embedding_KxJxD: Embeddings of the merged subtree.
+            log_v_plus_KxJ: Log probabilities of the returned proposal.
         Note:
             At each step r, there are t = N-r >= 2 trees in the forest.
         """
@@ -143,7 +144,22 @@ class ExpBranchProposal(Proposal):
         # dummy embedding
         embedding_KxD = torch.zeros([K, 0])
 
-        return idx1_K, idx2_K, branch1_K, branch2_K, embedding_KxD, log_v_plus_K
+        # add singleton dimension for J (propose only one particle)
+        idx1_KxJ = idx1_K.unsqueeze(1)
+        idx2_KxJ = idx2_K.unsqueeze(1)
+        branch1_KxJ = branch1_K.unsqueeze(1)
+        branch2_KxJ = branch2_K.unsqueeze(1)
+        embedding_KxJxD = embedding_KxD.unsqueeze(1)
+        log_v_plus_KxJ = log_v_plus_K.unsqueeze(1)
+
+        return (
+            idx1_KxJ,
+            idx2_KxJ,
+            branch1_KxJ,
+            branch2_KxJ,
+            embedding_KxJxD,
+            log_v_plus_KxJ,
+        )
 
 
 class EmbeddingProposal(Proposal):
@@ -392,4 +408,19 @@ class EmbeddingProposal(Proposal):
 
         # ===== return proposal =====
 
-        return idx1_K, idx2_K, branch1_K, branch2_K, embedding_KxD, log_v_plus_K
+        # add singleton dimension for J (propose only one particle)
+        idx1_KxJ = idx1_K.unsqueeze(1)
+        idx2_KxJ = idx2_K.unsqueeze(1)
+        branch1_KxJ = branch1_K.unsqueeze(1)
+        branch2_KxJ = branch2_K.unsqueeze(1)
+        embedding_KxJxD = embedding_KxD.unsqueeze(1)
+        log_v_plus_KxJ = log_v_plus_K.unsqueeze(1)
+
+        return (
+            idx1_KxJ,
+            idx2_KxJ,
+            branch1_KxJ,
+            branch2_KxJ,
+            embedding_KxJxD,
+            log_v_plus_KxJ,
+        )

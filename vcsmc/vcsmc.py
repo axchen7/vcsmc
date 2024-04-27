@@ -167,12 +167,12 @@ class VCSMC(nn.Module):
 
             # sample from proposal distribution
             (
-                idx1_K,
-                idx2_K,
-                branch1_K,
-                branch2_K,
-                embedding_KxD,
-                log_v_plus_K,
+                idx1_KxJ,
+                idx2_KxJ,
+                branch1_KxJ,
+                branch2_KxJ,
+                embedding_KxJxD,
+                log_v_plus_KxJ,
             ) = self.proposal(
                 N,
                 leaf_counts_Kxt,
@@ -181,11 +181,142 @@ class VCSMC(nn.Module):
                 site_positions_SxC,
             )
 
+            # ===== deal with sub-particle (J) dimension =====
+
+            J = idx1_KxJ.shape[1]
+
+            idx1_KJ = idx1_KxJ.flatten()
+            idx2_KJ = idx2_KxJ.flatten()
+            branch1_KJ = branch1_KxJ.flatten()
+            branch2_KJ = branch2_KxJ.flatten()
+            embedding_KJxD = embedding_KxJxD.reshape(K * J, D)
+            log_v_plus_KJ = log_v_plus_KxJ.flatten()
+
+            branch1_lengths_KJxr = branch1_lengths_Kxr.repeat_interleave(J, 0)
+            branch2_lengths_KJxr = branch2_lengths_Kxr.repeat_interleave(J, 0)
+            embeddings_KJxrxD = embeddings_KxrxD.repeat_interleave(J, 0)
+            leaf_counts_KJxt = leaf_counts_Kxt.repeat_interleave(J, 0)
+            embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
+            log_felsensteins_KJxtxSxA = log_felsensteins_KxtxSxA.repeat_interleave(J, 0)
+            log_pi_KJ = log_pi_K.repeat_interleave(J, 0)
+
+            # ===== post-proposal bookkeeping =====
+
+            # helper function
+            def merge_KJ(arr_KJ: Tensor, new_val_KJ: Tensor):
+                return replace_with_merged_K(arr_KJ, idx1_KJ, idx2_KJ, new_val_KJ)
+
+            branch1_lengths_KJxr = concat_K(branch1_lengths_KJxr, branch1_KJ)
+            branch2_lengths_KJxr = concat_K(branch2_lengths_KJxr, branch2_KJ)
+            embeddings_KJxrxD = concat_K(embeddings_KJxrxD, embedding_KJxD)
+
+            leaf_counts_KJxt = merge_KJ(
+                leaf_counts_KJxt,
+                gather_K(leaf_counts_KJxt, idx1_KJ)
+                + gather_K(leaf_counts_KJxt, idx2_KJ),
+            )
+            embeddings_KJxtxD = merge_KJ(embeddings_KJxtxD, embedding_KJxD)
+
+            # ===== compute Felsenstein likelihoods =====
+
+            Q_matrix_KJxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
+                embedding_KJxD, site_positions_SxC
+            )
+
+            log_felsensteins_KJxSxA = compute_log_felsenstein_likelihoods_KxSxA(
+                Q_matrix_KJxSxAxA,
+                gather_K(log_felsensteins_KJxtxSxA, idx1_KJ),
+                gather_K(log_felsensteins_KJxtxSxA, idx2_KJ),
+                branch1_KJ,
+                branch2_KJ,
+            )
+            log_felsensteins_KJxtxSxA = merge_KJ(
+                log_felsensteins_KJxtxSxA, log_felsensteins_KJxSxA
+            )
+
+            # ===== compute new likelihood and pi values =====
+
+            def compute_log_stat_probs_KJxtxSxA():
+                # flatten embeddings to compute stat_probs, then reshape back
+                embeddings_KJtxD = embeddings_KJxtxD.reshape(-1, D)
+                stat_probs_KJtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
+                    embeddings_KJtxD, site_positions_SxC
+                )
+                log_stat_probs_KJtxSxA = stat_probs_KJtxSxA.log()
+
+                KJt = stat_probs_KJtxSxA.shape[0]  # broadcasting is possible (KJt=1)
+                S = stat_probs_KJtxSxA.shape[1]  # broadcasting is possible (S=1)
+
+                # handle special case of stat_probs_VxSxA() broadcasting along
+                # the batch dimension
+                if KJt == 1:
+                    return log_stat_probs_KJtxSxA.view(1, 1, S, A)
+                else:
+                    return log_stat_probs_KJtxSxA.view(K * J, -1, S, A)
+
+            prev_log_pi_KJ = log_pi_KJ
+            log_stat_probs_KJxtxSxA = compute_log_stat_probs_KJxtxSxA()
+
+            log_likelihood_KJ, log_pi_KJ = compute_log_likelihood_and_pi_K(
+                branch1_lengths_KJxr,
+                branch2_lengths_KJxr,
+                leaf_counts_KJxt,
+                log_felsensteins_KJxtxSxA,
+                log_stat_probs_KJxtxSxA,
+                self.prior_dist,
+                self.prior_branch_len,
+                self.log_double_factorials_2N,
+            )
+
+            # ===== compute weights =====
+
+            # compute over-counting correction
+            log_v_minus_KJ = compute_log_v_minus_K(N, leaf_counts_KJxt)
+
+            # equation (7) in the VCSMC paper
+            log_weight_KJ = log_pi_KJ - prev_log_pi_KJ + log_v_minus_KJ - log_v_plus_KJ
+
+            # for each initial particle, average over sub-particle weights
+            log_weight_KxJ = log_weight_KJ.reshape(K, J)
+            log_weight_K = torch.logsumexp(log_weight_KxJ, 1)
+            log_weight_K = log_weight_K - torch.log(torch.tensor(J))  # divide by J
+
+            log_weights_list_rxK.append(log_weight_K)
+
+            #  ===== sample particles from sub-particles =====
+
+            if J > 1:
+                # distr has K batches, with J sub-particle weights per batch
+                sub_resample_distr_K = torch.distributions.Categorical(
+                    logits=log_weight_KxJ
+                )
+                sub_indexes_K = sub_resample_distr_K.sample()
+            else:
+                sub_indexes_K = torch.zeros(K, dtype=torch.int)
+
+            idx1_K = gather_K(idx1_KxJ, sub_indexes_K)
+            idx2_K = gather_K(idx2_KxJ, sub_indexes_K)
+            branch1_K = gather_K(branch1_KxJ, sub_indexes_K)
+            branch2_K = gather_K(branch2_KxJ, sub_indexes_K)
+            embedding_KxD = gather_K(embedding_KxJxD, sub_indexes_K)
+
+            log_felsensteins_KxJxtxSxA = log_felsensteins_KJxtxSxA.reshape(
+                K, J, -1, S, A
+            )
+            log_likelihood_KxJ = log_likelihood_KJ.reshape(K, J)
+            log_pi_KxJ = log_pi_KJ.reshape(K, J)
+
+            log_felsensteins_KxtxSxA = gather_K(
+                log_felsensteins_KxJxtxSxA, sub_indexes_K
+            )
+            log_likelihood_K = gather_K(log_likelihood_KxJ, sub_indexes_K)
+            log_pi_K = gather_K(log_pi_KxJ, sub_indexes_K)
+
+            # ===== post sub-particle resampling bookkeeping =====
+
             # helper function
             def merge_K(arr_K: Tensor, new_val_K: Tensor):
                 return replace_with_merged_K(arr_K, idx1_K, idx2_K, new_val_K)
-
-            # ===== post-proposal bookkeeping =====
 
             merge1_indexes_Kxr = concat_K(merge1_indexes_Kxr, idx1_K)
             merge2_indexes_Kxr = concat_K(merge2_indexes_Kxr, idx2_K)
@@ -207,67 +338,6 @@ class VCSMC(nn.Module):
                 gather_K(leaf_counts_Kxt, idx1_K) + gather_K(leaf_counts_Kxt, idx2_K),
             )
             embeddings_KxtxD = merge_K(embeddings_KxtxD, embedding_KxD)
-
-            # ===== compute Felsenstein likelihoods =====
-
-            Q_matrix_KxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
-                embedding_KxD, site_positions_SxC
-            )
-
-            log_felsensteins_KxSxA = compute_log_felsenstein_likelihoods_KxSxA(
-                Q_matrix_KxSxAxA,
-                gather_K(log_felsensteins_KxtxSxA, idx1_K),
-                gather_K(log_felsensteins_KxtxSxA, idx2_K),
-                branch1_K,
-                branch2_K,
-            )
-            log_felsensteins_KxtxSxA = merge_K(
-                log_felsensteins_KxtxSxA, log_felsensteins_KxSxA
-            )
-
-            # ===== compute new likelihood, pi, and weight =====
-
-            def compute_log_stat_probs_KxtxSxA():
-                t = embeddings_KxtxD.shape[1]
-
-                # flatten embeddings to compute stat_probs, then reshape back
-                embeddings_KtxD = embeddings_KxtxD.reshape(K * t, D)
-                stat_probs_KtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
-                    embeddings_KtxD, site_positions_SxC
-                )
-                log_stat_probs_KtxSxA = stat_probs_KtxSxA.log()
-
-                Kt = stat_probs_KtxSxA.shape[0]
-                S = stat_probs_KtxSxA.shape[1]
-
-                # if stat_probs_VxSxA() returned a tensor with S=1 and/or Kt=1,
-                # continue to use broadcasting
-                if Kt == 1:
-                    return log_stat_probs_KtxSxA.view(1, 1, S, A)
-                else:
-                    return log_stat_probs_KtxSxA.view(K, t, S, A)
-
-            prev_log_pi_K = log_pi_K
-            log_stat_probs_KxtxSxA = compute_log_stat_probs_KxtxSxA()
-
-            log_likelihood_K, log_pi_K = compute_log_likelihood_and_pi_K(
-                branch1_lengths_Kxr,
-                branch2_lengths_Kxr,
-                leaf_counts_Kxt,
-                log_felsensteins_KxtxSxA,
-                log_stat_probs_KxtxSxA,
-                self.prior_dist,
-                self.prior_branch_len,
-                self.log_double_factorials_2N,
-            )
-
-            # compute over-counting correction
-            log_v_minus_K = compute_log_v_minus_K(N, leaf_counts_Kxt)
-
-            # equation (7) in the VCSMC paper
-            log_weight_K = log_pi_K - prev_log_pi_K + log_v_minus_K - log_v_plus_K
-
-            log_weights_list_rxK.append(log_weight_K)
 
         # ===== compute Z_SMC =====
 
