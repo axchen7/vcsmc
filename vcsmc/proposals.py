@@ -67,7 +67,7 @@ class ExpBranchProposal(Proposal):
         *,
         N: int,
         initial_branch_len: float = 1.0,
-        lookahead: bool = False,
+        lookahead_merge: bool = False,
     ):
         """
         Args:
@@ -75,7 +75,7 @@ class ExpBranchProposal(Proposal):
             initial_branch_len: The initial expected value of the branch lengths.
                 The exponential distribution from which branch lengths are
                 sampled will initially have lambda = 1/initial_branch_len.
-            lookahead: if True, will return a particle for each of the J=(t choose 2) possible merges.
+            lookahead_merge: if True, will return a particle for each of the J=(t choose 2) possible merges.
                 An independent pair of branch lengths will be sampled for each particle.
         """
 
@@ -86,7 +86,7 @@ class ExpBranchProposal(Proposal):
         # value of variable is passed through exp() later
         initial_log_rates = torch.tensor(initial_rate).log().repeat(N - 1)
 
-        self.lookahead = lookahead
+        self.lookahead_merge = lookahead_merge
 
         # exponential distribution rates for sampling branch lengths; N1 -> N-1
         self.log_rates1_N1 = nn.Parameter(initial_log_rates)
@@ -114,7 +114,7 @@ class ExpBranchProposal(Proposal):
 
         # ===== determine nodes to merge =====
 
-        if self.lookahead:
+        if self.lookahead_merge:
             # take all possible n choose 2 merge pairs
             J = t_choose_2
 
