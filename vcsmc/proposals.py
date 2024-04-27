@@ -220,10 +220,16 @@ class EmbeddingProposal(Proposal):
         # ===== determine nodes to merge =====
 
         if self.merge_indexes_N1x2 is not None:
-            idx1_K = self.merge_indexes_N1x2[r, 0].repeat(K)
-            idx2_K = self.merge_indexes_N1x2[r, 1].repeat(K)
+            J = 1
+            idx1_KxJ = self.merge_indexes_N1x2[r, 0].repeat(K).unsqueeze(1)
+            idx2_KxJ = self.merge_indexes_N1x2[r, 1].repeat(K).unsqueeze(1)
+            log_merge_prob_K = torch.zeros([K])
+        elif self.lookahead_merge:
+            J, idx1_KxJ, idx2_KxJ = get_lookahead_merge_indexes(K=K, t=t)
             log_merge_prob_K = torch.zeros([K])
         else:
+            J = 1
+
             if self.sample_merge_temp is not None:
                 # randomly select two subtrees to merge, using pairwise distances as
                 # negative log probabilities, and incorporating the sample
@@ -260,6 +266,9 @@ class EmbeddingProposal(Proposal):
             idx1_K = flattened_sample_K // t
             idx2_K = flattened_sample_K % t
 
+            idx1_KxJ = idx1_K.unsqueeze(1)
+            idx2_KxJ = idx2_K.unsqueeze(1)
+
             # merge prob = merge weight * 2 / sum of all weights
 
             # the factor of 2 is because merging (idx1, idx2) is equivalent to
@@ -273,57 +282,61 @@ class EmbeddingProposal(Proposal):
 
         # ===== get merged embedding =====
 
-        child1_KxD = gather_K(embeddings_KxtxD, idx1_K)
-        child2_KxD = gather_K(embeddings_KxtxD, idx2_K)
+        idx1_KJ = idx1_KxJ.flatten()
+        idx2_KJ = idx2_KxJ.flatten()
+        embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
 
-        embedding_KxD = self.merge_encoder(child1_KxD, child2_KxD)
+        child1_KJxD = gather_K(embeddings_KJxtxD, idx1_KJ)
+        child2_KJxD = gather_K(embeddings_KJxtxD, idx2_KJ)
+
+        embedding_KJxD = self.merge_encoder(child1_KJxD, child2_KJxD)
+        embedding_KxJxD = embedding_KJxD.reshape(K, J, -1)
 
         # ===== sample/get branches parameters =====
 
-        dist1_K: Tensor = self.distance(child1_KxD, embedding_KxD)
-        dist2_K: Tensor = self.distance(child2_KxD, embedding_KxD)
+        dist1_KJ: Tensor = self.distance(child1_KJxD, embedding_KJxD)
+        dist2_KJ: Tensor = self.distance(child2_KJxD, embedding_KJxD)
+
+        dist1_KxJ = dist1_KJ.reshape(K, J)
+        dist2_KxJ = dist2_KJ.reshape(K, J)
 
         if self.sample_branches:
             # sample branch lengths from exp distributions whose expectations
             # are the distances between children and merged embeddings
 
             # EPSILON**0.5 is needed to prevent division by zero under float32
-            rate1_K = 1 / (dist1_K + EPSILON**0.5)
-            rate2_K = 1 / (dist2_K + EPSILON**0.5)
+            rate1_KxJ = 1 / (dist1_KxJ + EPSILON**0.5)
+            rate2_KxJ = 1 / (dist2_KxJ + EPSILON**0.5)
 
             # re-parameterization trick: sample from U[0, 1] and transform to
             # exponential distribution (so gradients can flow through the sample)
 
-            uniform1_K = torch.rand([K])
-            uniform2_K = torch.rand([K])
+            uniform1_KxJ = torch.rand([K, J])
+            uniform2_KxJ = torch.rand([K, J])
 
             # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
-            branch1_K = -(1 / rate1_K) * uniform1_K.log()
-            branch2_K = -(1 / rate2_K) * uniform2_K.log()
+            branch1_KxJ = -(1 / rate1_KxJ) * uniform1_KxJ.log()
+            branch2_KxJ = -(1 / rate2_KxJ) * uniform2_KxJ.log()
 
             # log of exponential pdf
-            log_branch1_prob_K = rate1_K.log() - rate1_K * branch1_K
-            log_branch2_prob_K = rate2_K.log() - rate2_K * branch2_K
+            log_branch1_prob_KxJ = rate1_KxJ.log() - rate1_KxJ * branch1_KxJ
+            log_branch2_prob_KxJ = rate2_KxJ.log() - rate2_KxJ * branch2_KxJ
         else:
-            branch1_K = dist1_K
-            branch2_K = dist2_K
+            branch1_KxJ = dist1_KxJ
+            branch2_KxJ = dist2_KxJ
 
-            log_branch1_prob_K = torch.zeros([K])
-            log_branch2_prob_K = torch.zeros([K])
+            log_branch1_prob_KxJ = torch.zeros([K, J])
+            log_branch2_prob_KxJ = torch.zeros([K, J])
 
         # ===== compute proposal probability =====
 
-        log_v_plus_K = log_merge_prob_K + log_branch1_prob_K + log_branch2_prob_K
+        log_merge_prob_Kx1 = log_merge_prob_K.unsqueeze(1)
+
+        log_v_plus_KxJ = (
+            log_merge_prob_Kx1 + log_branch1_prob_KxJ + log_branch2_prob_KxJ
+        )
 
         # ===== return proposal =====
-
-        # add singleton dimension for J (propose only one particle)
-        idx1_KxJ = idx1_K.unsqueeze(1)
-        idx2_KxJ = idx2_K.unsqueeze(1)
-        branch1_KxJ = branch1_K.unsqueeze(1)
-        branch2_KxJ = branch2_K.unsqueeze(1)
-        embedding_KxJxD = embedding_KxD.unsqueeze(1)
-        log_v_plus_KxJ = log_v_plus_K.unsqueeze(1)
 
         return (
             idx1_KxJ,
