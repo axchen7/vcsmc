@@ -198,7 +198,6 @@ class EmbeddingProposal(Proposal):
         merge_encoder: MergeEncoder,
         *,
         lookahead_merge: bool = False,
-        q_matrix_decoder: QMatrixDecoder | None = None,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
         merge_indexes_N1x2: Tensor | None = None,
@@ -208,9 +207,7 @@ class EmbeddingProposal(Proposal):
             distance: The distance function to use for embedding.
             seq_encoder: Sequence encoder.
             merge_encoder: Merge encoder.
-            lookahead_merge: Whether to use lookahead likelihoods for sampling merge pairs.
-                If false, pairwise distances are used as merge weights.
-            q_matrix_decoder: Q matrix decoder. Must be provided if `lookahead_merge` is true.
+            lookahead_merge: if True, will return a particle for each of the J=(t choose 2) possible merges.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. If None, then a
@@ -223,12 +220,8 @@ class EmbeddingProposal(Proposal):
 
         super().__init__(seq_encoder)
 
-        if lookahead_merge:
-            assert q_matrix_decoder is not None
-
         self.distance = distance
         self.merge_encoder = merge_encoder
-        self.q_matrix_decoder = q_matrix_decoder
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
@@ -244,7 +237,6 @@ class EmbeddingProposal(Proposal):
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
-        S = site_positions_SxC.shape[0]  # number of sites
 
         r = N - t  # merge step
 
@@ -265,74 +257,7 @@ class EmbeddingProposal(Proposal):
             idx2_K = self.merge_indexes_N1x2[r, 1].repeat(K)
             log_merge_prob_K = torch.zeros([K])
         else:
-            if self.lookahead_merge:
-                assert self.q_matrix_decoder is not None
-
-                # ===== compute lookahead likelihoods for merge weights =====
-
-                with torch.no_grad():
-                    # repeat like 123123123...
-                    flat_log_felsensteins1_KttxSxA = log_felsensteins_KxtxSxA.repeat(
-                        1, t, 1, 1
-                    ).view(Ktt, S, -1)
-                    # repeat like 111222333...
-                    flat_log_felsensteins2_KttxSxA = log_felsensteins_KxtxSxA.repeat(
-                        1, 1, t, 1
-                    ).view(Ktt, S, -1)
-
-                    lookahead_parents_KttxD = self.merge_encoder(
-                        flat_embeddings1_KttxD,
-                        flat_embeddings2_KttxD,
-                        flat_log_felsensteins1_KttxSxA,
-                        flat_log_felsensteins2_KttxSxA,
-                        site_positions_SxC,
-                    )
-
-                    lookahead_branches1_Ktt = self.distance(
-                        flat_embeddings1_KttxD, lookahead_parents_KttxD
-                    )
-                    lookahead_branches2_Ktt = self.distance(
-                        flat_embeddings2_KttxD, lookahead_parents_KttxD
-                    )
-
-                    lookahead_Q_matrices_KttxSxAxA = (
-                        self.q_matrix_decoder.Q_matrix_VxSxAxA(
-                            lookahead_parents_KttxD, site_positions_SxC
-                        )
-                    )
-                    lookahead_stat_probs_KttxSxA = (
-                        self.q_matrix_decoder.stat_probs_VxSxA(
-                            lookahead_parents_KttxD, site_positions_SxC
-                        )
-                    )
-                    lookahead_log_stat_probs_KttxSxA = (
-                        lookahead_stat_probs_KttxSxA.log()
-                    )
-
-                    lookahead_log_felsensteins_KttxSxA = (
-                        compute_log_felsenstein_likelihoods_KxSxA(
-                            lookahead_Q_matrices_KttxSxAxA,
-                            flat_log_felsensteins1_KttxSxA,
-                            flat_log_felsensteins2_KttxSxA,
-                            lookahead_branches1_Ktt,
-                            lookahead_branches2_Ktt,
-                        )
-                    )
-
-                    # dot Felsenstein probabilities with stationary probabilities (along axis A)
-                    lookahead_log_likelihoods_KttxS = torch.logsumexp(
-                        lookahead_log_felsensteins_KttxSxA
-                        + lookahead_log_stat_probs_KttxSxA,
-                        -1,
-                    )
-                    lookahead_log_likelihoods_Ktt = lookahead_log_likelihoods_KttxS.sum(
-                        -1
-                    )
-
-                    merge_log_weights_Kxtxt = lookahead_log_likelihoods_Ktt.view(
-                        K, t, t
-                    )
-            elif self.sample_merge_temp is not None:
+            if self.sample_merge_temp is not None:
                 # ===== compute pairwise distances for merge weights =====
 
                 pairwise_distances_Ktt: Tensor = self.distance(
