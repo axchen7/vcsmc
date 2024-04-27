@@ -250,9 +250,9 @@ class VCSMC(nn.Module):
                 # handle special case of stat_probs_VxSxA() broadcasting along
                 # the batch dimension
                 if KJt == 1:
-                    return log_stat_probs_KJtxSxA.view(1, 1, S, A)
+                    return log_stat_probs_KJtxSxA.reshape(1, 1, S, A)
                 else:
-                    return log_stat_probs_KJtxSxA.view(K * J, -1, S, A)
+                    return log_stat_probs_KJtxSxA.reshape(K * J, -1, S, A)
 
             prev_log_pi_KJ = log_pi_KJ
             log_stat_probs_KJxtxSxA = compute_log_stat_probs_KJxtxSxA()
