@@ -119,7 +119,7 @@ def expm_taylor(A):
         # Handle small normA
         more = normA > thetas[-1]
         k = normA.new_zeros(normA.size(), dtype=torch.long)
-        k[more] = torch.ceil(torch.log2(normA[more]) - math.log2(thetas[-1])).long()
+        k[more] = torch.ceil(torch.log2(normA[more]) - math.log2(thetas[-1])).long().clone()
 
         # A = A * 2**(-s)
         A = torch.pow(.5, k.float()).unsqueeze_(-1).unsqueeze_(-1).expand_as(A) * A
