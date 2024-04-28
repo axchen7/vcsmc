@@ -8,7 +8,7 @@ from .vcsmc_utils import gather_K, gather_K2
 
 
 def get_lookahead_merge_indexes(*, K, t: int) -> tuple[int, Tensor, Tensor]:
-    # take all possible (n choose 2) merge pairs
+    # take all possible (t choose 2) merge pairs
     J = t * (t - 1) // 2
 
     take_J = torch.ones([t, t], dtype=torch.bool).triu(1).flatten().nonzero().flatten()
