@@ -50,7 +50,7 @@ import matplotlib.pyplot as plt
 from vcsmc import *
 
 
-def load_log_likelihoods(D):
+def load_log_likelihoods(D: int):
     run_name = f"Hyp_SMC_D{D}"
 
     results: TrainResults = torch.load(
