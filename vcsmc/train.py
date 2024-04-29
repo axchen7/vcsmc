@@ -275,7 +275,7 @@ def train(
             ),
             record_shapes=True,
             profile_memory=True,
-            with_stack=True,
+            # with_stack=True, (deprecated/broken)
         ) as prof:
             train_epochs(prof)
     else:
