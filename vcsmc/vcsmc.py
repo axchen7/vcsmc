@@ -230,6 +230,7 @@ class VCSMC(nn.Module):
 
             else:
                 Z = K * J
+                undo_unique_hash_idx_KJ = torch.arange(Z, device=device)
 
                 def squeeze_Z(arr_KJ: Tensor):
                     return arr_KJ
@@ -362,9 +363,10 @@ class VCSMC(nn.Module):
 
             # helper function
             def gather_sub_K(arr_Z: Tensor):
-                arr_KJ = unsqueeze_KJ(arr_Z)
-                arr_KxJ = arr_KJ.reshape((K, J) + arr_KJ.shape[1:])
-                return gather_K(arr_KxJ, sub_indexes_K)
+                idx_K = torch.arange(K, device=device) * J
+                idx_K = idx_K + sub_indexes_K
+                idx2_K = undo_unique_hash_idx_KJ[idx_K]
+                return arr_Z[idx2_K]
 
             # helper function
             def concat_sub_K(arr_Zxr, val_K):
