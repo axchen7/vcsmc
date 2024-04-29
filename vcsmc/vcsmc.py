@@ -19,7 +19,7 @@ from .vcsmc_utils import (
 
 
 class VcsmcResult(TypedDict):
-    log_Z_SMC: Tensor
+    log_ZCSMC: Tensor
     log_likelihood_K: Tensor
     best_newick_tree: str
     best_merge1_indexes_N1: Tensor  # left node index at each step
@@ -89,7 +89,7 @@ class VCSMC(nn.Module):
                 S = number of sites in the batch.
                 Sfull = total number of sites.
         Returns a dict containing:
-            log_Z_SMC: lower bound to the likelihood; should set cost = -log_Z_SMC
+            log_ZCSMC: lower bound to the likelihood; should set cost = -log_ZCSMC
             log_likelihood_K: log likelihoods for each particle at the last merge step
             best_newick_tree: Newick tree with the highest likelihood
             best_merge1_indexes_r: left node merge indexes for the best tree
@@ -134,7 +134,7 @@ class VCSMC(nn.Module):
         # for computing empirical measure pi_rk(s); initialize to uniform
         log_weight_K = torch.zeros(K, device=device)
 
-        # must record all weights to compute Z_SMC
+        # must record all weights to compute ZCSMC
         log_weights_list_rxK: list[Tensor] = []
 
         # for returning at the end
@@ -394,17 +394,17 @@ class VCSMC(nn.Module):
             log_likelihood_K = gather_sub_K(log_likelihood_Z)
             log_pi_K = gather_sub_K(log_pi_Z)
 
-        # ===== compute Z_SMC =====
+        # ===== compute ZCSMC =====
 
-        # Forms the estimator log_Z_SMC, a multi sample lower bound to the
-        # likelihood. Z_SMC is formed by averaging over weights (across k) and
+        # Forms the estimator log_ZCSMC, a multi sample lower bound to the
+        # likelihood. ZCSMC is formed by averaging over weights (across k) and
         # multiplying over coalescent events (across r).
         # See equation (8) in the VCSMC paper.
 
         log_weights_rxK = torch.stack(log_weights_list_rxK)
         log_scaled_weights_rxK = log_weights_rxK - math.log(K)
         log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
-        log_Z_SMC = torch.sum(log_sum_weights_r)
+        log_ZCSMC = torch.sum(log_sum_weights_r)
 
         # ===== build best Newick tree =====
 
@@ -420,7 +420,7 @@ class VCSMC(nn.Module):
         # ===== return final results =====
 
         return {
-            "log_Z_SMC": log_Z_SMC,
+            "log_ZCSMC": log_ZCSMC,
             "log_likelihood_K": log_likelihood_K,
             "best_newick_tree": best_newick_tree,
             "best_merge1_indexes_N1": merge1_indexes_Kxr[best_tree_idx],

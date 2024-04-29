@@ -81,7 +81,7 @@ def train(
     )
 
     # track data across epochs
-    elbos: list[float] = []
+    ZCSMCs: list[float] = []
     log_likelihood_avgs: list[float] = []
 
     # ===== helper functions =====
@@ -116,7 +116,7 @@ def train(
 
     def save_results():
         results: TrainResults = {
-            "elbos": elbos,
+            "ZCSMCs": ZCSMCs,
             "log_likelihood_avgs": log_likelihood_avgs,
         }
         filename = "results.pt"
@@ -129,13 +129,13 @@ def train(
         Trains one epoch, iterating through batches.
 
         Returns:
-            log_Z_SMC_sum: Sum across batches of log_Z_SMC.
+            log_ZCSMC_sum: Sum across batches of ZCSMCs.
             log_likelihood_K: log likelihoods, or None if there are multiple batches.
             log_likelihood_sum: Sum across batches of log likelihoods averaged across particles.
             best_newick_tree: best of the K newick trees from the first epoch.
         """
 
-        log_Z_SMC_sum = 0.0
+        log_ZCSMC_sum = 0.0
         log_likelihood_sum = 0.0
 
         best_newick_tree = ""
@@ -151,7 +151,7 @@ def train(
                 site_positions_batched_SxSfull,
             )
 
-            log_Z_SMC = result["log_Z_SMC"]
+            log_ZCSMC = result["log_ZCSMC"]
             log_likelihood_K = result["log_likelihood_K"]
 
             log_likelihood_avg = log_likelihood_K.mean()
@@ -159,13 +159,13 @@ def train(
             if best_newick_tree == "":
                 best_newick_tree = result["best_newick_tree"]
 
-            loss = -log_Z_SMC
+            loss = -log_ZCSMC
 
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
-            log_Z_SMC_sum += log_Z_SMC.item()
+            log_ZCSMC_sum += log_ZCSMC.item()
             log_likelihood_sum += log_likelihood_avg.item()
 
         if lr_scheduler is not None:
@@ -174,7 +174,7 @@ def train(
         if len(dataloader) > 1:
             log_likelihood_K = None
 
-        return log_Z_SMC_sum, log_likelihood_K, log_likelihood_sum, best_newick_tree
+        return log_ZCSMC_sum, log_likelihood_K, log_likelihood_sum, best_newick_tree
 
     @torch.no_grad()
     def get_avg_root_Q_matrix_AxA():
@@ -219,7 +219,7 @@ def train(
 
             epoch += start_epoch
 
-            log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
+            log_ZCSMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
                 train_step(dataloader)
             )
 
@@ -227,10 +227,10 @@ def train(
 
             cosine_similarity = get_data_reconstruction_cosine_similarity()
 
-            elbos.append(log_Z_SMC_sum)
+            ZCSMCs.append(log_ZCSMC_sum)
             log_likelihood_avgs.append(log_likelihood_avg)
 
-            writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
+            writer.add_scalar("Log ZCSMC", log_ZCSMC_sum, epoch)
             writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
             writer.add_scalar(
                 "Data reconstruction cosine similarity",

@@ -29,7 +29,7 @@ class TrainCheckpoint(TypedDict):
 
 
 class TrainResults(TypedDict):
-    elbos: list[float]
+    ZCSMCs: list[float]
     log_likelihood_avgs: list[float]
 
 
