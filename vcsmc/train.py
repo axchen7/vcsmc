@@ -61,7 +61,7 @@ def train(
     start_epoch: int = 0,
     sites_batch_size: int | None = None,
     run_name: str | None = None,
-    graph_and_profile: bool = False,
+    profile: bool = False,
 ):
     # ===== setup =====
 
@@ -207,73 +207,79 @@ def train(
 
     dataloader = batch_by_sites(data_NxSxA, sites_batch_size)
 
-    # ===== generate graph and profile =====
-
-    # TODO migrate to torch
-
-    # if graph_and_profile:
-    #     data_batched_NxSxA, site_positions_batched_SxSfull = next(iter(dataset))
-
-    #     tf.summary.trace_on(graph=True, profiler=True)  # type: ignore
-    #     vcsmc(data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
-    #     with summary_writer.as_default():
-    #         tf.summary.trace_export(name="vcsmc", step=0, profiler_outdir=results_dir)  # type: ignore
-
     # ===== train =====
 
     save_args()
     save_checkpoint(start_epoch)
 
-    for epoch in tqdm(range(epochs - start_epoch)):
-        epoch += start_epoch
+    def train_epochs(prof: torch.profiler.profile | None):
+        for epoch in tqdm(range(epochs - start_epoch)):
+            if prof:
+                prof.step()
 
-        log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
-            train_step(dataloader)
-        )
+            epoch += start_epoch
 
-        save_checkpoint(epoch + 1)
+            log_Z_SMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
+                train_step(dataloader)
+            )
 
-        cosine_similarity = get_data_reconstruction_cosine_similarity()
+            save_checkpoint(epoch + 1)
 
-        elbos.append(log_Z_SMC_sum)
-        log_likelihood_avgs.append(log_likelihood_avg)
+            cosine_similarity = get_data_reconstruction_cosine_similarity()
 
-        writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
-        writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
-        writer.add_scalar(
-            "Data reconstruction cosine similarity",
-            cosine_similarity,
-            epoch,
-        )
+            elbos.append(log_Z_SMC_sum)
+            log_likelihood_avgs.append(log_likelihood_avg)
 
-        if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
+            writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
+            writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
             writer.add_scalar(
-                "Hyperbolic scale", vcsmc.proposal.seq_encoder.distance.scale, epoch
+                "Data reconstruction cosine similarity",
+                cosine_similarity,
+                epoch,
             )
 
-        if log_likelihood_K is not None:
-            writer.add_histogram("Log likelihoods", log_likelihood_K, epoch)
+            if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
+                writer.add_scalar(
+                    "Hyperbolic scale", vcsmc.proposal.seq_encoder.distance.scale, epoch
+                )
 
-        if (epoch + 1) % 4 == 0:
-            # ===== best tree =====
+            if log_likelihood_K is not None:
+                writer.add_histogram("Log likelihoods", log_likelihood_K, epoch)
 
-            fig, ax = plt.subplots(figsize=(10, N * 0.2))
+            if (epoch + 1) % 4 == 0:
+                # ===== best tree =====
 
-            phylo_tree = Phylo.read(  # type: ignore
-                StringIO(best_newick_tree), "newick"
-            )
-            phylo_tree.root_with_outgroup(actual_root)
-            Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
+                fig, ax = plt.subplots(figsize=(10, N * 0.2))
 
-            writer.add_figure("Best tree", fig, epoch)
+                phylo_tree = Phylo.read(  # type: ignore
+                    StringIO(best_newick_tree), "newick"
+                )
+                phylo_tree.root_with_outgroup(actual_root)
+                Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
-            # ===== Q matrix =====
+                writer.add_figure("Best tree", fig, epoch)
 
-            fig, ax = plt.subplots()
-            ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
-            writer.add_figure("Root Q matrix (average across sites)", fig, epoch)
+                # ===== Q matrix =====
 
-        writer.flush()
+                fig, ax = plt.subplots()
+                ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
+                writer.add_figure("Root Q matrix (average across sites)", fig, epoch)
+
+            writer.flush()
+
+    if profile:
+        with torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                writer.get_logdir()
+            ),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        ) as prof:
+            train_epochs(prof)
+    else:
+        train_epochs(None)
 
     # ===== done training! =====
 
