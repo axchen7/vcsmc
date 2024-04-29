@@ -4,6 +4,8 @@
 import torch
 from torch import Tensor
 
+from ..fast_bmm import fast_bmm
+
 
 def expm_simple(x: Tensor, order=10) -> Tensor:
     """
@@ -19,7 +21,7 @@ def expm_simple(x: Tensor, order=10) -> Tensor:
     denom = 1.0
 
     for i in range(1, order):
-        nom = torch.matmul(x, nom)
+        nom = fast_bmm(x, nom)
         denom *= i
         result = result + nom / denom
 
