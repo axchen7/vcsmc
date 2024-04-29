@@ -55,11 +55,13 @@ class JC69QMatrixDecoder(QMatrixDecoder):
         Q_matrix_AxA = torch.full([A, A], fill_value)
         # set diagonal to -1 (sum of off-diagonal entries)
         Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(A))
-        self.Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
+        Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
+        self.register_buffer("Q_matrix_1x1xAxA", Q_matrix_1x1xAxA)
 
         # stationary probabilities are uniform
         stat_probs_A = torch.full([A], 1 / A)
-        self.stat_probs_1x1xA = stat_probs_A[None, None]
+        stat_probs_1x1xA = stat_probs_A[None, None]
+        self.register_buffer("stat_probs_1x1xA", stat_probs_1x1xA)
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -97,18 +99,20 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
+        device = embeddings_VxD.device
+
         # use exp to ensure all off-diagonal entries are positive
         Q_matrix_AxA = self.log_Q_matrix_AxA.exp()
 
         # exclude diagonal entry for now...
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(torch.zeros(self.A))
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(torch.zeros(self.A, device=device))
 
         # normalize off-diagonal entries within each row
         denom_Ax1 = torch.sum(Q_matrix_AxA, -1, True)
         Q_matrix_AxA = Q_matrix_AxA / denom_Ax1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(self.A))
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(self.A, device=device))
 
         # return only shape (1,1,A,A), but assume broadcasting rules apply...
         Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
@@ -163,6 +167,8 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
+        device = embeddings_VxD.device
+
         V = embeddings_VxD.shape[0]
 
         expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
@@ -176,7 +182,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
         # exclude diagonal entry for now...
         Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
-            torch.zeros(V, self.A), dim1=-2, dim2=-1
+            torch.zeros(V, self.A, device=device), dim1=-2, dim2=-1
         )
 
         # normalize off-diagonal entries within each row
@@ -185,7 +191,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
 
         # set diagonal to -1 (sum of off-diagonal entries)
         Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
-            -torch.ones(V, self.A), dim1=-2, dim2=-1
+            -torch.ones(V, self.A, device=device), dim1=-2, dim2=-1
         )
 
         # return only shape (V,1,A,A), but assume broadcasting rules apply...
@@ -242,6 +248,8 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
+        device = embeddings_VxD.device
+
         pi = self.nucleotide_exchanges_6()  # length 6
         pi8 = pi.repeat(8)
 
@@ -260,8 +268,8 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         ]
         # fmt: on
 
-        updates = torch.tensor(updates_list)
-        R_AxA = torch.zeros(16, 16)
+        updates = torch.tensor(updates_list, device=device)
+        R_AxA = torch.zeros(16, 16, device=device)
         R_AxA[updates[:, 0], updates[:, 1]] = pi8
         R_AxA = R_AxA + R_AxA.t()
 
@@ -347,6 +355,8 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
+        device = embeddings_VxD.device
+
         V = embeddings_VxD.shape[0]
         S = site_positions_SxC.shape[0]
 
@@ -361,7 +371,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
 
         # set the diagonals to the sum of the off-diagonal entries
         Q_matrix_VxSxAxA = Q_matrix_VxSxAxA.diagonal_scatter(
-            torch.zeros(V, S, self.A), dim1=-2, dim2=-1
+            torch.zeros(V, S, self.A, device=device), dim1=-2, dim2=-1
         )
         diag_VxSxA = torch.sum(Q_matrix_VxSxAxA, -1)
         Q_matrix_VxSxAxA = Q_matrix_VxSxAxA.diagonal_scatter(

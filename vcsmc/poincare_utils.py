@@ -171,7 +171,9 @@ def interactive_q_matrix(vcsmc: VCSMC, data_NxSxA: Tensor):
     def plot_q_matrix(r, theta, s):
         x = r * math.cos(theta)
         y = r * math.sin(theta)
-        embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
+        embedding_1xD = distance.unnormalize(
+            torch.tensor([x, y], device=data_NxSxA.device).unsqueeze(0)
+        )
         q_matrix_SxAxA = vcsmc.q_matrix_decoder.Q_matrix_VxSxAxA(
             embedding_1xD, site_positions_SxC
         )[0]
@@ -205,7 +207,9 @@ def interactive_stat_probs(vcsmc: VCSMC, data_NxSxA: Tensor):
     def plot_stat_probs(r, theta, s_start):
         x = r * math.cos(theta)
         y = r * math.sin(theta)
-        embedding_1xD = distance.unnormalize(torch.tensor([x, y]).unsqueeze(0))
+        embedding_1xD = distance.unnormalize(
+            torch.tensor([x, y], device=data_NxSxA.device).unsqueeze(0)
+        )
         stat_probs_SxA = vcsmc.q_matrix_decoder.stat_probs_VxSxA(
             embedding_1xD, site_positions_SxC
         )[0]

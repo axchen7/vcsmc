@@ -129,7 +129,7 @@ def train(
 
     def train_step(
         dataloader: DataLoader,
-    ) -> tuple[Tensor, Tensor | None, Tensor, str]:
+    ) -> tuple[float, Tensor | None, float, str]:
         """
         Trains one epoch, iterating through batches.
 
@@ -140,8 +140,8 @@ def train(
             best_newick_tree: best of the K newick trees from the first epoch.
         """
 
-        log_Z_SMC_sum = torch.tensor(0.0)
-        log_likelihood_sum = torch.tensor(0.0)
+        log_Z_SMC_sum = 0.0
+        log_likelihood_sum = 0.0
 
         best_newick_tree = ""
 
@@ -170,8 +170,8 @@ def train(
             optimizer.step()
             optimizer.zero_grad()
 
-            log_Z_SMC_sum = log_Z_SMC_sum + log_Z_SMC
-            log_likelihood_sum = log_likelihood_sum + log_likelihood_avg
+            log_Z_SMC_sum += log_Z_SMC.item()
+            log_likelihood_sum += log_likelihood_avg.item()
 
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -240,8 +240,8 @@ def train(
 
         cosine_similarity = get_data_reconstruction_cosine_similarity()
 
-        elbos.append(log_Z_SMC_sum.item())
-        log_likelihood_avgs.append(log_likelihood_avg.item())
+        elbos.append(log_Z_SMC_sum)
+        log_likelihood_avgs.append(log_likelihood_avg)
 
         writer.add_scalar("Elbo", log_Z_SMC_sum, epoch)
         writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)

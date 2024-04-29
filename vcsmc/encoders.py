@@ -39,7 +39,7 @@ class DummySequenceEncoder(SequenceEncoder):
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         V = sequences_VxSxA.shape[0]
-        return torch.zeros([V, 0])
+        return torch.zeros([V, 0], device=sequences_VxSxA.device)
 
 
 class EmbeddingTableSequenceEncoder(SequenceEncoder):
@@ -90,7 +90,9 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
                         break
                 else:
                     raise ValueError("Sequence not found in data.")
-            return self.embedding_table(torch.tensor(indices_V))
+            return self.embedding_table(
+                torch.tensor(indices_V, device=sequences_VxSxA.device)
+            )
 
 
 class MLPSequenceEncoder(SequenceEncoder):

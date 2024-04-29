@@ -148,7 +148,7 @@ def gather_K(arr_K: Tensor, index_K: Tensor) -> Tensor:
     [k, index[k]] for each k in [0, K). Returns a tensor of shape (K, ...).
     """
     K = arr_K.shape[0]
-    return arr_K[torch.arange(K), index_K]
+    return arr_K[torch.arange(K, device=arr_K.device), index_K]
 
 
 def gather_K2(arr_K: Tensor, index1_K: Tensor, index2_K: Tensor) -> Tensor:
@@ -158,7 +158,7 @@ def gather_K2(arr_K: Tensor, index1_K: Tensor, index2_K: Tensor) -> Tensor:
     Returns a tensor of shape (K, ...).
     """
     K = arr_K.shape[0]
-    return arr_K[torch.arange(K), index1_K, index2_K]
+    return arr_K[torch.arange(K, device=arr_K.device), index1_K, index2_K]
 
 
 def concat_K(arr_Kxr, val_K) -> Tensor:
@@ -177,7 +177,7 @@ def replace_with_merged_K(
     """
 
     K = arr_K.shape[0]
-    arange_K = torch.arange(K)
+    arange_K = torch.arange(K, device=arr_K.device)
 
     # ensure idx1 < idx2 (element-wise)
     idx1_K, idx2_K = torch.min(idx1_K, idx2_K), torch.max(idx1_K, idx2_K)

@@ -1,3 +1,4 @@
+import math
 from typing import Literal, TypedDict
 
 import torch
@@ -63,7 +64,8 @@ class VCSMC(nn.Module):
         self.prior_branch_len = prior_branch_len
 
         N = len(taxa_N)
-        self.log_double_factorials_2N = compute_log_double_factorials_2N(N)
+        log_double_factorials_2N = compute_log_double_factorials_2N(N)
+        self.register_buffer("log_double_factorials_2N", log_double_factorials_2N)
 
     def get_init_embeddings_KxNxD(self, data_NxSxA: Tensor):
         """Sets the embedding for all K particles to the same initial value."""
@@ -96,6 +98,8 @@ class VCSMC(nn.Module):
             best_branch2_lengths_r: right branch lengths for the best tree
         """
 
+        device = data_batched_NxSxA.device
+
         N = data_batched_NxSxA.shape[0]
         A = data_batched_NxSxA.shape[2]
 
@@ -111,13 +115,14 @@ class VCSMC(nn.Module):
         # initially, r = 0 and t = N
 
         # for tracking tree topologies
-        merge1_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int)
-        merge2_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int)
-        branch1_lengths_Kxr = torch.zeros(K, 0)
-        branch2_lengths_Kxr = torch.zeros(K, 0)
-        embeddings_KxrxD = torch.zeros(K, 0, D)  # merged embedding at each step
+        merge1_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int, device=device)
+        merge2_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int, device=device)
+        branch1_lengths_Kxr = torch.zeros(K, 0, device=device)
+        branch2_lengths_Kxr = torch.zeros(K, 0, device=device)
+        # merged embedding at each step
+        embeddings_KxrxD = torch.zeros(K, 0, D, device=device)
 
-        leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int)
+        leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int, device=device)
         # embeddings of each tree currently in the forest
         embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
 
@@ -125,15 +130,15 @@ class VCSMC(nn.Module):
         log_felsensteins_KxtxSxA = data_batched_NxSxA.log().repeat(K, 1, 1, 1)
 
         # difference of current and last iteration's values are used to compute weights
-        log_pi_K = torch.zeros(K)
+        log_pi_K = torch.zeros(K, device=device)
         # for computing empirical measure pi_rk(s); initialize to log(1/K)
-        log_weight_K = -torch.log(torch.tensor(K)).repeat(K)
+        log_weight_K = torch.full([K], -math.log(K), device=device)
 
         # must record all weights to compute Z_SMC
         log_weights_list_rxK: list[Tensor] = []
 
         # for returning at the end
-        log_likelihood_K = torch.zeros(K)  # initial value isn't used
+        log_likelihood_K = torch.zeros(K, device=device)  # initial value isn't used
 
         # iterate over merge steps
         for _ in range(N - 1):
@@ -207,9 +212,9 @@ class VCSMC(nn.Module):
                     # first occurrence index of each unique hash within the original hashes
                     unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
                     # undo the above mapping
-                    undo_unique_hash_idx_KJ = torch.arange(Z).repeat_interleave(
-                        hash_counts_Z, 0
-                    )[hash_unsort_idx_KJ]
+                    undo_unique_hash_idx_KJ = torch.arange(
+                        Z, device=device
+                    ).repeat_interleave(hash_counts_Z, 0)[hash_unsort_idx_KJ]
 
                 def squeeze_Z(arr_KJ: Tensor):
                     """
@@ -337,7 +342,8 @@ class VCSMC(nn.Module):
 
             # for each initial particle, average over sub-particle weights
             log_weight_K = torch.logsumexp(log_weight_KxJ, 1)
-            log_weight_K = log_weight_K - torch.log(torch.tensor(J))  # divide by J
+            # divide by J
+            log_weight_K = log_weight_K - math.log(J)
 
             log_weights_list_rxK.append(log_weight_K)
 
@@ -350,7 +356,7 @@ class VCSMC(nn.Module):
                 )
                 sub_indexes_K = sub_resample_distr_K.sample()
             else:
-                sub_indexes_K = torch.zeros(K, dtype=torch.int)
+                sub_indexes_K = torch.zeros(K, dtype=torch.int, device=device)
 
             # ===== post sub-particle resampling bookkeeping =====
 
@@ -389,7 +395,7 @@ class VCSMC(nn.Module):
         # See equation (8) in the VCSMC paper.
 
         log_weights_rxK = torch.stack(log_weights_list_rxK)
-        log_scaled_weights_rxK = log_weights_rxK - torch.log(torch.tensor(K))
+        log_scaled_weights_rxK = log_weights_rxK - math.log(K)
         log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
         log_Z_SMC = torch.sum(log_sum_weights_r)
 

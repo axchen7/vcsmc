@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import Tensor, nn
 
@@ -7,11 +9,19 @@ from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
 from .vcsmc_utils import gather_K, gather_K2
 
 
-def get_lookahead_merge_indexes(*, K, t: int) -> tuple[int, Tensor, Tensor]:
+def get_lookahead_merge_indexes(
+    *, K, t: int, device: torch.device
+) -> tuple[int, Tensor, Tensor]:
     # take all possible (t choose 2) merge pairs
     J = t * (t - 1) // 2
 
-    take_J = torch.ones([t, t], dtype=torch.bool).triu(1).flatten().nonzero().flatten()
+    take_J = (
+        torch.ones([t, t], dtype=torch.bool, device=device)
+        .triu(1)
+        .flatten()
+        .nonzero()
+        .flatten()
+    )
     idx1_J = take_J // t
     idx2_J = take_J % t
 
@@ -86,13 +96,13 @@ class ExpBranchProposal(Proposal):
         # under exponential distribution, E[branch] = 1/rate
         initial_rate = 1 / initial_branch_len
         # value of variable is passed through exp() later
-        initial_log_rates = torch.tensor(initial_rate).log().repeat(N - 1)
+        initial_log_rates_N1 = torch.full([N - 1], math.log(initial_rate))
 
         self.lookahead_merge = lookahead_merge
 
         # exponential distribution rates for sampling branch lengths; N1 -> N-1
-        self.log_rates1_N1 = nn.Parameter(initial_log_rates)
-        self.log_rates2_N1 = nn.Parameter(initial_log_rates)
+        self.log_rates1_N1 = nn.Parameter(initial_log_rates_N1)
+        self.log_rates2_N1 = nn.Parameter(initial_log_rates_N1)
 
     def rates(self, r: int):
         # use exp to ensure rates are positive
@@ -103,6 +113,8 @@ class ExpBranchProposal(Proposal):
     def forward(
         self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        device = embeddings_KxtxD.device
+
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
         r = N - t  # merge step
@@ -110,20 +122,20 @@ class ExpBranchProposal(Proposal):
         # ===== determine nodes to merge =====
 
         if self.lookahead_merge:
-            J, idx1_KxJ, idx2_KxJ = get_lookahead_merge_indexes(K=K, t=t)
+            J, idx1_KxJ, idx2_KxJ = get_lookahead_merge_indexes(K=K, t=t, device=device)
             log_merge_prob = 0
         else:
             # uniformly sample 2 distinct nodes to merge
             J = 1
 
-            idx1_KxJ = torch.randint(0, t, [K]).unsqueeze(1)
-            idx2_KxJ = torch.randint(0, t - 1, [K]).unsqueeze(1)
+            idx1_KxJ = torch.randint(0, t, [K], device=device).unsqueeze(1)
+            idx2_KxJ = torch.randint(0, t - 1, [K], device=device).unsqueeze(1)
 
             # shift to guarantee idx2 > idx1
             idx2_KxJ = torch.where(idx2_KxJ >= idx1_KxJ, idx2_KxJ + 1, idx2_KxJ)
 
             # merge prob = 1 / (t choose 2)
-            log_merge_prob = -torch.log(torch.tensor(t * (t - 1) // 2))
+            log_merge_prob = -math.log(t * (t - 1) // 2)
 
         # ===== sample branch lengths from exponential distributions =====
 
@@ -132,8 +144,8 @@ class ExpBranchProposal(Proposal):
         # re-parameterization trick: sample from U[0, 1] and transform to
         # exponential distribution (so gradients can flow through the sample)
 
-        uniform1_KxJ = torch.rand([K, J])
-        uniform2_KxJ = torch.rand([K, J])
+        uniform1_KxJ = torch.rand([K, J], device=device)
+        uniform2_KxJ = torch.rand([K, J], device=device)
 
         # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
         branch1_KxJ = -(1 / rate1) * uniform1_KxJ.log()
@@ -150,7 +162,7 @@ class ExpBranchProposal(Proposal):
         # ===== return proposal =====
 
         # dummy embedding
-        embedding_KxJxD = torch.zeros([K, J, 0])
+        embedding_KxJxD = torch.zeros([K, J, 0], device=device)
 
         return (
             idx1_KxJ,
@@ -213,6 +225,8 @@ class EmbeddingProposal(Proposal):
     def forward(
         self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        device = embeddings_KxtxD.device
+
         K = leaf_counts_Kxt.shape[0]
         t = leaf_counts_Kxt.shape[1]  # number of subtrees
         r = N - t  # merge step
@@ -223,10 +237,10 @@ class EmbeddingProposal(Proposal):
             J = 1
             idx1_KxJ = self.merge_indexes_N1x2[r, 0].repeat(K).unsqueeze(1)
             idx2_KxJ = self.merge_indexes_N1x2[r, 1].repeat(K).unsqueeze(1)
-            log_merge_prob_K = torch.zeros([K])
+            log_merge_prob_K = torch.zeros([K], device=device)
         elif self.lookahead_merge:
-            J, idx1_KxJ, idx2_KxJ = get_lookahead_merge_indexes(K=K, t=t)
-            log_merge_prob_K = torch.zeros([K])
+            J, idx1_KxJ, idx2_KxJ = get_lookahead_merge_indexes(K=K, t=t, device=device)
+            log_merge_prob_K = torch.zeros([K], device=device)
         else:
             J = 1
 
@@ -249,11 +263,11 @@ class EmbeddingProposal(Proposal):
                 )
             else:
                 # uniformly sample 2 distinct nodes to merge
-                merge_log_weights_Kxtxt = torch.zeros([K, t, t])
+                merge_log_weights_Kxtxt = torch.zeros([K, t, t], device=device)
 
             # set diagonal entries to -inf to prevent self-merges
             merge_log_weights_Kxtxt = merge_log_weights_Kxtxt.diagonal_scatter(
-                torch.full([K, t], -torch.inf), dim1=1, dim2=2
+                torch.full([K, t], -torch.inf, device=device), dim1=1, dim2=2
             )
 
             flattened_log_weights_Kxtt = merge_log_weights_Kxtxt.view(K, t * t)
@@ -275,7 +289,7 @@ class EmbeddingProposal(Proposal):
             # merging (idx2, idx1)
 
             log_merge_prob_K = gather_K2(merge_log_weights_Kxtxt, idx1_K, idx2_K)
-            log_merge_prob_K = log_merge_prob_K + torch.log(torch.tensor(2))
+            log_merge_prob_K = log_merge_prob_K + math.log(2)
             log_merge_prob_K = log_merge_prob_K - torch.logsumexp(
                 merge_log_weights_Kxtxt, [1, 2]
             )
@@ -311,8 +325,8 @@ class EmbeddingProposal(Proposal):
             # re-parameterization trick: sample from U[0, 1] and transform to
             # exponential distribution (so gradients can flow through the sample)
 
-            uniform1_KxJ = torch.rand([K, J])
-            uniform2_KxJ = torch.rand([K, J])
+            uniform1_KxJ = torch.rand([K, J], device=device)
+            uniform2_KxJ = torch.rand([K, J], device=device)
 
             # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
             branch1_KxJ = -(1 / rate1_KxJ) * uniform1_KxJ.log()
@@ -325,8 +339,8 @@ class EmbeddingProposal(Proposal):
             branch1_KxJ = dist1_KxJ
             branch2_KxJ = dist2_KxJ
 
-            log_branch1_prob_KxJ = torch.zeros([K, J])
-            log_branch2_prob_KxJ = torch.zeros([K, J])
+            log_branch1_prob_KxJ = torch.zeros([K, J], device=device)
+            log_branch2_prob_KxJ = torch.zeros([K, J], device=device)
 
         # ===== compute proposal probability =====
 

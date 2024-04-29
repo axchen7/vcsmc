@@ -24,7 +24,7 @@ class DummySitePositionsEncoder(SitePositionsEncoder):
 
     def forward(self, site_positions_SxSfull: Tensor) -> Tensor:
         S = site_positions_SxSfull.shape[0]
-        return torch.zeros([S, 0])
+        return torch.zeros([S, 0], device=site_positions_SxSfull.device)
 
 
 class MLPSitePositionsEncoder(SitePositionsEncoder):
