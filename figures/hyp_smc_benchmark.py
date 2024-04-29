@@ -87,6 +87,9 @@ ESTIMATE_LL_ITERS = 10
 
 def estimate_log_likelihood(file: str) -> tuple[float, float]:
     """
+    Estimates the LL by sampling a few log ZSMCs from the model state at the
+    best epoch.
+
     Returns:
         ll_mean, ll_std_dev
     """
@@ -101,7 +104,7 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
         # there is no off-by-one error here: say epoch 1 has the highest LL;
         # then, results[0] is max, and loading epoch 0 will give the model state
         # before the optimizer step at epoch 1
-        return int(np.argmax(results["log_likelihood_avgs"]))
+        return int(np.argmax(results["elbos"]))
 
     data_NxSxA, taxa_N, vcsmc = train_from_checkpoint(
         load_only=True,
@@ -119,7 +122,7 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
 
     for _ in tqdm(range(ESTIMATE_LL_ITERS)):
         result = evaluate(vcsmc, data_NxSxA)
-        ll_list.append(result["log_likelihood_K"].mean().item())
+        ll_list.append(result["log_Z_SMC"].item())
 
     ll_mean = float(np.mean(ll_list))
     ll_std_dev = float(np.std(ll_list))
