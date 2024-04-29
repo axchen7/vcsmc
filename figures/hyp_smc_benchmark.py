@@ -22,6 +22,9 @@ def train_with_proposal(file: str):
     elif "DS6.phy" in file:
         K = 8
         sites_batch_size = 256
+    elif "DS4.phy" in file:
+        K = 8
+        sites_batch_size = None
     else:
         K = 16
         sites_batch_size = None
