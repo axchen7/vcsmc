@@ -16,7 +16,7 @@ file = "data/primates.phy"
 
 def train_with_proposal(D: int):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
-    data = data_NxSxA.to(device)
+    data_NxSxA = data_NxSxA.to(device)
 
     distance = Hyperbolic()
     seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
