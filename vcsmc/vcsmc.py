@@ -131,8 +131,8 @@ class VCSMC(nn.Module):
 
         # difference of current and last iteration's values are used to compute weights
         log_pi_K = torch.zeros(K, device=device)
-        # for computing empirical measure pi_rk(s); initialize to log(1/K)
-        log_weight_K = torch.full([K], -math.log(K), device=device)
+        # for computing empirical measure pi_rk(s); initialize to uniform
+        log_weight_K = torch.zeros(K, device=device)
 
         # must record all weights to compute Z_SMC
         log_weights_list_rxK: list[Tensor] = []
