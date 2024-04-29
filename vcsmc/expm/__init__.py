@@ -3,7 +3,8 @@ from typing import Literal
 import torch
 from torch import Tensor
 
-from . import expm_simple, expm_taylor
+from .expm_simple import expm_simple
+from .expm_taylor import expm_taylor
 
 
 def expm(Q: Tensor, fallback: Literal["simple", "taylor"]) -> Tensor:
@@ -23,6 +24,6 @@ def expm(Q: Tensor, fallback: Literal["simple", "taylor"]) -> Tensor:
         return torch.matrix_exp(Q)
 
     if fallback == "simple":
-        return expm_simple.expm(Q)
+        return expm_simple(Q)
     else:
-        return expm_taylor.expm(Q)
+        return expm_taylor(Q)

@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 
 
-def expm(x: Tensor, order=10) -> Tensor:
+def expm_simple(x: Tensor, order=10) -> Tensor:
     """
     nth-order Taylor approximation of matrix exponential
     """
