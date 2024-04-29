@@ -230,6 +230,7 @@ class VCSMC(nn.Module):
 
             else:
                 Z = K * J
+                unique_hash_idx_Z = torch.arange(Z, device=device)
                 undo_unique_hash_idx_KJ = torch.arange(Z, device=device)
 
                 def squeeze_Z(arr_KJ: Tensor):
@@ -240,10 +241,13 @@ class VCSMC(nn.Module):
 
             # ===== squeeze particles with matching hashes =====
 
+            K_to_Z_idx_Z = torch.arange(K, device=device).repeat_interleave(J, 0)[
+                unique_hash_idx_Z
+            ]
+
             # helper function
             def K_to_Z(arr_K: Tensor):
-                arr_KJ = arr_K.repeat_interleave(J, 0)
-                return squeeze_Z(arr_KJ)
+                return arr_K[K_to_Z_idx_Z]
 
             idx1_Z = squeeze_Z(idx1_KJ)
             idx2_Z = squeeze_Z(idx2_KJ)
@@ -359,14 +363,15 @@ class VCSMC(nn.Module):
             else:
                 sub_indexes_K = torch.zeros(K, dtype=torch.int, device=device)
 
+            gather_sub_K_idx_K = undo_unique_hash_idx_KJ[
+                torch.arange(K, device=device) * J + sub_indexes_K
+            ]
+
             # ===== post sub-particle resampling bookkeeping =====
 
             # helper function
             def gather_sub_K(arr_Z: Tensor):
-                idx_K = torch.arange(K, device=device) * J
-                idx_K = idx_K + sub_indexes_K
-                idx2_K = undo_unique_hash_idx_KJ[idx_K]
-                return arr_Z[idx2_K]
+                return arr_Z[gather_sub_K_idx_K]
 
             # helper function
             def concat_sub_K(arr_Zxr, val_K):
