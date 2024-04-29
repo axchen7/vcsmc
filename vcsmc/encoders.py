@@ -72,7 +72,8 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
 
         N = data_NxSxA.shape[0]
 
-        self.data_NxSxA = data_NxSxA
+        self.register_buffer("data_NxSxA", data_NxSxA)
+
         self.embedding_table = nn.Embedding(N, D)
         nn.init.normal_(self.embedding_table.weight, mean=initial_mean, std=initial_std)
 

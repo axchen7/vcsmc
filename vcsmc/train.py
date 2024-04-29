@@ -44,12 +44,7 @@ def batch_by_sites(data_NxSxA: Tensor, batch_size: int | None) -> DataLoader:
     dataset = TensorDataset(data_SxNxA, site_positions_SxSfull)
 
     # shape: V x ([S, N, A], [S, Sfull]), where now S = batch_size
-    dataloader = DataLoader(
-        dataset,
-        generator=torch.Generator(data_NxSxA.device),
-        batch_size=batch_size,
-        shuffle=True,
-    )
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
 
 
