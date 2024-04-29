@@ -5,11 +5,7 @@ set_path()
 
 from vcsmc import *
 
-if torch.cuda.is_available():
-    torch.set_default_device("cuda")
-elif torch.backends.mps.is_available():
-    torch.set_default_device("mps")
-
+device = detect_device()
 
 K = 128
 lr = 0.01
@@ -20,13 +16,14 @@ file = "data/primates.phy"
 
 def train_with_proposal(D: int):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
+    data = data_NxSxA.to(device)
 
     distance = Hyperbolic()
     seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
     merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
     proposal = EmbeddingProposal(distance, seq_encoder, merge_encoder)
     q_matrix_decoder = JC69QMatrixDecoder(A=A)
-    vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K)
+    vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     run_name = f"Hyp_SMC_D{D}"

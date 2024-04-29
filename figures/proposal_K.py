@@ -5,11 +5,8 @@ set_path()
 
 from vcsmc import *
 
-# if torch.cuda.is_available():
-#     torch.set_default_device("cuda")
-# elif torch.backends.mps.is_available():
-#     torch.set_default_device("mps")
-
+# device = detect_device()
+device = "cpu"
 
 D = 2
 lr_exp_branch_proposal = 0.1
@@ -21,6 +18,7 @@ file = "data/primates.phy"
 
 def train_with_proposal(proposal_type: type[Proposal], K: int):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
+    data_NxSxA = data_NxSxA.to(device)
 
     if proposal_type is ExpBranchProposal:
         proposal = ExpBranchProposal(N=N)
@@ -37,7 +35,7 @@ def train_with_proposal(proposal_type: type[Proposal], K: int):
         raise ValueError()
 
     q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
-    vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K)
+    vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     print(f"Starting {run_name}")

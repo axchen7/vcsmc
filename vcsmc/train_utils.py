@@ -109,3 +109,16 @@ def filter_runs(filter_fn: Callable[[TrainCheckpoint, TrainArgs], bool]):
             match_count += 1
 
     print(f"\nFiltered {match_count} runs out of {len(runs)} total runs.")
+
+
+def detect_device() -> torch.device:
+    """
+    Use the GPU if available, otherwise use the CPU.
+    """
+
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
+    else:
+        return torch.device("cpu")
