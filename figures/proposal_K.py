@@ -1,12 +1,13 @@
 # %%
+from typing import Literal
+
 from figures_util import set_path
 
 set_path()
 
 from vcsmc import *
 
-# device = detect_device()
-device = "cpu"
+device = detect_device()
 
 D = 2
 lr_exp_branch_proposal = 0.1
@@ -16,26 +17,33 @@ epochs = 200
 file = "data/primates.phy"
 
 
-def train_with_proposal(proposal_type: type[Proposal], K: int):
+def train_with_proposal(
+    proposal_type: Literal["vcsmc", "vncsmc", "hyp_smc", "hyp_nsmc"], K: int
+):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
-    data_NxSxA = data_NxSxA.to(device)
 
-    if proposal_type is ExpBranchProposal:
-        proposal = ExpBranchProposal(N=N)
+    if proposal_type == "vcsmc" or proposal_type == "vncsmc":
+        is_vncsmc = proposal_type == "vncsmc"
+
+        proposal = ExpBranchProposal(N=N, lookahead_merge=is_vncsmc)
+        hash_trick = False
         lr = lr_exp_branch_proposal
-        run_name = f"VCSMC_K{K}"
-    elif proposal_type is EmbeddingProposal:
+        run_name = f"VNCSMC_K{K}" if is_vncsmc else f"VCSMC_K{K}"
+    elif proposal_type == "hyp_smc" or proposal_type == "hyp_nsmc":
+        is_nsmc = proposal_type == "hyp_nsmc"
+
         distance = Hyperbolic()
         seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
         merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
-        proposal = EmbeddingProposal(distance, seq_encoder, merge_encoder)
+        proposal = EmbeddingProposal(
+            distance, seq_encoder, merge_encoder, lookahead_merge=is_nsmc
+        )
+        hash_trick = is_nsmc
         lr = lr_embedding_proposal
-        run_name = f"Hyp_SMC_K{K}"
-    else:
-        raise ValueError()
+        run_name = f"Hyp_NSMC_K{K}" if is_nsmc else f"Hyp_SMC_K{K}"
 
     q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
-    vcsmc = VCSMC(q_matrix_decoder, proposal, K=K).to(device)
+    vcsmc = VCSMC(q_matrix_decoder, proposal, K=K, hash_trick=hash_trick).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     print(f"Starting {run_name}")
@@ -44,10 +52,11 @@ def train_with_proposal(proposal_type: type[Proposal], K: int):
 
 
 K_vals = [4, 8, 16, 32, 64, 128, 256, 512]
+proposal_types = ("vcsmc", "vncsmc", "hyp_smc", "hyp_nsmc")
 
 for K in K_vals:
-    train_with_proposal(ExpBranchProposal, K)
-    train_with_proposal(EmbeddingProposal, K)
+    for proposal_type in proposal_types:
+        train_with_proposal(proposal_type, K)
 
 # %%
 from figures_util import make_output_dir, set_path
@@ -61,13 +70,17 @@ import matplotlib.pyplot as plt
 from vcsmc import *
 
 
-def load_log_likelihoods(proposal_type: type[Proposal], K: int):
-    if proposal_type is ExpBranchProposal:
+def load_log_likelihoods(
+    proposal_type: Literal["vcsmc", "vncsmc", "hyp_smc", "hyp_nsmc"], K: int
+):
+    if proposal_type == "vcsmc":
         run_name = f"VCSMC_K{K}"
-    elif proposal_type is EmbeddingProposal:
+    elif proposal_type == "vncsmc":
+        run_name = f"VNCSMC_K{K}"
+    elif proposal_type == "hyp_smc":
         run_name = f"Hyp_SMC_K{K}"
-    else:
-        raise ValueError()
+    elif proposal_type == "hyp_nsmc":
+        run_name = f"Hyp_NSMC_K{K}"
 
     results: TrainResults = torch.load(
         find_most_recent_path(f"runs/*{run_name}", "results.pt")
@@ -81,15 +94,19 @@ fig, axs = plt.subplots(4, 2, figsize=(10, 10))
 fig.suptitle("VCSMC vs Hyp SMC with Different K")
 
 for i, K in enumerate(K_vals):
-    vcsmc_ll = load_log_likelihoods(ExpBranchProposal, K)
-    hyp_ll = load_log_likelihoods(EmbeddingProposal, K)
+    vcsmc_ll = load_log_likelihoods("vcsmc", K)
+    vncsmc_ll = load_log_likelihoods("vncsmc", K)
+    hyp_smc_ll = load_log_likelihoods("hyp_smc", K)
+    hyp_nsmc_ll = load_log_likelihoods("hyp_nsmc", K)
 
     ax = axs[i // 2, i % 2]
     ax.set_title(f"K = {K}")
     ax.set_xlabel("Epochs")
     ax.set_ylabel("Log Likelihood")
     ax.plot(vcsmc_ll[5:], label="VCSMC")
-    ax.plot(hyp_ll[5:], label="Hyp SMC")
+    ax.plot(vncsmc_ll[5:], label="VNCSMC")
+    ax.plot(hyp_smc_ll[5:], label="Hyp SMC")
+    ax.plot(hyp_nsmc_ll[5:], label="Hyp NSMC")
     ax.legend()
 
 plt.tight_layout()
