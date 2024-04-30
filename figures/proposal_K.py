@@ -21,6 +21,7 @@ def train_with_proposal(
     proposal_type: Literal["vcsmc", "vncsmc", "hyp_smc", "hyp_nsmc"], K: int
 ):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
+    data_NxSxA = data_NxSxA.to(device)
 
     if proposal_type == "vcsmc" or proposal_type == "vncsmc":
         is_vncsmc = proposal_type == "vncsmc"
