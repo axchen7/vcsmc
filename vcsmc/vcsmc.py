@@ -75,6 +75,7 @@ class VCSMC(nn.Module):
         *,
         K: int,
         hash_trick: bool = False,
+        checkpoint_grads: bool = False,
         # assume Exp(10) branch length prior
         prior_dist: Literal["gamma", "exp", "unif"] = "exp",
         prior_branch_len: float = 0.1,
@@ -86,6 +87,7 @@ class VCSMC(nn.Module):
             taxa_N: List of taxa names of length N
             K: Number of particles
             hash_trick: Whether to use the hash trick to speed up computation
+            checkpoint_grads: Use activation checkpointing to save memory (but uses more compute).
             prior_dist: Prior distribution for branch lengths
             prior_branch_len: Expected branch length under the prior
         """
@@ -97,6 +99,7 @@ class VCSMC(nn.Module):
         self.taxa_N = taxa_N
         self.K = K
         self.hash_trick = hash_trick
+        self.checkpoint_grads = checkpoint_grads
         self.prior_dist: Literal["gamma", "exp", "unif"] = prior_dist
         self.prior_branch_len = prior_branch_len
 
@@ -452,11 +455,14 @@ class VCSMC(nn.Module):
             resample_distr = torch.distributions.Categorical(logits=ms["log_weight_K"])
             indexes_K = resample_distr.sample(torch.Size([K]))
 
-            # checkpoint loop body to save memory
-            ms = cast(
-                MergeState,
-                checkpoint(self.merge_step, ms, mm, indexes_K, use_reentrant=False),
-            )
+            if self.checkpoint_grads:
+                # checkpoint loop body to save memory
+                ms = cast(
+                    MergeState,
+                    checkpoint(self.merge_step, ms, mm, indexes_K, use_reentrant=False),
+                )
+            else:
+                ms = self.merge_step(ms, mm, indexes_K)
 
         # ===== compute ZCSMC =====
 
