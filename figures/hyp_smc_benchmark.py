@@ -9,7 +9,8 @@ device = detect_device()
 
 D = 2
 lr = 0.01
-epochs = 200
+# epochs = 200
+epochs = 1000
 lookahead_merge = True
 hash_trick = True
 checkpoint_grads = True
