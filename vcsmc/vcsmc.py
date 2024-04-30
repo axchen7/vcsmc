@@ -1,8 +1,9 @@
 import math
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 
 import torch
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from .proposals import Proposal
 from .q_matrix_decoders import QMatrixDecoder
@@ -14,6 +15,8 @@ from .vcsmc_utils import (
     compute_log_v_minus_K,
     concat_K,
     gather_K,
+    hash_K,
+    hash_tree_K,
     replace_with_merged_K,
 )
 
@@ -49,6 +52,7 @@ class MergeState(TypedDict):
     embeddings_KxrxD: Tensor
     # embeddings of each tree currently in the forest
     leaf_counts_Kxt: Tensor
+    hashes_Kxt: Tensor
     embeddings_KxtxD: Tensor
     # embeddings of each tree currently in the forest
     log_felsensteins_KxtxSxA: Tensor
@@ -124,6 +128,7 @@ class VCSMC(nn.Module):
         branch2_lengths_Kxr = ms["branch2_lengths_Kxr"][indexes_K]
         embeddings_KxrxD = ms["embeddings_KxrxD"][indexes_K]
         leaf_counts_Kxt = ms["leaf_counts_Kxt"][indexes_K]
+        hashes_Kxt = ms["hashes_Kxt"][indexes_K]
         embeddings_KxtxD = ms["embeddings_KxtxD"][indexes_K]
         log_felsensteins_KxtxSxA = ms["log_felsensteins_KxtxSxA"][indexes_K]
         log_pi_K = ms["log_pi_K"][indexes_K]
@@ -155,17 +160,19 @@ class VCSMC(nn.Module):
 
         if self.hash_trick:
             with torch.no_grad():
-                # construct new embeddings to hash
-                embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
-                embeddings_KJxtxD = replace_with_merged_K(
-                    embeddings_KJxtxD, idx1_KJ, idx2_KJ, embedding_KJxD
+                # construct new hashes
+                hashes_KJxt = hashes_Kxt.repeat_interleave(J, 0)
+                hashes_KJxt = replace_with_merged_K(
+                    hashes_KJxt,
+                    idx1_KJ,
+                    idx2_KJ,
+                    hash_tree_K(
+                        gather_K(hashes_KJxt, idx1_KJ), gather_K(hashes_KJxt, idx2_KJ)
+                    ),
                 )
 
-                embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
-                # sort first for predictable sum
-                embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
-                # use sum of norm square embeddings as hashes
-                hashes_KJ = torch.sum(embedding_norm_sqs_KJxt, 1)
+                # use sum of tree hashes as overall particle hash
+                hashes_KJ = hashes_KJxt.sum(1)
 
                 sorted_hashes_KJ, hash_sort_idx_KJ = torch.sort(hashes_KJ)
                 hash_unsort_idx_KJ = torch.argsort(hash_sort_idx_KJ)
@@ -233,6 +240,7 @@ class VCSMC(nn.Module):
         branch2_lengths_Zxr = K_to_Z(branch2_lengths_Kxr)
         embeddings_ZxrxD = K_to_Z(embeddings_KxrxD)
         leaf_counts_Zxt = K_to_Z(leaf_counts_Kxt)
+        hashes_Zxt = K_to_Z(hashes_Kxt)
         embeddings_ZxtxD = K_to_Z(embeddings_KxtxD)
         log_felsensteins_ZxtxSxA = K_to_Z(log_felsensteins_KxtxSxA)
         log_pi_Z = K_to_Z(log_pi_K)
@@ -248,6 +256,10 @@ class VCSMC(nn.Module):
         leaf_counts_Zxt = merge_Z(
             leaf_counts_Zxt,
             gather_K(leaf_counts_Zxt, idx1_Z) + gather_K(leaf_counts_Zxt, idx2_Z),
+        )
+        hashes_Zxt = merge_Z(
+            hashes_Zxt,
+            hash_tree_K(gather_K(hashes_Zxt, idx1_Z), gather_K(hashes_Zxt, idx2_Z)),
         )
         embeddings_ZxtxD = merge_Z(embeddings_ZxtxD, embedding_ZxD)
 
@@ -360,6 +372,7 @@ class VCSMC(nn.Module):
             "branch2_lengths_Kxr": concat_sub_K(branch2_lengths_Zxr, branch2_K),
             "embeddings_KxrxD": concat_sub_K(embeddings_ZxrxD, embedding_KxD),
             "leaf_counts_Kxt": gather_sub_K(leaf_counts_Zxt),
+            "hashes_Kxt": gather_sub_K(hashes_Zxt),
             "embeddings_KxtxD": gather_sub_K(embeddings_ZxtxD),
             "log_felsensteins_KxtxSxA": gather_sub_K(log_felsensteins_ZxtxSxA),
             "log_pi_K": gather_sub_K(log_pi_Z),
@@ -422,6 +435,7 @@ class VCSMC(nn.Module):
             "branch2_lengths_Kxr": torch.zeros(K, 0, device=device),
             "embeddings_KxrxD": torch.zeros(K, 0, D, device=device),
             "leaf_counts_Kxt": torch.ones(K, N, dtype=torch.int, device=device),
+            "hashes_Kxt": hash_K(torch.arange(N, device=device)).repeat(K, 1),
             "embeddings_KxtxD": self.get_init_embeddings_KxNxD(data_NxSxA),
             "log_felsensteins_KxtxSxA": data_batched_NxSxA.log().repeat(K, 1, 1, 1),
             "log_pi_K": torch.zeros(K, device=device),

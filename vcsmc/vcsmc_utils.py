@@ -215,6 +215,27 @@ def replace_with_merged_list(arr: list, idx1: int, idx2: int, new_val) -> list:
     return new_arr
 
 
+@torch.jit.script
+def hash_K(a: Tensor):
+    """
+    See: https://gist.github.com/badboy/6267743#robert-jenkins-32-bit-integer-hash-function
+    """
+    a = (a + 0x7ED55D16) + (a << 12)
+    a = (a ^ 0xC761C23C) ^ (a >> 19)
+    a = (a + 0x165667B1) + (a << 5)
+    a = (a + 0xD3A2646C) ^ (a << 9)
+    a = (a + 0xFD7046C5) + (a << 3)
+    a = (a ^ 0xB55A4F09) ^ (a >> 16)
+    return a
+
+
+def hash_tree_K(child1_hash_K: Tensor, child2_hash_K: Tensor) -> Tensor:
+    """
+    Returns a deterministic hash of the parent node given the child node hashes.
+    """
+    return hash_K(child1_hash_K + child2_hash_K)
+
+
 def build_newick_tree(
     taxa_N: list[str],
     merge1_indexes_N1: Tensor,
