@@ -29,6 +29,39 @@ class VcsmcResult(TypedDict):
     best_embeddings_N1xD: Tensor  # merged embedding at each step
 
 
+class MergeMetadata(TypedDict):
+    device: torch.device
+    N: int
+    A: int
+    K: int
+    D: int
+    # compressed site positions
+    site_positions_SxC: Tensor
+
+
+class MergeState(TypedDict):
+    # for tracking tree topologies
+    merge1_indexes_Kxr: Tensor
+    merge2_indexes_Kxr: Tensor
+    branch1_lengths_Kxr: Tensor
+    branch2_lengths_Kxr: Tensor
+    # merged embedding at each step
+    embeddings_KxrxD: Tensor
+    # embeddings of each tree currently in the forest
+    leaf_counts_Kxt: Tensor
+    embeddings_KxtxD: Tensor
+    # embeddings of each tree currently in the forest
+    log_felsensteins_KxtxSxA: Tensor
+    # difference of current and last iteration's values are used to compute weights
+    log_pi_K: Tensor
+    # for computing empirical measure pi_rk(s); initialize to uniform
+    log_weight_K: Tensor
+    # must record all weights to compute ZCSMC
+    log_weights_list_rxK: list[Tensor]
+    # for returning at the end
+    log_likelihood_K: Tensor
+
+
 class VCSMC(nn.Module):
     def __init__(
         self,
@@ -72,6 +105,269 @@ class VCSMC(nn.Module):
         embeddings_NxD: Tensor = self.proposal.seq_encoder(data_NxSxA)
         return embeddings_NxD.repeat(self.K, 1, 1)
 
+    def merge_step(self, ms: MergeState, mm: MergeMetadata) -> MergeState:
+        device = mm["device"]
+
+        N = mm["N"]
+        A = mm["A"]
+        K = mm["K"]
+        D = mm["D"]
+
+        # ===== resample =====
+
+        resample_distr = torch.distributions.Categorical(logits=ms["log_weight_K"])
+        indexes_K = resample_distr.sample(torch.Size([K]))
+
+        merge1_indexes_Kxr = ms["merge1_indexes_Kxr"][indexes_K]
+        merge2_indexes_Kxr = ms["merge2_indexes_Kxr"][indexes_K]
+        branch1_lengths_Kxr = ms["branch1_lengths_Kxr"][indexes_K]
+        branch2_lengths_Kxr = ms["branch2_lengths_Kxr"][indexes_K]
+        embeddings_KxrxD = ms["embeddings_KxrxD"][indexes_K]
+        leaf_counts_Kxt = ms["leaf_counts_Kxt"][indexes_K]
+        embeddings_KxtxD = ms["embeddings_KxtxD"][indexes_K]
+        log_felsensteins_KxtxSxA = ms["log_felsensteins_KxtxSxA"][indexes_K]
+        log_pi_K = ms["log_pi_K"][indexes_K]
+
+        # ===== extend partial states using proposal =====
+
+        # sample from proposal distribution
+        (
+            idx1_KxJ,
+            idx2_KxJ,
+            branch1_KxJ,
+            branch2_KxJ,
+            embedding_KxJxD,
+            log_v_plus_KxJ,
+        ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD)
+
+        # ===== deal with sub-particle (J) dimension =====
+
+        J = idx1_KxJ.shape[1]
+
+        idx1_KJ = idx1_KxJ.flatten()
+        idx2_KJ = idx2_KxJ.flatten()
+        branch1_KJ = branch1_KxJ.flatten()
+        branch2_KJ = branch2_KxJ.flatten()
+        embedding_KJxD = embedding_KxJxD.reshape(K * J, D)
+        log_v_plus_KJ = log_v_plus_KxJ.flatten()
+
+        # ===== handle particles with matching hashes together =====
+
+        if self.hash_trick:
+            with torch.no_grad():
+                # construct new embeddings to hash
+                embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
+                embeddings_KJxtxD = replace_with_merged_K(
+                    embeddings_KJxtxD, idx1_KJ, idx2_KJ, embedding_KJxD
+                )
+
+                embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
+                # sort first for predictable sum
+                embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
+                # use sum of norm square embeddings as hashes
+                hashes_KJ = torch.sum(embedding_norm_sqs_KJxt, 1)
+
+                sorted_hashes_KJ, hash_sort_idx_KJ = torch.sort(hashes_KJ)
+                hash_unsort_idx_KJ = torch.argsort(hash_sort_idx_KJ)
+                # Z = number of unique hashes
+                _, hash_counts_Z = sorted_hashes_KJ.unique_consecutive(
+                    return_counts=True
+                )
+                # first occurrence index of each unique hash within the sorted hashes
+                sorted_unique_hash_idx_Z = (
+                    torch.cumsum(hash_counts_Z, 0) - hash_counts_Z[0]
+                )
+
+                Z = hash_counts_Z.shape[0]
+
+                # first occurrence index of each unique hash within the original hashes
+                unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
+                # undo the above mapping
+                undo_unique_hash_idx_KJ = torch.arange(
+                    Z, device=device
+                ).repeat_interleave(hash_counts_Z, 0)[hash_unsort_idx_KJ]
+
+            def squeeze_Z(arr_KJ: Tensor):
+                """
+                Returns unique values with respect to the hashes (and sorting).
+                """
+                return arr_KJ[unique_hash_idx_Z]
+
+            def unsqueeze_KJ(arr_Z: Tensor):
+                """
+                Expands unique values to original size (and undoing the sorting).
+                """
+                return arr_Z[undo_unique_hash_idx_KJ]
+
+        else:
+            Z = K * J
+            unique_hash_idx_Z = torch.arange(Z, device=device)
+            undo_unique_hash_idx_KJ = torch.arange(Z, device=device)
+
+            def squeeze_Z(arr_KJ: Tensor):
+                return arr_KJ
+
+            def unsqueeze_KJ(arr_Z: Tensor):
+                return arr_Z
+
+        # ===== squeeze particles with matching hashes =====
+
+        K_to_Z_idx_Z = torch.arange(K, device=device).repeat_interleave(J, 0)[
+            unique_hash_idx_Z
+        ]
+
+        # helper function
+        def K_to_Z(arr_K: Tensor):
+            return arr_K[K_to_Z_idx_Z]
+
+        idx1_Z = squeeze_Z(idx1_KJ)
+        idx2_Z = squeeze_Z(idx2_KJ)
+        branch1_Z = squeeze_Z(branch1_KJ)
+        branch2_Z = squeeze_Z(branch2_KJ)
+        embedding_ZxD = squeeze_Z(embedding_KJxD)
+        log_v_plus_Z = squeeze_Z(log_v_plus_KJ)
+
+        merge1_indexes_Zxr = K_to_Z(merge1_indexes_Kxr)
+        merge2_indexes_Zxr = K_to_Z(merge2_indexes_Kxr)
+        branch1_lengths_Zxr = K_to_Z(branch1_lengths_Kxr)
+        branch2_lengths_Zxr = K_to_Z(branch2_lengths_Kxr)
+        embeddings_ZxrxD = K_to_Z(embeddings_KxrxD)
+        leaf_counts_Zxt = K_to_Z(leaf_counts_Kxt)
+        embeddings_ZxtxD = K_to_Z(embeddings_KxtxD)
+        log_felsensteins_ZxtxSxA = K_to_Z(log_felsensteins_KxtxSxA)
+        log_pi_Z = K_to_Z(log_pi_K)
+
+        # ===== post-proposal bookkeeping =====
+
+        # helper function
+        def merge_Z(arr_Z: Tensor, new_val_Z: Tensor):
+            return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z)
+
+        branch1_lengths_Zxr = concat_K(branch1_lengths_Zxr, branch1_Z)
+        branch2_lengths_Zxr = concat_K(branch2_lengths_Zxr, branch2_Z)
+        leaf_counts_Zxt = merge_Z(
+            leaf_counts_Zxt,
+            gather_K(leaf_counts_Zxt, idx1_Z) + gather_K(leaf_counts_Zxt, idx2_Z),
+        )
+        embeddings_ZxtxD = merge_Z(embeddings_ZxtxD, embedding_ZxD)
+
+        # ===== compute Felsenstein likelihoods =====
+
+        Q_matrix_ZxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
+            embedding_ZxD, mm["site_positions_SxC"]
+        )
+
+        log_felsensteins_ZxSxA = compute_log_felsenstein_likelihoods_KxSxA(
+            Q_matrix_ZxSxAxA,
+            gather_K(log_felsensteins_ZxtxSxA, idx1_Z),
+            gather_K(log_felsensteins_ZxtxSxA, idx2_Z),
+            branch1_Z,
+            branch2_Z,
+        )
+        log_felsensteins_ZxtxSxA = merge_Z(
+            log_felsensteins_ZxtxSxA, log_felsensteins_ZxSxA
+        )
+
+        # ===== compute new likelihood and pi values =====
+
+        def compute_log_stat_probs_ZxtxSxA():
+            t = embeddings_ZxtxD.shape[1]
+
+            # flatten embeddings to compute stat_probs, then reshape back
+            embeddings_ZtxD = embeddings_ZxtxD.reshape(Z * t, D)
+            stat_probs_ZtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
+                embeddings_ZtxD, mm["site_positions_SxC"]
+            )
+            log_stat_probs_ZtxSxA = stat_probs_ZtxSxA.log()
+
+            Zt = stat_probs_ZtxSxA.shape[0]  # broadcasting is possible (Zt=1)
+            S = stat_probs_ZtxSxA.shape[1]  # broadcasting is possible (S=1)
+
+            # handle special case of stat_probs_VxSxA() broadcasting along
+            # the batch dimension
+            if Zt == 1:
+                return log_stat_probs_ZtxSxA.reshape(1, 1, S, A)
+            else:
+                return log_stat_probs_ZtxSxA.reshape(Z, -1, S, A)
+
+        prev_log_pi_Z = log_pi_Z
+        log_stat_probs_ZxtxSxA = compute_log_stat_probs_ZxtxSxA()
+
+        log_likelihood_Z, log_pi_Z = compute_log_likelihood_and_pi_K(
+            branch1_lengths_Zxr,
+            branch2_lengths_Zxr,
+            leaf_counts_Zxt,
+            log_felsensteins_ZxtxSxA,
+            log_stat_probs_ZxtxSxA,
+            self.prior_dist,
+            self.prior_branch_len,
+            self.log_double_factorials_2N,
+        )
+
+        # ===== compute sub-particle weights =====
+
+        # compute over-counting correction
+        log_v_minus_Z = compute_log_v_minus_K(N, leaf_counts_Zxt)
+
+        # equation (7) in the VCSMC paper
+        log_weight_Z = log_pi_Z - prev_log_pi_Z + log_v_minus_Z - log_v_plus_Z
+
+        # ===== compute particle weights =====
+
+        log_weight_KxJ = unsqueeze_KJ(log_weight_Z).reshape(K, J)
+
+        # for each initial particle, average over sub-particle weights
+        log_weight_K = torch.logsumexp(log_weight_KxJ, 1)
+        # divide by J
+        log_weight_K = log_weight_K - math.log(J)
+
+        #  ===== sample particles from sub-particles =====
+
+        if J > 1:
+            # distr has K batches, with J sub-particle weights per batch
+            sub_resample_distr_K = torch.distributions.Categorical(
+                logits=log_weight_KxJ
+            )
+            sub_indexes_K = sub_resample_distr_K.sample()
+        else:
+            sub_indexes_K = torch.zeros(K, dtype=torch.int, device=device)
+
+        gather_sub_K_idx_K = undo_unique_hash_idx_KJ[
+            torch.arange(K, device=device) * J + sub_indexes_K
+        ]
+
+        # ===== post sub-particle resampling bookkeeping =====
+
+        # helper function
+        def gather_sub_K(arr_Z: Tensor):
+            return arr_Z[gather_sub_K_idx_K]
+
+        # helper function
+        def concat_sub_K(arr_Zxr, val_K):
+            arr_Kxr = gather_sub_K(arr_Zxr)
+            return concat_K(arr_Kxr, val_K)
+
+        idx1_K = gather_sub_K(idx1_Z)
+        idx2_K = gather_sub_K(idx2_Z)
+        branch1_K = gather_sub_K(branch1_Z)
+        branch2_K = gather_sub_K(branch2_Z)
+        embedding_KxD = gather_sub_K(embedding_ZxD)
+
+        return {
+            "merge1_indexes_Kxr": concat_sub_K(merge1_indexes_Zxr, idx1_K),
+            "merge2_indexes_Kxr": concat_sub_K(merge2_indexes_Zxr, idx2_K),
+            "branch1_lengths_Kxr": concat_sub_K(branch1_lengths_Zxr, branch1_K),
+            "branch2_lengths_Kxr": concat_sub_K(branch2_lengths_Zxr, branch2_K),
+            "embeddings_KxrxD": concat_sub_K(embeddings_ZxrxD, embedding_KxD),
+            "leaf_counts_Kxt": gather_sub_K(leaf_counts_Zxt),
+            "embeddings_KxtxD": gather_sub_K(embeddings_ZxtxD),
+            "log_felsensteins_KxtxSxA": gather_sub_K(log_felsensteins_ZxtxSxA),
+            "log_pi_K": gather_sub_K(log_pi_Z),
+            "log_weight_K": log_weight_K,
+            "log_weights_list_rxK": ms["log_weights_list_rxK"] + [log_weight_K],
+            "log_likelihood_K": gather_sub_K(log_likelihood_Z),
+        }
+
     def forward(
         self,
         data_NxSxA: Tensor,
@@ -102,297 +398,43 @@ class VCSMC(nn.Module):
 
         N = data_batched_NxSxA.shape[0]
         A = data_batched_NxSxA.shape[2]
-
         K = self.K
         D = self.proposal.seq_encoder.D
 
-        # compress site positions
-        site_positions_SxC = self.q_matrix_decoder.site_positions_encoder(
-            site_positions_batched_SxSfull
-        )
+        mm: MergeMetadata = {
+            "device": device,
+            "N": N,
+            "A": A,
+            "K": K,
+            "D": D,
+            "site_positions_SxC": self.q_matrix_decoder.site_positions_encoder(
+                site_positions_batched_SxSfull
+            ),
+        }
 
         # at each step r, there are t = N-r >= 2 trees in the forest.
         # initially, r = 0 and t = N
 
-        # for tracking tree topologies
-        merge1_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int, device=device)
-        merge2_indexes_Kxr = torch.zeros(K, 0, dtype=torch.int, device=device)
-        branch1_lengths_Kxr = torch.zeros(K, 0, device=device)
-        branch2_lengths_Kxr = torch.zeros(K, 0, device=device)
-        # merged embedding at each step
-        embeddings_KxrxD = torch.zeros(K, 0, D, device=device)
-
-        leaf_counts_Kxt = torch.ones(K, N, dtype=torch.int, device=device)
-        # embeddings of each tree currently in the forest
-        embeddings_KxtxD = self.get_init_embeddings_KxNxD(data_NxSxA)
-
-        # Felsenstein probabilities for computing pi(s)
-        log_felsensteins_KxtxSxA = data_batched_NxSxA.log().repeat(K, 1, 1, 1)
-
-        # difference of current and last iteration's values are used to compute weights
-        log_pi_K = torch.zeros(K, device=device)
-        # for computing empirical measure pi_rk(s); initialize to uniform
-        log_weight_K = torch.zeros(K, device=device)
-
-        # must record all weights to compute ZCSMC
-        log_weights_list_rxK: list[Tensor] = []
-
-        # for returning at the end
-        log_likelihood_K = torch.zeros(K, device=device)  # initial value isn't used
+        ms: MergeState = {
+            "merge1_indexes_Kxr": torch.zeros(K, 0, dtype=torch.int, device=device),
+            "merge2_indexes_Kxr": torch.zeros(K, 0, dtype=torch.int, device=device),
+            "branch1_lengths_Kxr": torch.zeros(K, 0, device=device),
+            "branch2_lengths_Kxr": torch.zeros(K, 0, device=device),
+            "embeddings_KxrxD": torch.zeros(K, 0, D, device=device),
+            "leaf_counts_Kxt": torch.ones(K, N, dtype=torch.int, device=device),
+            "embeddings_KxtxD": self.get_init_embeddings_KxNxD(data_NxSxA),
+            "log_felsensteins_KxtxSxA": data_batched_NxSxA.log().repeat(K, 1, 1, 1),
+            "log_pi_K": torch.zeros(K, device=device),
+            "log_weight_K": torch.zeros(K, device=device),
+            "log_weights_list_rxK": [],
+            "log_likelihood_K": torch.zeros(
+                K, device=device
+            ),  # initial value isn't used
+        }
 
         # iterate over merge steps
         for _ in range(N - 1):
-            # ===== resample =====
-
-            resample_distr = torch.distributions.Categorical(logits=log_weight_K)
-            indexes_K = resample_distr.sample(torch.Size([K]))
-
-            merge1_indexes_Kxr = merge1_indexes_Kxr[indexes_K]
-            merge2_indexes_Kxr = merge2_indexes_Kxr[indexes_K]
-            branch1_lengths_Kxr = branch1_lengths_Kxr[indexes_K]
-            branch2_lengths_Kxr = branch2_lengths_Kxr[indexes_K]
-            embeddings_KxrxD = embeddings_KxrxD[indexes_K]
-            leaf_counts_Kxt = leaf_counts_Kxt[indexes_K]
-            embeddings_KxtxD = embeddings_KxtxD[indexes_K]
-            log_felsensteins_KxtxSxA = log_felsensteins_KxtxSxA[indexes_K]
-            log_pi_K = log_pi_K[indexes_K]
-
-            # ===== extend partial states using proposal =====
-
-            # sample from proposal distribution
-            (
-                idx1_KxJ,
-                idx2_KxJ,
-                branch1_KxJ,
-                branch2_KxJ,
-                embedding_KxJxD,
-                log_v_plus_KxJ,
-            ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD)
-
-            # ===== deal with sub-particle (J) dimension =====
-
-            J = idx1_KxJ.shape[1]
-
-            idx1_KJ = idx1_KxJ.flatten()
-            idx2_KJ = idx2_KxJ.flatten()
-            branch1_KJ = branch1_KxJ.flatten()
-            branch2_KJ = branch2_KxJ.flatten()
-            embedding_KJxD = embedding_KxJxD.reshape(K * J, D)
-            log_v_plus_KJ = log_v_plus_KxJ.flatten()
-
-            # ===== handle particles with matching hashes together =====
-
-            if self.hash_trick:
-                with torch.no_grad():
-                    # construct new embeddings to hash
-                    embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
-                    embeddings_KJxtxD = replace_with_merged_K(
-                        embeddings_KJxtxD, idx1_KJ, idx2_KJ, embedding_KJxD
-                    )
-
-                    embedding_norm_sqs_KJxt = torch.sum(embeddings_KJxtxD**2, 2)
-                    # sort first for predictable sum
-                    embedding_norm_sqs_KJxt = embedding_norm_sqs_KJxt.sort(1).values
-                    # use sum of norm square embeddings as hashes
-                    hashes_KJ = torch.sum(embedding_norm_sqs_KJxt, 1)
-
-                    sorted_hashes_KJ, hash_sort_idx_KJ = torch.sort(hashes_KJ)
-                    hash_unsort_idx_KJ = torch.argsort(hash_sort_idx_KJ)
-                    # Z = number of unique hashes
-                    _, hash_counts_Z = sorted_hashes_KJ.unique_consecutive(
-                        return_counts=True
-                    )
-                    # first occurrence index of each unique hash within the sorted hashes
-                    sorted_unique_hash_idx_Z = (
-                        torch.cumsum(hash_counts_Z, 0) - hash_counts_Z[0]
-                    )
-
-                    Z = hash_counts_Z.shape[0]
-
-                    # first occurrence index of each unique hash within the original hashes
-                    unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
-                    # undo the above mapping
-                    undo_unique_hash_idx_KJ = torch.arange(
-                        Z, device=device
-                    ).repeat_interleave(hash_counts_Z, 0)[hash_unsort_idx_KJ]
-
-                def squeeze_Z(arr_KJ: Tensor):
-                    """
-                    Returns unique values with respect to the hashes (and sorting).
-                    """
-                    return arr_KJ[unique_hash_idx_Z]
-
-                def unsqueeze_KJ(arr_Z: Tensor):
-                    """
-                    Expands unique values to original size (and undoing the sorting).
-                    """
-                    return arr_Z[undo_unique_hash_idx_KJ]
-
-            else:
-                Z = K * J
-                unique_hash_idx_Z = torch.arange(Z, device=device)
-                undo_unique_hash_idx_KJ = torch.arange(Z, device=device)
-
-                def squeeze_Z(arr_KJ: Tensor):
-                    return arr_KJ
-
-                def unsqueeze_KJ(arr_Z: Tensor):
-                    return arr_Z
-
-            # ===== squeeze particles with matching hashes =====
-
-            K_to_Z_idx_Z = torch.arange(K, device=device).repeat_interleave(J, 0)[
-                unique_hash_idx_Z
-            ]
-
-            # helper function
-            def K_to_Z(arr_K: Tensor):
-                return arr_K[K_to_Z_idx_Z]
-
-            idx1_Z = squeeze_Z(idx1_KJ)
-            idx2_Z = squeeze_Z(idx2_KJ)
-            branch1_Z = squeeze_Z(branch1_KJ)
-            branch2_Z = squeeze_Z(branch2_KJ)
-            embedding_ZxD = squeeze_Z(embedding_KJxD)
-            log_v_plus_Z = squeeze_Z(log_v_plus_KJ)
-
-            merge1_indexes_Zxr = K_to_Z(merge1_indexes_Kxr)
-            merge2_indexes_Zxr = K_to_Z(merge2_indexes_Kxr)
-            branch1_lengths_Zxr = K_to_Z(branch1_lengths_Kxr)
-            branch2_lengths_Zxr = K_to_Z(branch2_lengths_Kxr)
-            embeddings_ZxrxD = K_to_Z(embeddings_KxrxD)
-            leaf_counts_Zxt = K_to_Z(leaf_counts_Kxt)
-            embeddings_ZxtxD = K_to_Z(embeddings_KxtxD)
-            log_felsensteins_ZxtxSxA = K_to_Z(log_felsensteins_KxtxSxA)
-            log_pi_Z = K_to_Z(log_pi_K)
-
-            # ===== post-proposal bookkeeping =====
-
-            # helper function
-            def merge_Z(arr_Z: Tensor, new_val_Z: Tensor):
-                return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z)
-
-            branch1_lengths_Zxr = concat_K(branch1_lengths_Zxr, branch1_Z)
-            branch2_lengths_Zxr = concat_K(branch2_lengths_Zxr, branch2_Z)
-            leaf_counts_Zxt = merge_Z(
-                leaf_counts_Zxt,
-                gather_K(leaf_counts_Zxt, idx1_Z) + gather_K(leaf_counts_Zxt, idx2_Z),
-            )
-            embeddings_ZxtxD = merge_Z(embeddings_ZxtxD, embedding_ZxD)
-
-            # ===== compute Felsenstein likelihoods =====
-
-            Q_matrix_ZxSxAxA = self.q_matrix_decoder.Q_matrix_VxSxAxA(
-                embedding_ZxD, site_positions_SxC
-            )
-
-            log_felsensteins_ZxSxA = compute_log_felsenstein_likelihoods_KxSxA(
-                Q_matrix_ZxSxAxA,
-                gather_K(log_felsensteins_ZxtxSxA, idx1_Z),
-                gather_K(log_felsensteins_ZxtxSxA, idx2_Z),
-                branch1_Z,
-                branch2_Z,
-            )
-            log_felsensteins_ZxtxSxA = merge_Z(
-                log_felsensteins_ZxtxSxA, log_felsensteins_ZxSxA
-            )
-
-            # ===== compute new likelihood and pi values =====
-
-            def compute_log_stat_probs_ZxtxSxA():
-                t = embeddings_ZxtxD.shape[1]
-
-                # flatten embeddings to compute stat_probs, then reshape back
-                embeddings_ZtxD = embeddings_ZxtxD.reshape(Z * t, D)
-                stat_probs_ZtxSxA = self.q_matrix_decoder.stat_probs_VxSxA(
-                    embeddings_ZtxD, site_positions_SxC
-                )
-                log_stat_probs_ZtxSxA = stat_probs_ZtxSxA.log()
-
-                Zt = stat_probs_ZtxSxA.shape[0]  # broadcasting is possible (Zt=1)
-                S = stat_probs_ZtxSxA.shape[1]  # broadcasting is possible (S=1)
-
-                # handle special case of stat_probs_VxSxA() broadcasting along
-                # the batch dimension
-                if Zt == 1:
-                    return log_stat_probs_ZtxSxA.reshape(1, 1, S, A)
-                else:
-                    return log_stat_probs_ZtxSxA.reshape(Z, -1, S, A)
-
-            prev_log_pi_Z = log_pi_Z
-            log_stat_probs_ZxtxSxA = compute_log_stat_probs_ZxtxSxA()
-
-            log_likelihood_Z, log_pi_Z = compute_log_likelihood_and_pi_K(
-                branch1_lengths_Zxr,
-                branch2_lengths_Zxr,
-                leaf_counts_Zxt,
-                log_felsensteins_ZxtxSxA,
-                log_stat_probs_ZxtxSxA,
-                self.prior_dist,
-                self.prior_branch_len,
-                self.log_double_factorials_2N,
-            )
-
-            # ===== compute sub-particle weights =====
-
-            # compute over-counting correction
-            log_v_minus_Z = compute_log_v_minus_K(N, leaf_counts_Zxt)
-
-            # equation (7) in the VCSMC paper
-            log_weight_Z = log_pi_Z - prev_log_pi_Z + log_v_minus_Z - log_v_plus_Z
-
-            # ===== compute particle weights =====
-
-            log_weight_KxJ = unsqueeze_KJ(log_weight_Z).reshape(K, J)
-
-            # for each initial particle, average over sub-particle weights
-            log_weight_K = torch.logsumexp(log_weight_KxJ, 1)
-            # divide by J
-            log_weight_K = log_weight_K - math.log(J)
-
-            log_weights_list_rxK.append(log_weight_K)
-
-            #  ===== sample particles from sub-particles =====
-
-            if J > 1:
-                # distr has K batches, with J sub-particle weights per batch
-                sub_resample_distr_K = torch.distributions.Categorical(
-                    logits=log_weight_KxJ
-                )
-                sub_indexes_K = sub_resample_distr_K.sample()
-            else:
-                sub_indexes_K = torch.zeros(K, dtype=torch.int, device=device)
-
-            gather_sub_K_idx_K = undo_unique_hash_idx_KJ[
-                torch.arange(K, device=device) * J + sub_indexes_K
-            ]
-
-            # ===== post sub-particle resampling bookkeeping =====
-
-            # helper function
-            def gather_sub_K(arr_Z: Tensor):
-                return arr_Z[gather_sub_K_idx_K]
-
-            # helper function
-            def concat_sub_K(arr_Zxr, val_K):
-                arr_Kxr = gather_sub_K(arr_Zxr)
-                return concat_K(arr_Kxr, val_K)
-
-            idx1_K = gather_sub_K(idx1_Z)
-            idx2_K = gather_sub_K(idx2_Z)
-            branch1_K = gather_sub_K(branch1_Z)
-            branch2_K = gather_sub_K(branch2_Z)
-            embedding_KxD = gather_sub_K(embedding_ZxD)
-            merge1_indexes_Kxr = concat_sub_K(merge1_indexes_Zxr, idx1_K)
-            merge2_indexes_Kxr = concat_sub_K(merge2_indexes_Zxr, idx2_K)
-            branch1_lengths_Kxr = concat_sub_K(branch1_lengths_Zxr, branch1_K)
-            branch2_lengths_Kxr = concat_sub_K(branch2_lengths_Zxr, branch2_K)
-            embeddings_KxrxD = concat_sub_K(embeddings_ZxrxD, embedding_KxD)
-            leaf_counts_Kxt = gather_sub_K(leaf_counts_Zxt)
-            embeddings_KxtxD = gather_sub_K(embeddings_ZxtxD)
-            log_felsensteins_KxtxSxA = gather_sub_K(log_felsensteins_ZxtxSxA)
-            log_likelihood_K = gather_sub_K(log_likelihood_Z)
-            log_pi_K = gather_sub_K(log_pi_Z)
+            ms = self.merge_step(ms, mm)
 
         # ===== compute ZCSMC =====
 
@@ -401,31 +443,31 @@ class VCSMC(nn.Module):
         # multiplying over coalescent events (across r).
         # See equation (8) in the VCSMC paper.
 
-        log_weights_rxK = torch.stack(log_weights_list_rxK)
+        log_weights_rxK = torch.stack(ms["log_weights_list_rxK"])
         log_scaled_weights_rxK = log_weights_rxK - math.log(K)
         log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
         log_ZCSMC = torch.sum(log_sum_weights_r)
 
         # ===== build best Newick tree =====
 
-        best_tree_idx = torch.argmax(log_likelihood_K)
+        best_tree_idx = torch.argmax(ms["log_likelihood_K"])
         best_newick_tree = build_newick_tree(
             self.taxa_N,
-            merge1_indexes_Kxr[best_tree_idx],
-            merge2_indexes_Kxr[best_tree_idx],
-            branch1_lengths_Kxr[best_tree_idx],
-            branch2_lengths_Kxr[best_tree_idx],
+            ms["merge1_indexes_Kxr"][best_tree_idx],
+            ms["merge2_indexes_Kxr"][best_tree_idx],
+            ms["branch1_lengths_Kxr"][best_tree_idx],
+            ms["branch2_lengths_Kxr"][best_tree_idx],
         )
 
         # ===== return final results =====
 
         return {
             "log_ZCSMC": log_ZCSMC,
-            "log_likelihood_K": log_likelihood_K,
+            "log_likelihood_K": ms["log_likelihood_K"],
             "best_newick_tree": best_newick_tree,
-            "best_merge1_indexes_N1": merge1_indexes_Kxr[best_tree_idx],
-            "best_merge2_indexes_N1": merge2_indexes_Kxr[best_tree_idx],
-            "best_branch1_lengths_N1": branch1_lengths_Kxr[best_tree_idx],
-            "best_branch2_lengths_N1": branch2_lengths_Kxr[best_tree_idx],
-            "best_embeddings_N1xD": embeddings_KxrxD[best_tree_idx],
+            "best_merge1_indexes_N1": ms["merge1_indexes_Kxr"][best_tree_idx],
+            "best_merge2_indexes_N1": ms["merge2_indexes_Kxr"][best_tree_idx],
+            "best_branch1_lengths_N1": ms["branch1_lengths_Kxr"][best_tree_idx],
+            "best_branch2_lengths_N1": ms["branch2_lengths_Kxr"][best_tree_idx],
+            "best_embeddings_N1xD": ms["embeddings_KxrxD"][best_tree_idx],
         }
