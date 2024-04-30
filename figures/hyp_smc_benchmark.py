@@ -12,6 +12,7 @@ lr = 0.01
 epochs = 200
 lookahead_merge = True
 hash_trick = True
+checkpoint_grads = True
 
 
 def train_with_proposal(file: str):
@@ -22,9 +23,6 @@ def train_with_proposal(file: str):
     elif "DS6.phy" in file:
         K = 8
         sites_batch_size = 256
-    elif "DS4.phy" in file:
-        K = 8
-        sites_batch_size = None
     else:
         K = 16
         sites_batch_size = None
@@ -45,6 +43,7 @@ def train_with_proposal(file: str):
         taxa_N,
         K=K,
         hash_trick=hash_trick,
+        checkpoint_grads=checkpoint_grads,
     ).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
