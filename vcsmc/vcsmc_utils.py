@@ -94,6 +94,8 @@ def compute_log_likelihood_and_pi_K(
         log_pi_K: log P(Y,forest|theta)
     """
 
+    device = branch1_lengths_Kxr.device
+
     # dot Felsenstein probabilities with stationary probabilities (along axis A)
     log_likelihoods_KxtxS = torch.logsumexp(
         log_felsensteins_KxtxSxA + log_stat_probs_KxtxSxA, -1
@@ -111,20 +113,24 @@ def compute_log_likelihood_and_pi_K(
 
     log_topology_prior_K = torch.sum(-leaf_log_double_factorials_Kxt, 1)
 
+    # note: torch may use the device of the args passed to the distribution as
+    # the device for .log_prob(), so wrap all floats in tensors
     if prior_dist == "exp":
         # distribution has a mean of prior_branch_len
         branch_prior_distr = torch.distributions.Exponential(
-            rate=1.0 / prior_branch_len
+            rate=torch.tensor(1.0 / prior_branch_len, device=device),
         )
     elif prior_dist == "gamma":
         # distribution has a mean of prior_branch_len
         branch_prior_distr = torch.distributions.Gamma(
-            concentration=2.0, rate=2.0 / prior_branch_len
+            concentration=torch.tensor(2.0, device=device),
+            rate=torch.tensor(2.0 / prior_branch_len, device=device),
         )
     elif prior_dist == "unif":
         # distribution has a mean of prior_branch_len
         branch_prior_distr = torch.distributions.Uniform(
-            low=0.0, high=2.0 * prior_branch_len
+            low=torch.tensor(0.0, device=device),
+            high=torch.tensor(2.0 * prior_branch_len, device=device),
         )
     else:
         raise ValueError
