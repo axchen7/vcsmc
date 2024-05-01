@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import Tensor, nn
 
@@ -58,9 +60,15 @@ class Hyperbolic(Distance):
         super().__init__()
 
         if fixed_scale:
-            self.scale = initial_scale
+            self.log_scale = math.log(initial_scale)
         else:
-            self.scale = nn.Parameter(torch.tensor(float(initial_scale)))
+            self.log_scale = nn.Parameter(torch.tensor(math.log(initial_scale)))
+
+    def scale(self):
+        if isinstance(self.log_scale, Tensor):
+            return self.log_scale.exp()
+        else:
+            return math.exp(self.log_scale)
 
     def normalize(self, vectors_VxD: Tensor) -> Tensor:
         # return a vector with the same direction but with the norm passed
@@ -117,4 +125,4 @@ class Hyperbolic(Distance):
         # use larger epsilon to make float32 stable
         distance_V = torch.acosh(1 + 2 * delta_V + (EPSILON * 10))
 
-        return distance_V * self.scale
+        return distance_V * self.scale()

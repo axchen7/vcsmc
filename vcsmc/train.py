@@ -255,7 +255,9 @@ def train(
 
             if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
                 writer.add_scalar(
-                    "Hyperbolic scale", vcsmc.proposal.seq_encoder.distance.scale, epoch
+                    "Hyperbolic scale",
+                    vcsmc.proposal.seq_encoder.distance.scale(),
+                    epoch,
                 )
 
             if log_likelihood_K is not None:
