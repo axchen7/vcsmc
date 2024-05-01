@@ -18,15 +18,22 @@ checkpoint_grads = True
 
 def train_with_proposal(file: str):
     # hack to avoid OOM
-    if "DS7.phy" in file:
+    if "DS8.phy" in file:
+        K = 4
+        sites_batch_size = None
+        sample_taxa_count = 48
+    elif "DS7.phy" in file:
         K = 4
         sites_batch_size = 128
+        sample_taxa_count = None
     elif "DS6.phy" in file:
         K = 8
         sites_batch_size = 256
+        sample_taxa_count = None
     else:
         K = 16
         sites_batch_size = None
+        sample_taxa_count = None
 
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
@@ -60,11 +67,12 @@ def train_with_proposal(file: str):
         file,
         epochs=epochs,
         sites_batch_size=sites_batch_size,
+        sample_taxa_count=sample_taxa_count,
         run_name=run_name,
     )
 
 
-files = [f"data/hohna/DS{i}.phy" for i in range(1, 8)]
+files = [f"data/hohna/DS{i}.phy" for i in range(1, 9)]
 
 for file in files:
     train_with_proposal(file)
@@ -121,7 +129,7 @@ output_file = f"{make_output_dir()}/hyp_smc_benchmark.csv"
 if os.path.exists(output_file):
     os.remove(output_file)
 
-files = [f"data/hohna/DS{i}.phy" for i in range(1, 8)]
+files = [f"data/hohna/DS{i}.phy" for i in range(1, 9)]
 
 with open(output_file, "w") as f:
     f.write("file,ll_mean,ll_std_dev\n")
