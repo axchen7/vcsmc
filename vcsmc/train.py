@@ -68,10 +68,10 @@ def train(
     # ===== setup =====
 
     if root is None:
-        actual_root = taxa_N[0]
+        outgroup_root = None
         root_idx = 0
     else:
-        actual_root = root
+        outgroup_root = root
         root_idx = taxa_N.index(root)
 
     site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
@@ -146,7 +146,7 @@ def train(
         for data_batched_SxNxA, site_positions_batched_SxSfull in dataloader:
             data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
 
-            if sample_taxa_count:
+            if sample_taxa_count is not None:
                 # sample sample_taxa_count indices out of N total, without replacement
                 N = len(taxa_N)
                 indices = torch.randperm(N)[:sample_taxa_count]
@@ -264,14 +264,14 @@ def train(
             if (epoch + 1) % 4 == 0:
                 # ===== best tree =====
 
-                N = sample_taxa_count or len(taxa_N)
+                N = sample_taxa_count if sample_taxa_count is not None else len(taxa_N)
                 fig, ax = plt.subplots(figsize=(10, N * 0.2))
 
                 phylo_tree = Phylo.read(  # type: ignore
                     StringIO(best_newick_tree), "newick"
                 )
-                if not sample_taxa_count:
-                    phylo_tree.root_with_outgroup(actual_root)
+                if outgroup_root is not None:
+                    phylo_tree.root_with_outgroup(outgroup_root)
                 Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
                 writer.add_figure("Best tree", fig, epoch)
