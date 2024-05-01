@@ -87,9 +87,10 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
             for sequence_SxA in sequences_VxSxA:
                 mask = torch.all(sequence_SxA == self.data_NxSxA, dim=(1, 2))
                 index_1 = torch.nonzero(mask).squeeze(1)
-                if index_1.numel() != 1:
+                if index_1.numel() == 0:
                     raise ValueError("Sequence not found in data.")
-                indices_V = torch.cat((indices_V, index_1))
+                # if multiple matches, take the first one
+                indices_V = torch.cat((indices_V, index_1[0].unsqueeze(0)))
             return self.embedding_table(indices_V)
 
 
