@@ -35,7 +35,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
             norms_V.unsqueeze(-1) < max_norm, embeddings_VxD, unit_vectors_VxD
         )
 
-    result = evaluate(vcsmc, data_NxSxA)
+    result = evaluate(vcsmc, taxa_N, data_NxSxA)
 
     merge1_indexes_N1 = result["best_merge1_indexes_N1"]
     merge2_indexes_N1 = result["best_merge2_indexes_N1"]

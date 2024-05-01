@@ -41,7 +41,6 @@ def train_with_proposal(file: str):
     vcsmc = VCSMC(
         q_matrix_decoder,
         proposal,
-        taxa_N,
         K=K,
         hash_trick=hash_trick,
         checkpoint_grads=checkpoint_grads,
@@ -109,7 +108,7 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
     ll_list: list[float] = []
 
     for _ in tqdm(range(ESTIMATE_LL_ITERS)):
-        result = evaluate(vcsmc, data_NxSxA)
+        result = evaluate(vcsmc, taxa_N, data_NxSxA)
         ll_list.append(result["log_ZCSMC"].item())
 
     ll_mean = float(np.mean(ll_list))

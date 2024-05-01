@@ -38,6 +38,7 @@ class MergeMetadata(TypedDict):
     A: int
     K: int
     D: int
+    log_double_factorials_2N: Tensor
     # compressed site positions
     site_positions_SxC: Tensor
 
@@ -71,7 +72,6 @@ class VCSMC(nn.Module):
         self,
         q_matrix_decoder: QMatrixDecoder,
         proposal: Proposal,
-        taxa_N: list[str],
         *,
         K: int,
         hash_trick: bool = False,
@@ -84,7 +84,6 @@ class VCSMC(nn.Module):
         Args:
             q_matrix_decoder: QMatrix object
             proposal: Proposal object
-            taxa_N: List of taxa names of length N
             K: Number of particles
             hash_trick: Whether to use the hash trick to speed up computation
             checkpoint_grads: Use activation checkpointing to save memory (but uses more compute).
@@ -96,16 +95,11 @@ class VCSMC(nn.Module):
 
         self.q_matrix_decoder = q_matrix_decoder
         self.proposal = proposal
-        self.taxa_N = taxa_N
         self.K = K
         self.hash_trick = hash_trick
         self.checkpoint_grads = checkpoint_grads
         self.prior_dist: Literal["gamma", "exp", "unif"] = prior_dist
         self.prior_branch_len = prior_branch_len
-
-        N = len(taxa_N)
-        log_double_factorials_2N = compute_log_double_factorials_2N(N)
-        self.register_buffer("log_double_factorials_2N", log_double_factorials_2N)
 
     def get_init_embeddings_KxNxD(self, data_NxSxA: Tensor):
         """Sets the embedding for all K particles to the same initial value."""
@@ -315,7 +309,7 @@ class VCSMC(nn.Module):
             log_stat_probs_ZxtxSxA,
             self.prior_dist,
             self.prior_branch_len,
-            self.log_double_factorials_2N,
+            mm["log_double_factorials_2N"],
         )
 
         # ===== compute sub-particle weights =====
@@ -385,12 +379,15 @@ class VCSMC(nn.Module):
 
     def forward(
         self,
+        taxa_N: list[str],
         data_NxSxA: Tensor,
         data_batched_NxSxA: Tensor,
         site_positions_batched_SxSfull: Tensor,
     ) -> VcsmcResult:
         """
         Args:
+            taxa_N: List of taxa names of length N.
+                Used to build the Newick tree.
             data_NxSxA: Tensor of N full sequences (not batched).
                 Used to compute initial embeddings.
                 S = total number of sites.
@@ -422,6 +419,7 @@ class VCSMC(nn.Module):
             "A": A,
             "K": K,
             "D": D,
+            "log_double_factorials_2N": compute_log_double_factorials_2N(N, device),
             "site_positions_SxC": self.q_matrix_decoder.site_positions_encoder(
                 site_positions_batched_SxSfull
             ),
@@ -480,7 +478,7 @@ class VCSMC(nn.Module):
 
         best_tree_idx = torch.argmax(ms["log_likelihood_K"])
         best_newick_tree = build_newick_tree(
-            self.taxa_N,
+            taxa_N,
             ms["merge1_indexes_Kxr"][best_tree_idx],
             ms["merge2_indexes_Kxr"][best_tree_idx],
             ms["branch1_lengths_Kxr"][best_tree_idx],

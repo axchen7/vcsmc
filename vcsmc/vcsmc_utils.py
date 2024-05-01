@@ -7,7 +7,7 @@ from torch import Tensor
 from .expm import expm
 
 
-def compute_log_double_factorials_2N(N: int) -> Tensor:
+def compute_log_double_factorials_2N(N: int, device: torch.device) -> Tensor:
     """
     Pre-compute log double factorials.
 
@@ -32,7 +32,7 @@ def compute_log_double_factorials_2N(N: int) -> Tensor:
         all_values.append(even_values[i])
         all_values.append(odd_values[i])
 
-    return torch.tensor(all_values)
+    return torch.tensor(all_values, device=device)
 
 
 def compute_log_v_minus_K(N: int, leaf_counts_Kxt: Tensor) -> Tensor:

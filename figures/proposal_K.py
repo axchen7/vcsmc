@@ -35,7 +35,7 @@ def train_with_proposal(proposal_type: type[Proposal], K: int):
         raise ValueError()
 
     q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
-    vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K).to(device)
+    vcsmc = VCSMC(q_matrix_decoder, proposal, K=K).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     print(f"Starting {run_name}")

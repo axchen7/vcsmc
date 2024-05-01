@@ -23,7 +23,7 @@ def train_with_proposal(D: int):
     merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
     proposal = EmbeddingProposal(distance, seq_encoder, merge_encoder)
     q_matrix_decoder = JC69QMatrixDecoder(A=A)
-    vcsmc = VCSMC(q_matrix_decoder, proposal, taxa_N, K=K).to(device)
+    vcsmc = VCSMC(q_matrix_decoder, proposal, K=K).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     run_name = f"Hyp_SMC_D{D}"
