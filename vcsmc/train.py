@@ -1,8 +1,9 @@
 import os
 from io import StringIO
-from typing import Callable
+from typing import Callable, Literal
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from Bio import Phylo
 from torch import Tensor
@@ -291,7 +292,7 @@ def train_from_checkpoint(
     *,
     epochs: int | None = None,
     load_only: bool = False,
-    start_epoch: int | None = None,
+    start_epoch: int | Literal["best"] | None = None,
     modify_args: Callable[[TrainArgs, TrainCheckpoint], None] | None = None,
     search_dir: str = "runs",
 ) -> tuple[Tensor, list[str], VCSMC]:
@@ -301,6 +302,7 @@ def train_from_checkpoint(
             If set, overrides the number of epochs in the checkpoint.
         load_only: If True, loads the checkpoint and returns the data and model without training.
         start_epoch: The epoch to start training from. If None, starts from the latest checkpoint.
+            If "best", starts from the epoch with the highest ZCSMC.
         modify_args: A function that modifies the args and checkpoint before training.
         search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
 
@@ -308,11 +310,24 @@ def train_from_checkpoint(
         data_NxSxA, taxa_N, vcsmc
     """
 
+    checkpoints_dir = find_most_recent_path(search_dir, "checkpoints")
+
+    def find_best_epoch():
+        """Returns the epoch with the highest ZCSMC"""
+        results: TrainResults = torch.load(
+            find_most_recent_path(checkpoints_dir, "results.pt")
+        )
+        # there is no off-by-one error here: say epoch 1 has the highest LL;
+        # then, results[0] is max, and loading epoch 0 will give the model state
+        # before the optimizer step at epoch 1
+        return int(np.argmax(results["ZCSMCs"]))
+
+    if start_epoch == "best":
+        start_epoch = find_best_epoch()
+
     checkpoint_glob = (
         "checkpoint_*.pt" if start_epoch is None else f"checkpoint_{start_epoch}.pt"
     )
-
-    checkpoints_dir = find_most_recent_path(search_dir, "checkpoints")
 
     args: TrainArgs = torch.load(find_most_recent_path(checkpoints_dir, "args.pt"))
     checkpoint: TrainCheckpoint = torch.load(

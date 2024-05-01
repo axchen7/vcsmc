@@ -96,24 +96,12 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
     fname = file.split("/")[-1]
     run_name = f"Hyp_SMC_{fname}"
 
-    # find epoch with the largest log likelihood
-    def find_best_epoch():
-        results: TrainResults = torch.load(
-            find_most_recent_path(f"runs/*{run_name}", "results.pt")
-        )
-        # there is no off-by-one error here: say epoch 1 has the highest LL;
-        # then, results[0] is max, and loading epoch 0 will give the model state
-        # before the optimizer step at epoch 1
-        return int(np.argmax(results["ZCSMCs"]))
-
     data_NxSxA, taxa_N, vcsmc = train_from_checkpoint(
-        load_only=True,
-        start_epoch=find_best_epoch(),
-        search_dir=f"runs/*{run_name}",
+        load_only=True, start_epoch="best", search_dir=f"runs/*{run_name}"
     )
 
     # hack to avoid OOM
-    if "DS7.phy" in file:
+    if fname == "DS7.phy":
         vcsmc.K = 2
 
     print(f"Evaluating {run_name}")
