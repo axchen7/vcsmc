@@ -72,13 +72,16 @@ def compute_log_felsenstein_likelihoods_KxSxA(
     return log_prob1_KxSxA + log_prob2_KxSxA
 
 
+PriorDist = Literal["gamma", "exp", "unif"]
+
+
 def compute_log_likelihood_and_pi_K(
     branch1_lengths_Kxr: Tensor,
     branch2_lengths_Kxr: Tensor,
     leaf_counts_Kxt: Tensor,
     log_felsensteins_KxtxSxA: Tensor,
     log_stat_probs_KxtxSxA: Tensor,
-    prior_dist: Literal["gamma", "exp", "unif"],
+    prior_dist: PriorDist,
     prior_branch_len: float,
     log_double_factorials_2N: Tensor,
 ) -> tuple[Tensor, Tensor]:
@@ -132,8 +135,6 @@ def compute_log_likelihood_and_pi_K(
             low=torch.tensor(0.0, device=device),
             high=torch.tensor(2.0 * prior_branch_len, device=device),
         )
-    else:
-        raise ValueError
 
     log_branch1_prior_K = torch.sum(branch_prior_distr.log_prob(branch1_lengths_Kxr), 1)
     log_branch2_prior_K = torch.sum(branch_prior_distr.log_prob(branch2_lengths_Kxr), 1)

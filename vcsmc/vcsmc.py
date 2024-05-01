@@ -8,6 +8,7 @@ from torch.utils.checkpoint import checkpoint
 from .proposals import Proposal
 from .q_matrix_decoders import QMatrixDecoder
 from .vcsmc_utils import (
+    PriorDist,
     build_newick_tree,
     compute_log_double_factorials_2N,
     compute_log_felsenstein_likelihoods_KxSxA,
@@ -77,7 +78,7 @@ class VCSMC(nn.Module):
         hash_trick: bool = False,
         checkpoint_grads: bool = False,
         # assume Exp(10) branch length prior
-        prior_dist: Literal["gamma", "exp", "unif"] = "exp",
+        prior_dist: PriorDist = "exp",
         prior_branch_len: float = 0.1,
     ):
         """
@@ -98,7 +99,7 @@ class VCSMC(nn.Module):
         self.K = K
         self.hash_trick = hash_trick
         self.checkpoint_grads = checkpoint_grads
-        self.prior_dist: Literal["gamma", "exp", "unif"] = prior_dist
+        self.prior_dist: PriorDist = prior_dist
         self.prior_branch_len = prior_branch_len
 
     def get_init_embeddings_KxNxD(self, data_NxSxA: Tensor):
