@@ -102,7 +102,7 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
 
     # hack to avoid OOM
     if fname == "DS7.phy":
-        vcsmc.K = 2
+        vcsmc.K = 1
 
     print(f"Evaluating {run_name}")
 
