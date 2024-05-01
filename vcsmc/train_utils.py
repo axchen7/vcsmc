@@ -18,6 +18,7 @@ class TrainArgs(TypedDict):
     root: str | None
     epochs: int
     sites_batch_size: int | None
+    sample_taxa_count: int | None
     run_name: str | None
 
 

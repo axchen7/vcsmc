@@ -61,12 +61,11 @@ def train(
     epochs: int,
     start_epoch: int = 0,
     sites_batch_size: int | None = None,
+    sample_taxa_count: int | None = None,
     run_name: str | None = None,
     profile: bool = False,
 ):
     # ===== setup =====
-
-    N = data_NxSxA.shape[0]
 
     if root is None:
         actual_root = taxa_N[0]
@@ -100,6 +99,7 @@ def train(
             "root": root,
             "epochs": epochs,
             "sites_batch_size": sites_batch_size,
+            "sample_taxa_count": sample_taxa_count,
             "run_name": run_name,
         }
         filename = "args.pt"
@@ -146,10 +146,23 @@ def train(
         for data_batched_SxNxA, site_positions_batched_SxSfull in dataloader:
             data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
 
+            if sample_taxa_count:
+                # sample sample_taxa_count indices out of N total, without replacement
+                N = len(taxa_N)
+                indices = torch.randperm(N)[:sample_taxa_count]
+
+                samp_taxa_N = [taxa_N[i] for i in indices]
+                samp_data_NxSxA = data_NxSxA[indices]
+                samp_data_batched_NxSxA = data_batched_NxSxA[indices]
+            else:
+                samp_taxa_N = taxa_N
+                samp_data_NxSxA = data_NxSxA
+                samp_data_batched_NxSxA = data_batched_NxSxA
+
             result: VcsmcResult = vcsmc(
-                taxa_N,
-                data_NxSxA,
-                data_batched_NxSxA,
+                samp_taxa_N,
+                samp_data_NxSxA,
+                samp_data_batched_NxSxA,
                 site_positions_batched_SxSfull,
             )
 
@@ -251,12 +264,14 @@ def train(
             if (epoch + 1) % 4 == 0:
                 # ===== best tree =====
 
+                N = sample_taxa_count or len(taxa_N)
                 fig, ax = plt.subplots(figsize=(10, N * 0.2))
 
                 phylo_tree = Phylo.read(  # type: ignore
                     StringIO(best_newick_tree), "newick"
                 )
-                phylo_tree.root_with_outgroup(actual_root)
+                if not sample_taxa_count:
+                    phylo_tree.root_with_outgroup(actual_root)
                 Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
                 writer.add_figure("Best tree", fig, epoch)
