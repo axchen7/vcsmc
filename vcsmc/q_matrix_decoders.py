@@ -214,17 +214,26 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
     irrespective of the input embeddings.
     """
 
-    def __init__(self, *, baseline: float = 0.5):
+    def __init__(
+        self,
+        *,
+        exchanges_baseline: float = 0.5,
+        stat_props_baseline: float = 0.5,
+    ):
         """
         Args:
-            baseline: Baseline probabilities for stat_probs, for each of the A letters, from 0 to 1.
-                Take this much of the probability mass from the uniform distribution 1/A.
+            exchanges_baseline: Baseline probabilities for nucleotide_exchanges_6, from 0 to 1.
+                Take this much of the probability mass from the uniform distribution.
+                Helps prevent the model from converging to a degenerate solution.
+            stat_props_baseline: Baseline probabilities for stat_probs, for each of the A letters, from 0 to 1.
+                Take this much of the probability mass from the uniform distribution.
                 Helps prevent the model from converging to a degenerate solution.
         """
 
         super().__init__()
 
-        self.baseline = baseline
+        self.exchanges_baseline = exchanges_baseline
+        self.stat_props_baseline = stat_props_baseline
 
         self.log_nucleotide_exchanges_6 = nn.Parameter(torch.zeros(6))
         self.log_stat_probs_A = nn.Parameter(torch.zeros(16))
@@ -236,13 +245,20 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         nucleotide_exchanges_6 = nucleotide_exchanges_6 / torch.mean(
             nucleotide_exchanges_6
         )
+        nucleotide_exchanges_6 = (
+            self.exchanges_baseline * 1
+            + (1 - self.exchanges_baseline) * nucleotide_exchanges_6
+        )
         return nucleotide_exchanges_6
 
     def stats_probs_A(self):
         """Internal, returns global stationary probabilities."""
 
         stat_probs_A = self.log_stat_probs_A.softmax(0)
-        stat_probs_A = self.baseline * (1 / 16) + (1 - self.baseline) * stat_probs_A
+        stat_probs_A = (
+            self.stat_props_baseline * (1 / 16)
+            + (1 - self.stat_props_baseline) * stat_probs_A
+        )
         return stat_probs_A
 
     def Q_matrix_VxSxAxA(
