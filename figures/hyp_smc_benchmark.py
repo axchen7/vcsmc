@@ -20,8 +20,8 @@ def train_with_proposal(file: str):
     # hack to avoid OOM
     if "DS8.phy" in file:
         K = 4
-        sites_batch_size = None
-        sample_taxa_count = 48
+        sites_batch_size = 256
+        sample_taxa_count = None
     elif "DS7.phy" in file:
         K = 4
         sites_batch_size = 128
