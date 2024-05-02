@@ -467,7 +467,14 @@ class VCSMC(nn.Module):
                 # checkpoint loop body to save memory
                 ms = cast(
                     MergeState,
-                    checkpoint(self.merge_step, ms, mm, indexes_K, use_reentrant=False),
+                    checkpoint(
+                        self.merge_step,
+                        ms,
+                        mm,
+                        indexes_K,
+                        use_reentrant=False,
+                        preserve_rng_state=False,
+                    ),
                 )
             else:
                 ms = self.merge_step(ms, mm, indexes_K)
