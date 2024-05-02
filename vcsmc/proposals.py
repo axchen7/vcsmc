@@ -42,7 +42,7 @@ class Proposal(nn.Module):
         self.seq_encoder = seq_encoder
 
     def forward(
-        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self, N: int, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose J different particles, each defined by the two nodes being
@@ -50,7 +50,6 @@ class Proposal(nn.Module):
 
         Args:
             N: The number of leaf nodes.
-            leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
         Returns:
             idx1_KxJ: Indices of the first node to merge.
@@ -111,12 +110,12 @@ class ExpBranchProposal(Proposal):
         return rate1, rate2
 
     def forward(
-        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self, N: int, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         device = embeddings_KxtxD.device
 
-        K = leaf_counts_Kxt.shape[0]
-        t = leaf_counts_Kxt.shape[1]  # number of subtrees
+        K = embeddings_KxtxD.shape[0]
+        t = embeddings_KxtxD.shape[1]  # number of subtrees
         r = N - t  # merge step
 
         # ===== determine nodes to merge =====
@@ -223,12 +222,12 @@ class EmbeddingProposal(Proposal):
         self.merge_indexes_N1x2 = merge_indexes_N1x2
 
     def forward(
-        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self, N: int, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         device = embeddings_KxtxD.device
 
-        K = leaf_counts_Kxt.shape[0]
-        t = leaf_counts_Kxt.shape[1]  # number of subtrees
+        K = embeddings_KxtxD.shape[0]
+        t = embeddings_KxtxD.shape[1]  # number of subtrees
         r = N - t  # merge step
 
         # ===== determine nodes to merge =====

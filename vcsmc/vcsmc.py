@@ -141,7 +141,7 @@ class VCSMC(nn.Module):
             branch2_KxJ,
             embedding_KxJxD,
             log_v_plus_KxJ,
-        ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD)
+        ) = self.proposal(N, embeddings_KxtxD)
 
         # ===== deal with sub-particle (J) dimension =====
 
