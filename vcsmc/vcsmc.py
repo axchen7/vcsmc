@@ -53,11 +53,10 @@ class MergeState(TypedDict):
     branch2_lengths_Kxr: Tensor
     # merged embedding at each step
     embeddings_KxrxD: Tensor
-    # embeddings of each tree currently in the forest
     leaf_counts_Kxt: Tensor
     hashes_Kxt: Tensor
-    embeddings_KxtxD: Tensor
     # embeddings of each tree currently in the forest
+    embeddings_KxtxD: Tensor
     log_felsensteins_KxtxSxA: Tensor
     # difference of current and last iteration's values are used to compute weights
     log_pi_K: Tensor
