@@ -386,7 +386,7 @@ class VCSMC(nn.Module):
         data_batched_NxSxA: Tensor,
         site_positions_batched_SxSfull: Tensor,
         *,
-        temperature: float = 1.0,
+        temperature: float | None = None,
     ) -> VcsmcResult:
         """
         Args:
@@ -401,8 +401,8 @@ class VCSMC(nn.Module):
                 S = number of sites in the batch.
                 Sfull = total number of sites.
             temperature: Temperature for resampling.
-                Setting this to anything other than 1 yields a biased estimator
-                of the likelihood.
+                Setting this to anything other than 1 (default) yields a biased
+                estimator of the likelihood.
         Returns a dict containing:
             log_ZCSMC: lower bound to the likelihood; should set cost = -log_ZCSMC
             log_likelihood_K: log likelihoods for each particle at the last merge step
@@ -419,6 +419,9 @@ class VCSMC(nn.Module):
         A = data_batched_NxSxA.shape[2]
         K = self.K
         D = self.proposal.seq_encoder.D
+
+        if temperature is None:
+            temperature = 1.0
 
         mm: MergeMetadata = {
             "device": device,
