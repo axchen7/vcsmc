@@ -34,7 +34,7 @@ class TrainResults(TypedDict):
     log_likelihood_avgs: list[float]
 
 
-class slow_start_lr_scheduler(LambdaLR):
+class SlowStartLRScheduler(LambdaLR):
     """
     Use a smaller learning rate for the first few epochs.
     """
