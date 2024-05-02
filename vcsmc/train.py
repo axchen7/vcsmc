@@ -396,6 +396,8 @@ def evaluate(
     vcsmc: VCSMC,
     taxa_N: list[str],
     data_NxSxA: Tensor,
+    *,
+    temperature: float | None = None,
 ) -> VcsmcResult:
     dataset = batch_by_sites(data_NxSxA, None)
 
@@ -403,4 +405,10 @@ def evaluate(
     data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
     data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
 
-    return vcsmc(taxa_N, data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
+    return vcsmc(
+        taxa_N,
+        data_NxSxA,
+        data_batched_NxSxA,
+        site_positions_batched_SxSfull,
+        temperature=temperature,
+    )
