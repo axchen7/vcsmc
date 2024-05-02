@@ -42,6 +42,7 @@ class MergeMetadata(TypedDict):
     log_double_factorials_2N: Tensor
     # compressed site positions
     site_positions_SxC: Tensor
+    temperature: float
 
 
 class MergeState(TypedDict):
@@ -335,7 +336,7 @@ class VCSMC(nn.Module):
         if J > 1:
             # distr has K batches, with J sub-particle weights per batch
             sub_resample_distr_K = torch.distributions.Categorical(
-                logits=log_weight_KxJ
+                logits=log_weight_KxJ / mm["temperature"]
             )
             sub_indexes_K = sub_resample_distr_K.sample()
         else:
@@ -384,6 +385,8 @@ class VCSMC(nn.Module):
         data_NxSxA: Tensor,
         data_batched_NxSxA: Tensor,
         site_positions_batched_SxSfull: Tensor,
+        *,
+        temperature: float = 1.0,
     ) -> VcsmcResult:
         """
         Args:
@@ -397,6 +400,9 @@ class VCSMC(nn.Module):
             site_positions_SxSfull: One-hot encodings of the true site positions.
                 S = number of sites in the batch.
                 Sfull = total number of sites.
+            temperature: Temperature for resampling.
+                Setting this to anything other than 1 yields a biased estimator
+                of the likelihood.
         Returns a dict containing:
             log_ZCSMC: lower bound to the likelihood; should set cost = -log_ZCSMC
             log_likelihood_K: log likelihoods for each particle at the last merge step
@@ -424,6 +430,7 @@ class VCSMC(nn.Module):
             "site_positions_SxC": self.q_matrix_decoder.site_positions_encoder(
                 site_positions_batched_SxSfull
             ),
+            "temperature": temperature,
         }
 
         # at each step r, there are t = N-r >= 2 trees in the forest.
@@ -451,7 +458,9 @@ class VCSMC(nn.Module):
         for _ in range(N - 1):
             # sample indexes_K outside checkpoint so we get a predictable # of
             # unique particles (under hash trick)
-            resample_distr = torch.distributions.Categorical(logits=ms["log_weight_K"])
+            resample_distr = torch.distributions.Categorical(
+                logits=ms["log_weight_K"] / temperature
+            )
             indexes_K = resample_distr.sample(torch.Size([K]))
 
             if self.checkpoint_grads:
