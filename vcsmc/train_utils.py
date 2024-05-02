@@ -1,4 +1,5 @@
 import glob
+import math
 import os
 import shutil
 from typing import Callable, TypedDict
@@ -11,10 +12,16 @@ from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 from .vcsmc import VCSMC
 
 
+class TemperatureScheduler:
+    def __call__(self, epoch: int) -> float:
+        raise NotImplementedError
+
+
 class TrainArgs(TypedDict):
     taxa_N: list[str]
     data_NxSxA: Tensor
     file: str
+    temperature_scheduler: TemperatureScheduler | None
     root: str | None
     epochs: int
     sites_batch_size: int | None
@@ -32,6 +39,19 @@ class TrainCheckpoint(TypedDict):
 class TrainResults(TypedDict):
     ZCSMCs: list[float]
     log_likelihood_avgs: list[float]
+
+
+class ExpDecayTemperatureScheduler(TemperatureScheduler):
+    def __init__(self, initial_temp: float, decay_rate: float):
+        """
+        The temperature decays exponentially from initial_temp to 1.
+        Example args: initial_temp=10, decay_rate=1/100
+        """
+        self.initial_temp = initial_temp
+        self.decay_rate = decay_rate
+
+    def __call__(self, epoch: int) -> float:
+        return 1 + (self.initial_temp - 1) * math.exp(-self.decay_rate * epoch)
 
 
 class SlowStartLRScheduler(LambdaLR):

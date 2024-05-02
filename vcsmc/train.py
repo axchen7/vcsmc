@@ -12,7 +12,13 @@ from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from .encoders import Hyperbolic
-from .train_utils import TrainArgs, TrainCheckpoint, TrainResults, find_most_recent_path
+from .train_utils import (
+    TemperatureScheduler,
+    TrainArgs,
+    TrainCheckpoint,
+    TrainResults,
+    find_most_recent_path,
+)
 from .vcsmc import VCSMC, VcsmcResult
 
 
@@ -57,6 +63,7 @@ def train(
     file: str,
     *,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
+    temperature_scheduler: TemperatureScheduler | None = None,
     root: str | None = None,
     epochs: int,
     start_epoch: int = 0,
@@ -96,6 +103,7 @@ def train(
             "taxa_N": taxa_N,
             "data_NxSxA": data_NxSxA,
             "file": file,
+            "temperature_scheduler": temperature_scheduler,
             "root": root,
             "epochs": epochs,
             "sites_batch_size": sites_batch_size,
@@ -125,6 +133,7 @@ def train(
 
     def train_step(
         dataloader: DataLoader,
+        epoch: int,
     ) -> tuple[float, Tensor | None, float, str]:
         """
         Trains one epoch, iterating through batches.
@@ -159,11 +168,16 @@ def train(
                 samp_data_NxSxA = data_NxSxA
                 samp_data_batched_NxSxA = data_batched_NxSxA
 
+            temperature = None
+            if temperature_scheduler is not None:
+                temperature = temperature_scheduler(epoch)
+
             result: VcsmcResult = vcsmc(
                 samp_taxa_N,
                 samp_data_NxSxA,
                 samp_data_batched_NxSxA,
                 site_positions_batched_SxSfull,
+                temperature=temperature,
             )
 
             log_ZCSMC = result["log_ZCSMC"]
@@ -235,7 +249,7 @@ def train(
             epoch += start_epoch
 
             log_ZCSMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
-                train_step(dataloader)
+                train_step(dataloader, epoch)
             )
 
             save_checkpoint(epoch + 1)
