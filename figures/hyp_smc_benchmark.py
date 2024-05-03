@@ -136,9 +136,12 @@ with open(output_file, "w") as f:
     f.flush()
 
     for file in files:
-        ll_mean, ll_std_dev = estimate_log_likelihood(file)
-        print(f"LL estimate: {ll_mean:.2f} ± {ll_std_dev:.2f}")
-        f.write(f"{file},{ll_mean:.2f},{ll_std_dev:.2f}\n")
-        f.flush()
+        try:
+            ll_mean, ll_std_dev = estimate_log_likelihood(file)
+            print(f"LL estimate: {ll_mean:.2f} ± {ll_std_dev:.2f}")
+            f.write(f"{file},{ll_mean:.2f},{ll_std_dev:.2f}\n")
+            f.flush()
+        except FileNotFoundError as e:
+            print(f"Skipping {file}: {e}")
 
 # %%
