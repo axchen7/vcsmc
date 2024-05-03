@@ -191,6 +191,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
+        sample_branches_sigma: float = 0.1,
         merge_indexes_N1x2: Tensor | None = None,
     ):
         """
@@ -206,8 +207,9 @@ class EmbeddingProposal(Proposal):
                 Negative pairwise node distances divided by `sample_merge_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. If None, then a
                 pair of nodes will be sampled uniformly. Only used if `lookahead_merge`is false.
-            sample_branches: Whether to sample branch lengths from an exponential distribution.
+            sample_branches: Whether to sample branch lengths from a log normal distribution.
                 If false, simply use the distance between embeddings as the branch length.
+            sample_branches_sigma: sigma parameter for the log normal distribution used to sample branch lengths.
             merge_indexes_N1x2: If not None, always use these merge indexes instead of sampling.
                 This fixes the tree topology.
         """
@@ -219,6 +221,7 @@ class EmbeddingProposal(Proposal):
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
+        self.sample_branches_sigma = sample_branches_sigma
         self.merge_indexes_N1x2 = merge_indexes_N1x2
 
     def forward(
@@ -314,26 +317,38 @@ class EmbeddingProposal(Proposal):
         dist2_KxJ = dist2_KJ.reshape(K, J)
 
         if self.sample_branches:
-            # sample branch lengths from exp distributions whose expectations
+            # sample branch lengths from log normal distributions whose medians
             # are the distances between children and merged embeddings
 
-            # EPSILON**0.5 is needed to prevent division by zero under float32
-            rate1_KxJ = 1 / (dist1_KxJ + EPSILON**0.5)
-            rate2_KxJ = 1 / (dist2_KxJ + EPSILON**0.5)
+            # log of median gives the mean of the inner normal distribution
+            mu1_KxJ = dist1_KxJ.log()
+            mu2_KxJ = dist2_KxJ.log()
 
-            # re-parameterization trick: sample from U[0, 1] and transform to
-            # exponential distribution (so gradients can flow through the sample)
+            sigma = self.sample_branches_sigma
 
-            uniform1_KxJ = torch.rand([K, J], device=device)
-            uniform2_KxJ = torch.rand([K, J], device=device)
+            # re-parameterization trick: sample from N(0, 1) and transform to
+            # log normal distribution (so gradients can flow through the sample)
 
-            # branch1 ~ Exp(rate1) and branch2 ~ Exp(rate2)
-            branch1_KxJ = -(1 / rate1_KxJ) * uniform1_KxJ.log()
-            branch2_KxJ = -(1 / rate2_KxJ) * uniform2_KxJ.log()
+            normal1_KxJ = torch.randn([K, J], device=device)
+            normal2_KxJ = torch.randn([K, J], device=device)
 
-            # log of exponential pdf
-            log_branch1_prob_KxJ = rate1_KxJ.log() - rate1_KxJ * branch1_KxJ
-            log_branch2_prob_KxJ = rate2_KxJ.log() - rate2_KxJ * branch2_KxJ
+            # branch length = exp(mu + sigma * Z), where Z ~ N(0, 1)
+            branch1_KxJ = torch.exp(mu1_KxJ + sigma * normal1_KxJ)
+            branch2_KxJ = torch.exp(mu2_KxJ + sigma * normal2_KxJ)
+
+            # log of log normal pdf
+            log_branch1_prob_KxJ = (
+                -((branch1_KxJ.log() - mu1_KxJ) ** 2) / (2 * sigma**2)
+                - branch1_KxJ.log()
+                - math.log(sigma)
+                - math.log(2 * math.pi) / 2
+            )
+            log_branch2_prob_KxJ = (
+                -((branch2_KxJ.log() - mu2_KxJ) ** 2) / (2 * sigma**2)
+                - branch2_KxJ.log()
+                - math.log(sigma)
+                - math.log(2 * math.pi) / 2
+            )
         else:
             branch1_KxJ = dist1_KxJ
             branch2_KxJ = dist2_KxJ
