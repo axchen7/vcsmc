@@ -288,16 +288,7 @@ class VCSMC(nn.Module):
                 embeddings_ZtxD, mm["site_positions_SxC"]
             )
             log_stat_probs_ZtxSxA = stat_probs_ZtxSxA.log()
-
-            Zt = stat_probs_ZtxSxA.shape[0]  # broadcasting is possible (Zt=1)
-            S = stat_probs_ZtxSxA.shape[1]  # broadcasting is possible (S=1)
-
-            # handle special case of stat_probs_VxSxA() broadcasting along
-            # the batch dimension
-            if Zt == 1:
-                return log_stat_probs_ZtxSxA.reshape(1, 1, S, A)
-            else:
-                return log_stat_probs_ZtxSxA.reshape(Z, -1, S, A)
+            return log_stat_probs_ZtxSxA.reshape(Z, t, -1, A)
 
         prev_log_pi_Z = log_pi_Z
         log_stat_probs_ZxtxSxA = compute_log_stat_probs_ZxtxSxA()

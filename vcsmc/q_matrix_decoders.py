@@ -55,23 +55,29 @@ class JC69QMatrixDecoder(QMatrixDecoder):
         Q_matrix_AxA = torch.full([A, A], fill_value)
         # set diagonal to -1 (sum of off-diagonal entries)
         Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(A))
-        Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
-        self.register_buffer("Q_matrix_1x1xAxA", Q_matrix_1x1xAxA)
+        Q_matrix_AxA = Q_matrix_AxA[None, None]
+        self.register_buffer("Q_matrix_AxA", Q_matrix_AxA)
 
         # stationary probabilities are uniform
         stat_probs_A = torch.full([A], 1 / A)
-        stat_probs_1x1xA = stat_probs_A[None, None]
-        self.register_buffer("stat_probs_1x1xA", stat_probs_1x1xA)
+        stat_probs_A = stat_probs_A[None, None]
+        self.register_buffer("stat_probs_A", stat_probs_A)
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        return self.Q_matrix_1x1xAxA
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
+
+        return self.Q_matrix_AxA.expand(V, S, -1, -1)
 
     def stat_probs_VxSxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        return self.stat_probs_1x1xA
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
+
+        return self.stat_probs_A.expand(V, S, -1)
 
 
 class DenseStationaryQMatrixDecoder(QMatrixDecoder):
@@ -101,6 +107,9 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     ) -> Tensor:
         device = embeddings_VxD.device
 
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
+
         # use exp to ensure all off-diagonal entries are positive
         Q_matrix_AxA = self.log_Q_matrix_AxA.exp()
 
@@ -114,9 +123,7 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         # set diagonal to -1 (sum of off-diagonal entries)
         Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(self.A, device=device))
 
-        # return only shape (1,1,A,A), but assume broadcasting rules apply...
-        Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
-        return Q_matrix_1x1xAxA
+        return Q_matrix_AxA.expand(V, S, -1, -1)
 
     def stat_probs_VxSxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -170,6 +177,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         device = embeddings_VxD.device
 
         V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
 
         expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
 
@@ -194,9 +202,8 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
             -torch.ones(V, self.A, device=device), dim1=-2, dim2=-1
         )
 
-        # return only shape (V,1,A,A), but assume broadcasting rules apply...
         Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, None]
-        return Q_matrix_Vx1xAxA
+        return Q_matrix_Vx1xAxA.expand(-1, S, -1, -1)
 
     def stat_probs_VxSxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -266,6 +273,9 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
     ) -> Tensor:
         device = embeddings_VxD.device
 
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
+
         pi = self.nucleotide_exchanges_6()  # length 6
         pi8 = pi.repeat(8)
 
@@ -295,18 +305,17 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         diag_A = torch.sum(Q_matrix_AxA, -1)
         Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-diag_A)
 
-        # return only shape (1,1,A,A), but assume broadcasting rules apply...
-        Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
-        return Q_matrix_1x1xAxA
+        return Q_matrix_AxA.expand(V, S, -1, -1)
 
     def stat_probs_VxSxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
+
         stat_probs_A = self.stats_probs_A()
 
-        # return only shape (1,1,A), but assume broadcasting rules apply...
-        stat_probs_VxSxA = stat_probs_A[None, None]
-        return stat_probs_VxSxA
+        return stat_probs_A.expand(V, S, -1)
 
 
 class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
