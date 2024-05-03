@@ -41,6 +41,13 @@ class Proposal(nn.Module):
 
         self.seq_encoder = seq_encoder
 
+    def uses_deterministic_branches(self) -> bool:
+        """
+        Returns true if the proposal emits the same branch lengths when merging
+        the same nodes.
+        """
+        raise NotImplementedError
+
     def forward(
         self, N: int, embeddings_KxtxD: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
@@ -108,6 +115,9 @@ class ExpBranchProposal(Proposal):
         rate1 = self.log_rates1_N1[r].exp()
         rate2 = self.log_rates2_N1[r].exp()
         return rate1, rate2
+
+    def uses_deterministic_branches(self) -> bool:
+        return False
 
     def forward(
         self, N: int, embeddings_KxtxD: Tensor
@@ -223,6 +233,9 @@ class EmbeddingProposal(Proposal):
         self.sample_branches = sample_branches
         self.sample_branches_sigma = sample_branches_sigma
         self.merge_indexes_N1x2 = merge_indexes_N1x2
+
+    def uses_deterministic_branches(self) -> bool:
+        return not self.sample_branches
 
     def forward(
         self, N: int, embeddings_KxtxD: Tensor

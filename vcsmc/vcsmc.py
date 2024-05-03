@@ -412,6 +412,12 @@ class VCSMC(nn.Module):
             best_branch2_lengths_r: right branch lengths for the best tree
         """
 
+        # catch configuration errors
+        if self.hash_trick:
+            assert (
+                self.proposal.uses_deterministic_branches()
+            ), "Hash trick requires a proposal that uses deterministic branches."
+
         device = data_batched_NxSxA.device
 
         N = data_batched_NxSxA.shape[0]
