@@ -14,11 +14,12 @@ class Proposal(nn.Module):
     Proposal distribution for selecting two nodes to merge and sampling branch lengths.
     """
 
-    def __init__(self, seq_encoder: SequenceEncoder):
+    def __init__(self, seq_encoder: SequenceEncoder, *, max_sub_particles: int):
         super().__init__()
         self.register_buffer("true", torch.ones(1, dtype=torch.bool))
 
         self.seq_encoder = seq_encoder
+        self.max_sub_particles = max_sub_particles
 
     def get_lookahead_merge_indexes(self, *, K, t: int) -> tuple[int, Tensor, Tensor]:
         # take all possible (t choose 2) merge pairs
@@ -83,7 +84,11 @@ class ExpBranchProposal(Proposal):
                 An independent pair of branch lengths will be sampled for each particle.
         """
 
-        super().__init__(DummySequenceEncoder())
+        super().__init__(
+            DummySequenceEncoder(),
+            # N choose 2
+            max_sub_particles=N * (N - 1) // 2 if lookahead_merge else 1,
+        )
         self.register_buffer("zero", torch.zeros(1))
 
         # under exponential distribution, E[branch] = 1/rate
@@ -182,6 +187,7 @@ class EmbeddingProposal(Proposal):
         seq_encoder: SequenceEncoder,
         merge_encoder: MergeEncoder,
         *,
+        N: int,
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
@@ -195,6 +201,7 @@ class EmbeddingProposal(Proposal):
             distance: The distance function to use for embedding.
             seq_encoder: Sequence encoder.
             merge_encoder: Merge encoder.
+            N: Maximum number of leaf nodes.
             lookahead_merge: if True, will return a particle for each of the J=(t choose 2) possible merges.
             sample_merge_temp: Temperature to use for sampling a pair of nodes to merge.
                 Negative pairwise node distances divided by `sample_merge_temp` are used log weights.
@@ -206,7 +213,11 @@ class EmbeddingProposal(Proposal):
                 This fixes the tree topology.
         """
 
-        super().__init__(seq_encoder)
+        super().__init__(
+            seq_encoder,
+            # N choose 2
+            max_sub_particles=N * (N - 1) // 2 if lookahead_merge else 1,
+        )
         self.register_buffer("zero", torch.zeros(1))
         self.register_buffer("inf", torch.tensor(torch.inf))
 

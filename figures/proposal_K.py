@@ -37,14 +37,20 @@ def train_with_proposal(
         seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
         merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
         proposal = EmbeddingProposal(
-            distance, seq_encoder, merge_encoder, lookahead_merge=is_nsmc
+            distance, seq_encoder, merge_encoder, N=N, lookahead_merge=is_nsmc
         )
         hash_trick = is_nsmc
         lr = lr_embedding_proposal
         run_name = f"Hyp_NSMC_K{K}" if is_nsmc else f"Hyp_SMC_K{K}"
 
     q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
-    vcsmc = VCSMC(q_matrix_decoder, proposal, K=K, hash_trick=hash_trick).to(device)
+    vcsmc = VCSMC(
+        q_matrix_decoder,
+        proposal,
+        N=N,
+        K=K,
+        hash_trick=hash_trick,
+    ).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     print(f"Starting {run_name}")
