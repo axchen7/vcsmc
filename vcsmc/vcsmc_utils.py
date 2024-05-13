@@ -1,5 +1,5 @@
 import math
-from typing import Literal
+from typing import Callable, Literal
 
 import torch
 from torch import Tensor
@@ -149,23 +149,28 @@ def compute_log_likelihood_and_pi_K(
     return log_likelihood_K, log_pi_K
 
 
-def gather_K(arr_K: Tensor, index_K: Tensor) -> Tensor:
+ArangeFn = Callable[[int], Tensor]
+
+
+def gather_K(arr_K: Tensor, index_K: Tensor, arange_fn: ArangeFn) -> Tensor:
     """
     Given an array of shape (K, None, ...), gathers the K elements at
     [k, index[k]] for each k in [0, K). Returns a tensor of shape (K, ...).
     """
     K = arr_K.shape[0]
-    return arr_K[torch.arange(K, device=arr_K.device), index_K]
+    return arr_K[arange_fn(K), index_K]
 
 
-def gather_K2(arr_K: Tensor, index1_K: Tensor, index2_K: Tensor) -> Tensor:
+def gather_K2(
+    arr_K: Tensor, index1_K: Tensor, index2_K: Tensor, arange_fn: ArangeFn
+) -> Tensor:
     """
     Given an array of shape (K, None, None, ...), gathers the K elements at
     [k, index1[k], index2[k]] for each k in [0, K).
     Returns a tensor of shape (K, ...).
     """
     K = arr_K.shape[0]
-    return arr_K[torch.arange(K, device=arr_K.device), index1_K, index2_K]
+    return arr_K[arange_fn(K), index1_K, index2_K]
 
 
 def concat_K(arr_Kxr, val_K) -> Tensor:
@@ -176,7 +181,11 @@ def concat_K(arr_Kxr, val_K) -> Tensor:
 
 
 def replace_with_merged_K(
-    arr_K: Tensor, idx1_K: Tensor, idx2_K: Tensor, new_val_K: Tensor
+    arr_K: Tensor,
+    idx1_K: Tensor,
+    idx2_K: Tensor,
+    new_val_K: Tensor,
+    arange_fn: ArangeFn,
 ) -> Tensor:
     """
     For each k in [0, K), modify row arr[k] by removing elements at idx1[k] and
@@ -184,7 +193,7 @@ def replace_with_merged_K(
     """
 
     K = arr_K.shape[0]
-    arange_K = torch.arange(K, device=arr_K.device)
+    arange_K = arange_fn(K)
 
     # ensure idx1 < idx2 (element-wise)
     idx1_K, idx2_K = torch.min(idx1_K, idx2_K), torch.max(idx1_K, idx2_K)

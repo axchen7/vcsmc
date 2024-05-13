@@ -6,7 +6,7 @@ from torch import Tensor, nn
 from .distance_utils import EPSILON
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
-from .vcsmc_utils import gather_K, gather_K2
+from .vcsmc_utils import ArangeFn, gather_K, gather_K2
 
 
 class Proposal(nn.Module):
@@ -35,7 +35,11 @@ class Proposal(nn.Module):
         return J, idx1_KxJ, idx2_KxJ
 
     def forward(
-        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self,
+        N: int,
+        leaf_counts_Kxt: Tensor,
+        embeddings_KxtxD: Tensor,
+        arange_fn: ArangeFn,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose J different particles, each defined by the two nodes being
@@ -45,6 +49,7 @@ class Proposal(nn.Module):
             N: The number of leaf nodes.
             leaf_counts_Kxt: The number of leaf nodes in each subtree of each particle.
             embeddings_KtxD: Embeddings of each subtree of each particle.
+            arange_fn: torch.arange or equivalent.
         Returns:
             idx1_KxJ: Indices of the first node to merge.
             idx2_KxJ: Indices of the second node to merge.
@@ -109,7 +114,11 @@ class ExpBranchProposal(Proposal):
         return rate1, rate2
 
     def forward(
-        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self,
+        N: int,
+        leaf_counts_Kxt: Tensor,
+        embeddings_KxtxD: Tensor,
+        arange_fn: ArangeFn,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         device = embeddings_KxtxD.device
 
@@ -229,7 +238,11 @@ class EmbeddingProposal(Proposal):
         self.merge_indexes_N1x2 = merge_indexes_N1x2
 
     def forward(
-        self, N: int, leaf_counts_Kxt: Tensor, embeddings_KxtxD: Tensor
+        self,
+        N: int,
+        leaf_counts_Kxt: Tensor,
+        embeddings_KxtxD: Tensor,
+        arange_fn: ArangeFn,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         device = embeddings_KxtxD.device
 
@@ -294,7 +307,9 @@ class EmbeddingProposal(Proposal):
             # the factor of 2 is because merging (idx1, idx2) is equivalent to
             # merging (idx2, idx1)
 
-            log_merge_prob_K = gather_K2(merge_log_weights_Kxtxt, idx1_K, idx2_K)
+            log_merge_prob_K = gather_K2(
+                merge_log_weights_Kxtxt, idx1_K, idx2_K, arange_fn
+            )
             log_merge_prob_K = log_merge_prob_K + math.log(2)
             log_merge_prob_K = log_merge_prob_K - torch.logsumexp(
                 merge_log_weights_Kxtxt, [1, 2]
@@ -306,8 +321,8 @@ class EmbeddingProposal(Proposal):
         idx2_KJ = idx2_KxJ.flatten()
         embeddings_KJxtxD = embeddings_KxtxD.repeat_interleave(J, 0)
 
-        child1_KJxD = gather_K(embeddings_KJxtxD, idx1_KJ)
-        child2_KJxD = gather_K(embeddings_KJxtxD, idx2_KJ)
+        child1_KJxD = gather_K(embeddings_KJxtxD, idx1_KJ, arange_fn)
+        child2_KJxD = gather_K(embeddings_KJxtxD, idx2_KJ, arange_fn)
 
         embedding_KJxD = self.merge_encoder(child1_KJxD, child2_KJxD)
         embedding_KxJxD = embedding_KJxD.reshape(K, J, -1)

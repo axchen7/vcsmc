@@ -153,7 +153,7 @@ class VCSMC(nn.Module):
             branch2_KxJ,
             embedding_KxJxD,
             log_v_plus_KxJ,
-        ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD)
+        ) = self.proposal(N, leaf_counts_Kxt, embeddings_KxtxD, self.arange)
 
         # ===== deal with sub-particle (J) dimension =====
 
@@ -177,8 +177,10 @@ class VCSMC(nn.Module):
                     idx1_KJ,
                     idx2_KJ,
                     hash_tree_K(
-                        gather_K(hashes_KJxt, idx1_KJ), gather_K(hashes_KJxt, idx2_KJ)
+                        gather_K(hashes_KJxt, idx1_KJ, self.arange),
+                        gather_K(hashes_KJxt, idx2_KJ, self.arange),
                     ),
+                    self.arange,
                 )
 
                 # use sum of tree hashes as overall particle hash
@@ -257,17 +259,21 @@ class VCSMC(nn.Module):
 
         # helper function
         def merge_Z(arr_Z: Tensor, new_val_Z: Tensor):
-            return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z)
+            return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z, self.arange)
 
         branch1_lengths_Zxr = concat_K(branch1_lengths_Zxr, branch1_Z)
         branch2_lengths_Zxr = concat_K(branch2_lengths_Zxr, branch2_Z)
         leaf_counts_Zxt = merge_Z(
             leaf_counts_Zxt,
-            gather_K(leaf_counts_Zxt, idx1_Z) + gather_K(leaf_counts_Zxt, idx2_Z),
+            gather_K(leaf_counts_Zxt, idx1_Z, self.arange)
+            + gather_K(leaf_counts_Zxt, idx2_Z, self.arange),
         )
         hashes_Zxt = merge_Z(
             hashes_Zxt,
-            hash_tree_K(gather_K(hashes_Zxt, idx1_Z), gather_K(hashes_Zxt, idx2_Z)),
+            hash_tree_K(
+                gather_K(hashes_Zxt, idx1_Z, self.arange),
+                gather_K(hashes_Zxt, idx2_Z, self.arange),
+            ),
         )
         embeddings_ZxtxD = merge_Z(embeddings_ZxtxD, embedding_ZxD)
 
@@ -279,8 +285,8 @@ class VCSMC(nn.Module):
 
         log_felsensteins_ZxSxA = compute_log_felsenstein_likelihoods_KxSxA(
             Q_matrix_ZxSxAxA,
-            gather_K(log_felsensteins_ZxtxSxA, idx1_Z),
-            gather_K(log_felsensteins_ZxtxSxA, idx2_Z),
+            gather_K(log_felsensteins_ZxtxSxA, idx1_Z, self.arange),
+            gather_K(log_felsensteins_ZxtxSxA, idx2_Z, self.arange),
             branch1_Z,
             branch2_Z,
         )
