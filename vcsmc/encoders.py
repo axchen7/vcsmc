@@ -36,10 +36,11 @@ class DummySequenceEncoder(SequenceEncoder):
 
     def __init__(self):
         super().__init__(None, D=0)
+        self.register_buffer("zero", torch.zeros(1))
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         V = sequences_VxSxA.shape[0]
-        return torch.zeros([V, 0], device=sequences_VxSxA.device)
+        return self.zero.expand(V, 0)
 
 
 class EmbeddingTableSequenceEncoder(SequenceEncoder):
@@ -85,7 +86,10 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
             # find the indices of the sequences in the data
             indices_V = torch.tensor([], dtype=torch.int, device=sequences_VxSxA.device)
             for sequence_SxA in sequences_VxSxA:
-                mask = torch.all(sequence_SxA == self.data_NxSxA, dim=(1, 2))
+                # hack: torch.all has a segfault bug on MPS with multiple dims
+                # mask = torch.all(sequence_SxA == self.data_NxSxA, dim=(1, 2))
+                mask = torch.all(sequence_SxA == self.data_NxSxA, -1).all(-1)
+
                 index_1 = torch.nonzero(mask).squeeze(1)
                 if index_1.numel() == 0:
                     raise ValueError("Sequence not found in data.")

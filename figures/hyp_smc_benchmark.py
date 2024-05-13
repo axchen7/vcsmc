@@ -42,12 +42,13 @@ def train_with_proposal(file: str):
     seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
     merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
     proposal = EmbeddingProposal(
-        distance, seq_encoder, merge_encoder, lookahead_merge=lookahead_merge
+        distance, seq_encoder, merge_encoder, N=N, lookahead_merge=lookahead_merge
     )
     q_matrix_decoder = JC69QMatrixDecoder(A=A)
     vcsmc = VCSMC(
         q_matrix_decoder,
         proposal,
+        N=N,
         K=K,
         hash_trick=hash_trick,
         checkpoint_grads=checkpoint_grads,

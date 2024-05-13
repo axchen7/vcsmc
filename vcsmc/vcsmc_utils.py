@@ -1,5 +1,5 @@
 import math
-from typing import Literal
+from typing import Callable, Literal
 
 import torch
 from torch import Tensor
@@ -7,7 +7,7 @@ from torch import Tensor
 from .expm import expm
 
 
-def compute_log_double_factorials_2N(N: int, device: torch.device) -> Tensor:
+def compute_log_double_factorials_2N(N: int) -> Tensor:
     """
     Pre-compute log double factorials.
 
@@ -32,7 +32,7 @@ def compute_log_double_factorials_2N(N: int, device: torch.device) -> Tensor:
         all_values.append(even_values[i])
         all_values.append(odd_values[i])
 
-    return torch.tensor(all_values, device=device)
+    return torch.tensor(all_values)
 
 
 def compute_log_v_minus_K(N: int, leaf_counts_Kxt: Tensor) -> Tensor:
@@ -121,7 +121,7 @@ def compute_log_likelihood_and_pi_K(
     if prior_dist == "exp":
         # distribution has a mean of prior_branch_len
         branch_prior_distr = torch.distributions.Exponential(
-            rate=torch.tensor(1.0 / prior_branch_len, device=device),
+            rate=1.0 / prior_branch_len,
         )
     elif prior_dist == "gamma":
         # distribution has a mean of prior_branch_len
@@ -149,23 +149,28 @@ def compute_log_likelihood_and_pi_K(
     return log_likelihood_K, log_pi_K
 
 
-def gather_K(arr_K: Tensor, index_K: Tensor) -> Tensor:
+ArangeFn = Callable[[int], Tensor]
+
+
+def gather_K(arr_K: Tensor, index_K: Tensor, arange_fn: ArangeFn) -> Tensor:
     """
     Given an array of shape (K, None, ...), gathers the K elements at
     [k, index[k]] for each k in [0, K). Returns a tensor of shape (K, ...).
     """
     K = arr_K.shape[0]
-    return arr_K[torch.arange(K, device=arr_K.device), index_K]
+    return arr_K[arange_fn(K), index_K]
 
 
-def gather_K2(arr_K: Tensor, index1_K: Tensor, index2_K: Tensor) -> Tensor:
+def gather_K2(
+    arr_K: Tensor, index1_K: Tensor, index2_K: Tensor, arange_fn: ArangeFn
+) -> Tensor:
     """
     Given an array of shape (K, None, None, ...), gathers the K elements at
     [k, index1[k], index2[k]] for each k in [0, K).
     Returns a tensor of shape (K, ...).
     """
     K = arr_K.shape[0]
-    return arr_K[torch.arange(K, device=arr_K.device), index1_K, index2_K]
+    return arr_K[arange_fn(K), index1_K, index2_K]
 
 
 def concat_K(arr_Kxr, val_K) -> Tensor:
@@ -176,7 +181,11 @@ def concat_K(arr_Kxr, val_K) -> Tensor:
 
 
 def replace_with_merged_K(
-    arr_K: Tensor, idx1_K: Tensor, idx2_K: Tensor, new_val_K: Tensor
+    arr_K: Tensor,
+    idx1_K: Tensor,
+    idx2_K: Tensor,
+    new_val_K: Tensor,
+    arange_fn: ArangeFn,
 ) -> Tensor:
     """
     For each k in [0, K), modify row arr[k] by removing elements at idx1[k] and
@@ -184,7 +193,7 @@ def replace_with_merged_K(
     """
 
     K = arr_K.shape[0]
-    arange_K = torch.arange(K, device=arr_K.device)
+    arange_K = arange_fn(K)
 
     # ensure idx1 < idx2 (element-wise)
     idx1_K, idx2_K = torch.min(idx1_K, idx2_K), torch.max(idx1_K, idx2_K)
@@ -222,18 +231,20 @@ def replace_with_merged_list(arr: list, idx1: int, idx2: int, new_val) -> list:
     return new_arr
 
 
-@torch.jit.script
 def hash_K(a: Tensor):
     """
     See: https://gist.github.com/badboy/6267743#robert-jenkins-32-bit-integer-hash-function
     """
-    a = (a + 0x7ED55D16) + (a << 12)
-    a = (a ^ 0xC761C23C) ^ (a >> 19)
-    a = (a + 0x165667B1) + (a << 5)
-    a = (a + 0xD3A2646C) ^ (a << 9)
-    a = (a + 0xFD7046C5) + (a << 3)
-    a = (a ^ 0xB55A4F09) ^ (a >> 16)
+    a = (a + 0x7ED55D16) + (a * 2**12)
+    a = (a ^ 0xC761C23C) ^ (a // 2**19)
+    a = (a + 0x165667B1) + (a * 2**5)
+    a = (a + 0xD3A2646C) ^ (a * 2**9)
+    a = (a + 0xFD7046C5) + (a * 2**3)
+    a = (a ^ 0xB55A4F09) ^ (a // 2**16)
     return a
+
+
+hash_K = torch.jit.trace(hash_K, torch.zeros(1, dtype=torch.int32))  # type: ignore
 
 
 def hash_tree_K(child1_hash_K: Tensor, child2_hash_K: Tensor) -> Tensor:

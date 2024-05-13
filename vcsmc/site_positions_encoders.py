@@ -22,9 +22,13 @@ class DummySitePositionsEncoder(SitePositionsEncoder):
     Returns an empty Sx0 tensor.
     """
 
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("zero", torch.zeros(1))
+
     def forward(self, site_positions_SxSfull: Tensor) -> Tensor:
         S = site_positions_SxSfull.shape[0]
-        return torch.zeros([S, 0], device=site_positions_SxSfull.device)
+        return self.zero.expand(S, 0)
 
 
 class MLPSitePositionsEncoder(SitePositionsEncoder):

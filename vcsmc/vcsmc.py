@@ -39,7 +39,6 @@ class MergeMetadata(TypedDict):
     A: int
     K: int
     D: int
-    log_double_factorials_2N: Tensor
     # compressed site positions
     site_positions_SxC: Tensor
     temperature: float
@@ -74,6 +73,7 @@ class VCSMC(nn.Module):
         q_matrix_decoder: QMatrixDecoder,
         proposal: Proposal,
         *,
+        N: int,
         K: int,
         hash_trick: bool = False,
         checkpoint_grads: bool = False,
@@ -85,6 +85,7 @@ class VCSMC(nn.Module):
         Args:
             q_matrix_decoder: QMatrix object
             proposal: Proposal object
+            N: Number of taxa
             K: Number of particles
             hash_trick: Whether to use the hash trick to speed up computation
             checkpoint_grads: Use activation checkpointing to save memory (but uses more compute).
@@ -93,6 +94,9 @@ class VCSMC(nn.Module):
         """
 
         super().__init__()
+        self.register_buffer("zero_int", torch.zeros(1, dtype=torch.int))
+        self.register_buffer("zero_float", torch.zeros(1))
+        self.register_buffer("one_int", torch.ones(1, dtype=torch.int))
 
         self.q_matrix_decoder = q_matrix_decoder
         self.proposal = proposal
@@ -101,6 +105,18 @@ class VCSMC(nn.Module):
         self.checkpoint_grads = checkpoint_grads
         self.prior_dist: PriorDist = prior_dist
         self.prior_branch_len = prior_branch_len
+
+        self.register_buffer(
+            "log_double_factorials_2N", compute_log_double_factorials_2N(N)
+        )
+
+        max_arange = max(N, proposal.max_sub_particles * K)
+        self.register_buffer("arange_cache", torch.arange(max_arange))
+
+    def arange(self, end: int):
+        """Uses the arange cache to avoid re-allocating memory."""
+        assert end <= self.arange_cache.shape[0]
+        return self.arange_cache[:end]
 
     def get_init_embeddings_KxNxD(self, data_NxSxA: Tensor):
         """Sets the embedding for all K particles to the same initial value."""
@@ -140,7 +156,7 @@ class VCSMC(nn.Module):
             branch2_KxJ,
             embedding_KxJxD,
             log_v_plus_KxJ,
-        ) = self.proposal(N, embeddings_KxtxD)
+        ) = self.proposal(N, embeddings_KxtxD, self.arange)
 
         # ===== deal with sub-particle (J) dimension =====
 
@@ -164,8 +180,10 @@ class VCSMC(nn.Module):
                     idx1_KJ,
                     idx2_KJ,
                     hash_tree_K(
-                        gather_K(hashes_KJxt, idx1_KJ), gather_K(hashes_KJxt, idx2_KJ)
+                        gather_K(hashes_KJxt, idx1_KJ, self.arange),
+                        gather_K(hashes_KJxt, idx2_KJ, self.arange),
                     ),
+                    self.arange,
                 )
 
                 # use sum of tree hashes as overall particle hash
@@ -187,9 +205,9 @@ class VCSMC(nn.Module):
                 # first occurrence index of each unique hash within the original hashes
                 unique_hash_idx_Z = hash_sort_idx_KJ[sorted_unique_hash_idx_Z]
                 # undo the above mapping
-                undo_unique_hash_idx_KJ = torch.arange(
-                    Z, device=device
-                ).repeat_interleave(hash_counts_Z, 0)[hash_unsort_idx_KJ]
+                undo_unique_hash_idx_KJ = self.arange(Z).repeat_interleave(
+                    hash_counts_Z, 0
+                )[hash_unsort_idx_KJ]
 
             def squeeze_Z(arr_KJ: Tensor):
                 """
@@ -205,8 +223,8 @@ class VCSMC(nn.Module):
 
         else:
             Z = K * J
-            unique_hash_idx_Z = torch.arange(Z, device=device)
-            undo_unique_hash_idx_KJ = torch.arange(Z, device=device)
+            unique_hash_idx_Z = self.arange(Z)
+            undo_unique_hash_idx_KJ = self.arange(Z)
 
             def squeeze_Z(arr_KJ: Tensor):
                 return arr_KJ
@@ -216,9 +234,7 @@ class VCSMC(nn.Module):
 
         # ===== squeeze particles with matching hashes =====
 
-        K_to_Z_idx_Z = torch.arange(K, device=device).repeat_interleave(J, 0)[
-            unique_hash_idx_Z
-        ]
+        K_to_Z_idx_Z = self.arange(K).repeat_interleave(J, 0)[unique_hash_idx_Z]
 
         # helper function
         def K_to_Z(arr_K: Tensor):
@@ -246,17 +262,21 @@ class VCSMC(nn.Module):
 
         # helper function
         def merge_Z(arr_Z: Tensor, new_val_Z: Tensor):
-            return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z)
+            return replace_with_merged_K(arr_Z, idx1_Z, idx2_Z, new_val_Z, self.arange)
 
         branch1_lengths_Zxr = concat_K(branch1_lengths_Zxr, branch1_Z)
         branch2_lengths_Zxr = concat_K(branch2_lengths_Zxr, branch2_Z)
         leaf_counts_Zxt = merge_Z(
             leaf_counts_Zxt,
-            gather_K(leaf_counts_Zxt, idx1_Z) + gather_K(leaf_counts_Zxt, idx2_Z),
+            gather_K(leaf_counts_Zxt, idx1_Z, self.arange)
+            + gather_K(leaf_counts_Zxt, idx2_Z, self.arange),
         )
         hashes_Zxt = merge_Z(
             hashes_Zxt,
-            hash_tree_K(gather_K(hashes_Zxt, idx1_Z), gather_K(hashes_Zxt, idx2_Z)),
+            hash_tree_K(
+                gather_K(hashes_Zxt, idx1_Z, self.arange),
+                gather_K(hashes_Zxt, idx2_Z, self.arange),
+            ),
         )
         embeddings_ZxtxD = merge_Z(embeddings_ZxtxD, embedding_ZxD)
 
@@ -268,8 +288,8 @@ class VCSMC(nn.Module):
 
         log_felsensteins_ZxSxA = compute_log_felsenstein_likelihoods_KxSxA(
             Q_matrix_ZxSxAxA,
-            gather_K(log_felsensteins_ZxtxSxA, idx1_Z),
-            gather_K(log_felsensteins_ZxtxSxA, idx2_Z),
+            gather_K(log_felsensteins_ZxtxSxA, idx1_Z, self.arange),
+            gather_K(log_felsensteins_ZxtxSxA, idx2_Z, self.arange),
             branch1_Z,
             branch2_Z,
         )
@@ -301,7 +321,7 @@ class VCSMC(nn.Module):
             log_stat_probs_ZxtxSxA,
             self.prior_dist,
             self.prior_branch_len,
-            mm["log_double_factorials_2N"],
+            self.log_double_factorials_2N,
         )
 
         # ===== compute sub-particle weights =====
@@ -330,11 +350,9 @@ class VCSMC(nn.Module):
             )
             sub_indexes_K = sub_resample_distr_K.sample()
         else:
-            sub_indexes_K = torch.zeros(K, dtype=torch.int, device=device)
+            sub_indexes_K = self.zero_int.expand(K)
 
-        gather_sub_K_idx_K = undo_unique_hash_idx_KJ[
-            torch.arange(K, device=device) * J + sub_indexes_K
-        ]
+        gather_sub_K_idx_K = undo_unique_hash_idx_KJ[self.arange(K) * J + sub_indexes_K]
 
         # ===== post sub-particle resampling bookkeeping =====
 
@@ -425,7 +443,6 @@ class VCSMC(nn.Module):
             "A": A,
             "K": K,
             "D": D,
-            "log_double_factorials_2N": compute_log_double_factorials_2N(N, device),
             "site_positions_SxC": self.q_matrix_decoder.site_positions_encoder(
                 site_positions_batched_SxSfull
             ),
@@ -436,21 +453,20 @@ class VCSMC(nn.Module):
         # initially, r = 0 and t = N
 
         ms: MergeState = {
-            "merge1_indexes_Kxr": torch.zeros(K, 0, dtype=torch.int, device=device),
-            "merge2_indexes_Kxr": torch.zeros(K, 0, dtype=torch.int, device=device),
-            "branch1_lengths_Kxr": torch.zeros(K, 0, device=device),
-            "branch2_lengths_Kxr": torch.zeros(K, 0, device=device),
-            "embeddings_KxrxD": torch.zeros(K, 0, D, device=device),
-            "leaf_counts_Kxt": torch.ones(K, N, dtype=torch.int, device=device),
-            "hashes_Kxt": hash_K(torch.arange(N, device=device)).repeat(K, 1),
+            "merge1_indexes_Kxr": self.zero_int.expand(K, 0),
+            "merge2_indexes_Kxr": self.zero_int.expand(K, 0),
+            "branch1_lengths_Kxr": self.zero_float.expand(K, 0),
+            "branch2_lengths_Kxr": self.zero_float.expand(K, 0),
+            "embeddings_KxrxD": self.zero_float.expand(K, 0, D),
+            "leaf_counts_Kxt": self.one_int.expand(K, N),
+            "hashes_Kxt": hash_K(self.arange(N)).repeat(K, 1),
             "embeddings_KxtxD": self.get_init_embeddings_KxNxD(data_NxSxA),
             "log_felsensteins_KxtxSxA": data_batched_NxSxA.log().repeat(K, 1, 1, 1),
-            "log_pi_K": torch.zeros(K, device=device),
-            "log_weight_K": torch.zeros(K, device=device),
+            "log_pi_K": self.zero_float.expand(K),
+            "log_weight_K": self.zero_float.expand(K),
             "log_weights_list_rxK": [],
-            "log_likelihood_K": torch.zeros(
-                K, device=device
-            ),  # initial value isn't used
+            # initial value isn't used
+            "log_likelihood_K": self.zero_float.expand(K),
         }
 
         # iterate over merge steps
