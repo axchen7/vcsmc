@@ -121,7 +121,7 @@ def compute_log_likelihood_and_pi_K(
     if prior_dist == "exp":
         # distribution has a mean of prior_branch_len
         branch_prior_distr = torch.distributions.Exponential(
-            rate=torch.tensor(1.0 / prior_branch_len, device=device),
+            rate=1.0 / prior_branch_len,
         )
     elif prior_dist == "gamma":
         # distribution has a mean of prior_branch_len
