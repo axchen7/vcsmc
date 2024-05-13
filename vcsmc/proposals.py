@@ -84,6 +84,7 @@ class ExpBranchProposal(Proposal):
         """
 
         super().__init__(DummySequenceEncoder())
+        self.register_buffer("zero", torch.zeros(1))
 
         # under exponential distribution, E[branch] = 1/rate
         initial_rate = 1 / initial_branch_len
@@ -154,7 +155,7 @@ class ExpBranchProposal(Proposal):
         # ===== return proposal =====
 
         # dummy embedding
-        embedding_KxJxD = torch.zeros([K, J, 0], device=device)
+        embedding_KxJxD = self.zero.expand(K, J, 0)
 
         return (
             idx1_KxJ,
@@ -206,6 +207,8 @@ class EmbeddingProposal(Proposal):
         """
 
         super().__init__(seq_encoder)
+        self.register_buffer("zero", torch.zeros(1))
+        self.register_buffer("inf", torch.tensor(torch.inf))
 
         self.distance = distance
         self.merge_encoder = merge_encoder
@@ -229,10 +232,10 @@ class EmbeddingProposal(Proposal):
             J = 1
             idx1_KxJ = self.merge_indexes_N1x2[r, 0].repeat(K).unsqueeze(1)
             idx2_KxJ = self.merge_indexes_N1x2[r, 1].repeat(K).unsqueeze(1)
-            log_merge_prob_K = torch.zeros([K], device=device)
+            log_merge_prob_K = self.zero.expand(K)
         elif self.lookahead_merge:
             J, idx1_KxJ, idx2_KxJ = self.get_lookahead_merge_indexes(K=K, t=t)
-            log_merge_prob_K = torch.zeros([K], device=device)
+            log_merge_prob_K = self.zero.expand(K)
         else:
             J = 1
 
@@ -255,11 +258,11 @@ class EmbeddingProposal(Proposal):
                 )
             else:
                 # uniformly sample 2 distinct nodes to merge
-                merge_log_weights_Kxtxt = torch.zeros([K, t, t], device=device)
+                merge_log_weights_Kxtxt = self.zero.expand(K, t, t)
 
             # set diagonal entries to -inf to prevent self-merges
             merge_log_weights_Kxtxt = merge_log_weights_Kxtxt.diagonal_scatter(
-                torch.full([K, t], -torch.inf, device=device), dim1=1, dim2=2
+                -self.inf.expand(K, t), dim1=1, dim2=2
             )
 
             flattened_log_weights_Kxtt = merge_log_weights_Kxtxt.view(K, t * t)
@@ -331,8 +334,8 @@ class EmbeddingProposal(Proposal):
             branch1_KxJ = dist1_KxJ
             branch2_KxJ = dist2_KxJ
 
-            log_branch1_prob_KxJ = torch.zeros([K, J], device=device)
-            log_branch2_prob_KxJ = torch.zeros([K, J], device=device)
+            log_branch1_prob_KxJ = self.zero.expand(K, J)
+            log_branch2_prob_KxJ = self.zero.expand(K, J)
 
         # ===== compute proposal probability =====
 
