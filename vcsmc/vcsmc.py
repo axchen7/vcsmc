@@ -93,6 +93,9 @@ class VCSMC(nn.Module):
         """
 
         super().__init__()
+        self.register_buffer("zero_int", torch.zeros(1, dtype=torch.int))
+        self.register_buffer("zero_float", torch.zeros(1))
+        self.register_buffer("one_int", torch.ones(1, dtype=torch.int))
 
         self.q_matrix_decoder = q_matrix_decoder
         self.proposal = proposal
@@ -430,20 +433,20 @@ class VCSMC(nn.Module):
         # initially, r = 0 and t = N
 
         ms: MergeState = {
-            "merge1_indexes_Kxr": torch.zeros(K, 0, dtype=torch.int, device=device),
-            "merge2_indexes_Kxr": torch.zeros(K, 0, dtype=torch.int, device=device),
-            "branch1_lengths_Kxr": torch.zeros(K, 0, device=device),
-            "branch2_lengths_Kxr": torch.zeros(K, 0, device=device),
-            "embeddings_KxrxD": torch.zeros(K, 0, D, device=device),
-            "leaf_counts_Kxt": torch.ones(K, N, dtype=torch.int, device=device),
+            "merge1_indexes_Kxr": self.zero_int.expand(K, 0),
+            "merge2_indexes_Kxr": self.zero_int.expand(K, 0),
+            "branch1_lengths_Kxr": self.zero_float.expand(K, 0),
+            "branch2_lengths_Kxr": self.zero_float.expand(K, 0),
+            "embeddings_KxrxD": self.zero_float.expand(K, 0, D),
+            "leaf_counts_Kxt": self.one_int.expand(K, N),
             "hashes_Kxt": hash_K(torch.arange(N, device=device)).repeat(K, 1),
             "embeddings_KxtxD": self.get_init_embeddings_KxNxD(data_NxSxA),
             "log_felsensteins_KxtxSxA": data_batched_NxSxA.log().repeat(K, 1, 1, 1),
-            "log_pi_K": torch.zeros(K, device=device),
-            "log_weight_K": torch.zeros(K, device=device),
+            "log_pi_K": self.zero_float.expand(K),
+            "log_weight_K": self.zero_float.expand(K),
             "log_weights_list_rxK": [],
             # initial value isn't used
-            "log_likelihood_K": torch.zeros(K, device=device),
+            "log_likelihood_K": self.zero_float.expand(K),
         }
 
         # iterate over merge steps
