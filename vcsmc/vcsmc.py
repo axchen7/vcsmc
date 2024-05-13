@@ -442,9 +442,8 @@ class VCSMC(nn.Module):
             "log_pi_K": torch.zeros(K, device=device),
             "log_weight_K": torch.zeros(K, device=device),
             "log_weights_list_rxK": [],
-            "log_likelihood_K": torch.zeros(
-                K, device=device
-            ),  # initial value isn't used
+            # initial value isn't used
+            "log_likelihood_K": torch.zeros(K, device=device),
         }
 
         # iterate over merge steps
