@@ -39,7 +39,6 @@ class MergeMetadata(TypedDict):
     A: int
     K: int
     D: int
-    log_double_factorials_2N: Tensor
     # compressed site positions
     site_positions_SxC: Tensor
 
@@ -106,6 +105,10 @@ class VCSMC(nn.Module):
         self.checkpoint_grads = checkpoint_grads
         self.prior_dist: PriorDist = prior_dist
         self.prior_branch_len = prior_branch_len
+
+        self.register_buffer(
+            "log_double_factorials_2N", compute_log_double_factorials_2N(N)
+        )
 
         max_arange = max(N, proposal.max_sub_particles * K)
         self.register_buffer("arange_cache", torch.arange(max_arange))
@@ -327,7 +330,7 @@ class VCSMC(nn.Module):
             log_stat_probs_ZxtxSxA,
             self.prior_dist,
             self.prior_branch_len,
-            mm["log_double_factorials_2N"],
+            self.log_double_factorials_2N,
         )
 
         # ===== compute sub-particle weights =====
@@ -435,7 +438,6 @@ class VCSMC(nn.Module):
             "A": A,
             "K": K,
             "D": D,
-            "log_double_factorials_2N": compute_log_double_factorials_2N(N, device),
             "site_positions_SxC": self.q_matrix_decoder.site_positions_encoder(
                 site_positions_batched_SxSfull
             ),
