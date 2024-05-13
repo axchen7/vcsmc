@@ -36,10 +36,11 @@ class DummySequenceEncoder(SequenceEncoder):
 
     def __init__(self):
         super().__init__(None, D=0)
+        self.register_buffer("zero", torch.zeros(1))
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         V = sequences_VxSxA.shape[0]
-        return torch.zeros([V, 0], device=sequences_VxSxA.device)
+        return self.zero.expand(V, 0)
 
 
 class EmbeddingTableSequenceEncoder(SequenceEncoder):

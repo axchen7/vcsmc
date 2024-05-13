@@ -89,6 +89,8 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__()
+        self.register_buffer("zeros_A", torch.zeros(self.A))
+        self.register_buffer("ones_A", torch.ones(self.A))
 
         self.A = A
         self.t_inf = t_inf
@@ -105,14 +107,14 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         Q_matrix_AxA = self.log_Q_matrix_AxA.exp()
 
         # exclude diagonal entry for now...
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(torch.zeros(self.A, device=device))
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(self.zeros_A)
 
         # normalize off-diagonal entries within each row
         denom_Ax1 = torch.sum(Q_matrix_AxA, -1, True)
         Q_matrix_AxA = Q_matrix_AxA / denom_Ax1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-torch.ones(self.A, device=device))
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-self.ones_A)
 
         # return only shape (1,1,A,A), but assume broadcasting rules apply...
         Q_matrix_1x1xAxA = Q_matrix_AxA[None, None]
@@ -156,6 +158,8 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__()
+        self.register_buffer("zeros_A", torch.zeros(self.A))
+        self.register_buffer("ones_A", torch.ones(self.A))
 
         self.distance = distance
         self.A = A
@@ -181,18 +185,14 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         Q_matrix_VxAxA = log_Q_matrix_VxAxA.exp()
 
         # exclude diagonal entry for now...
-        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
-            torch.zeros(V, self.A, device=device), dim1=-2, dim2=-1
-        )
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(self.zeros_A, dim1=-2, dim2=-1)
 
         # normalize off-diagonal entries within each row
         denom_VxAx1 = torch.sum(Q_matrix_VxAxA, -1, True)
         Q_matrix_VxAxA = Q_matrix_VxAxA / denom_VxAx1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
-            -torch.ones(V, self.A, device=device), dim1=-2, dim2=-1
-        )
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(-self.ones_A, dim1=-2, dim2=-1)
 
         # return only shape (V,1,A,A), but assume broadcasting rules apply...
         Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, None]
@@ -229,6 +229,24 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         self.log_nucleotide_exchanges_6 = nn.Parameter(torch.zeros(6))
         self.log_stat_probs_A = nn.Parameter(torch.zeros(16))
 
+        self.register_buffer("updates", self.get_updates())
+
+    def get_updates(self):
+        # index helpers for Q matrix
+        AA, CC, GG, TT, AC, AG, AT, CG, CT, GT, CA, GA, TA, GC, TC, TG = range(16)
+
+        # fmt: off
+        return torch.tensor([
+          # | first base changes                    | second base changes
+            [AA, CA], [AC, CC], [AG, CG], [AT, CT], [AA, AC], [CA, CC], [GA, GC], [TA, TC], # A->C
+            [AA, GA], [AC, GC], [AG, GG], [AT, GT], [AA, AG], [CA, CG], [GA, GG], [TA, TG], # A->G
+            [AA, TA], [AC, TC], [AG, TG], [AT, TT], [AA, AT], [CA, CT], [GA, GT], [TA, TT], # A->T
+            [CA, GA], [CC, GC], [CG, GG], [CT, GT], [AC, AG], [CC, CG], [GC, GG], [TC, TG], # C->G
+            [CA, TA], [CC, TC], [CG, TG], [CT, TT], [AC, AT], [CC, CT], [GC, GT], [TC, TT], # C->T
+            [GA, TA], [GC, TC], [GG, TG], [GT, TT], [AG, AT], [CG, CT], [GG, GT], [TG, TT], # G->T
+        ])
+        # fmt: on
+
     def nucleotide_exchanges_6(self):
         # use exp to ensure all entries are positive
         nucleotide_exchanges_6 = self.log_nucleotide_exchanges_6.exp()
@@ -253,24 +271,8 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
         pi = self.nucleotide_exchanges_6()  # length 6
         pi8 = pi.repeat(8)
 
-        # index helpers for Q matrix
-        AA, CC, GG, TT, AC, AG, AT, CG, CT, GT, CA, GA, TA, GC, TC, TG = range(16)
-
-        # fmt: off
-        updates_list = [
-          # | first base changes                    | second base changes
-            [AA, CA], [AC, CC], [AG, CG], [AT, CT], [AA, AC], [CA, CC], [GA, GC], [TA, TC], # A->C
-            [AA, GA], [AC, GC], [AG, GG], [AT, GT], [AA, AG], [CA, CG], [GA, GG], [TA, TG], # A->G
-            [AA, TA], [AC, TC], [AG, TG], [AT, TT], [AA, AT], [CA, CT], [GA, GT], [TA, TT], # A->T
-            [CA, GA], [CC, GC], [CG, GG], [CT, GT], [AC, AG], [CC, CG], [GC, GG], [TC, TG], # C->G
-            [CA, TA], [CC, TC], [CG, TG], [CT, TT], [AC, AT], [CC, CT], [GC, GT], [TC, TT], # C->T
-            [GA, TA], [GC, TC], [GG, TG], [GT, TT], [AG, AT], [CG, CT], [GG, GT], [TG, TT], # G->T
-        ]
-        # fmt: on
-
-        updates = torch.tensor(updates_list, device=device)
         R_AxA = torch.zeros(16, 16, device=device)
-        R_AxA[updates[:, 0], updates[:, 1]] = pi8
+        R_AxA[self.updates[:, 0], self.updates[:, 1]] = pi8
         R_AxA = R_AxA + R_AxA.t()
 
         stat_probs_A = self.stats_probs_A()
@@ -329,6 +331,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__(site_positions_encoder)
+        self.register_buffer("zero", torch.zeros(1))
 
         self.distance = distance
         self.A = A
@@ -371,7 +374,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
 
         # set the diagonals to the sum of the off-diagonal entries
         Q_matrix_VxSxAxA = Q_matrix_VxSxAxA.diagonal_scatter(
-            torch.zeros(V, S, self.A, device=device), dim1=-2, dim2=-1
+            self.zero.expand(V, S, self.A), dim1=-2, dim2=-1
         )
         diag_VxSxA = torch.sum(Q_matrix_VxSxAxA, -1)
         Q_matrix_VxSxAxA = Q_matrix_VxSxAxA.diagonal_scatter(
