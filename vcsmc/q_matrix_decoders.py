@@ -95,8 +95,8 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__()
-        self.register_buffer("zeros_A", torch.zeros(self.A))
-        self.register_buffer("ones_A", torch.ones(self.A))
+        self.register_buffer("zeros_A", torch.zeros(A))
+        self.register_buffer("ones_A", torch.ones(A))
 
         self.A = A
         self.t_inf = t_inf
@@ -107,8 +107,6 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        device = embeddings_VxD.device
-
         V = embeddings_VxD.shape[0]
         S = site_positions_SxC.shape[0]
 
@@ -165,8 +163,8 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__()
-        self.register_buffer("zeros_A", torch.zeros(self.A))
-        self.register_buffer("ones_A", torch.ones(self.A))
+        self.register_buffer("zeros_A", torch.zeros(A))
+        self.register_buffer("ones_A", torch.ones(A))
 
         self.distance = distance
         self.A = A
@@ -178,8 +176,6 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        device = embeddings_VxD.device
-
         V = embeddings_VxD.shape[0]
         S = site_positions_SxC.shape[0]
 
@@ -383,8 +379,6 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        device = embeddings_VxD.device
-
         V = embeddings_VxD.shape[0]
         S = site_positions_SxC.shape[0]
 
