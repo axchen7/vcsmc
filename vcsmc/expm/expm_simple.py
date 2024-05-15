@@ -5,9 +5,12 @@ import torch
 from torch import Tensor
 
 
-def expm_simple(x: Tensor, order=10) -> Tensor:
+def expm_simple(x: Tensor, order=10, n=2) -> Tensor:
     """
-    nth-order Taylor approximation of matrix exponential
+    Taylor approximation of matrix exponential.
+
+    Uses a trick for better series convergence:
+        expm(X) = expm(X/(2^n))^(2^n)
     """
 
     batch_size = x.shape[:-2]  # Get the batch dimensions
@@ -18,9 +21,14 @@ def expm_simple(x: Tensor, order=10) -> Tensor:
     nom = I
     denom = 1.0
 
+    x = x / 2**n
+
     for i in range(1, order):
         nom = torch.matmul(x, nom)
         denom *= i
         result = result + nom / denom
+
+    for _ in range(n):
+        result = torch.matmul(result, result)
 
     return result
