@@ -23,11 +23,13 @@ def expm_simple(x: Tensor, order=10, n=2) -> Tensor:
 
     x = x / 2**n
 
+    # compute taylor series
     for i in range(1, order):
         nom = torch.matmul(x, nom)
         denom *= i
         result = result + nom / denom
 
+    # raise matrix to the 2^n power via only n steps
     for _ in range(n):
         result = torch.matmul(result, result)
 
