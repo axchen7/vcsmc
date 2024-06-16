@@ -9,7 +9,7 @@ conda create --yes --prefix .conda python=3.11
 Next, activate the environment:
 
 ```bash
-conda activate .conda
+conda activate ./.conda
 ```
 
 Finally, install the project in editable mode:
