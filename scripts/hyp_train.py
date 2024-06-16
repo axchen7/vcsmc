@@ -12,6 +12,7 @@ def main():
     parser.add_argument("--epochs", type=int, required=True)
     parser.add_argument("--sites-batch-size", type=int, required=False)
     parser.add_argument("--jc69", action="store_true")
+    parser.add_argument("--hyperbolic", action="store_true")
     parser.add_argument("--lookahead-merge", action="store_true")
     parser.add_argument("--hash-trick", action="store_true")
     parser.add_argument("--checkpoint-grads", action="store_true")
@@ -22,25 +23,33 @@ def main():
     N, _S, A, data_NxSxA, taxa_N = load_phy(args.file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
 
-    distance = Hyperbolic()
-    seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=args.D)
-    merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
-
-    proposal = EmbeddingProposal(
-        distance, seq_encoder, merge_encoder, N=N, lookahead_merge=args.lookahead_merge
-    )
-
     if args.jc69:
         q_matrix_decoder = JC69QMatrixDecoder(A=A)
     else:
         q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
+
+    if args.hyperbolic:
+        distance = Hyperbolic()
+        seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=args.D)
+        merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
+        proposal = EmbeddingProposal(
+            distance,
+            seq_encoder,
+            merge_encoder,
+            N=N,
+            lookahead_merge=args.lookahead_merge,
+        )
+        hash_trick = args.hash_trick
+    else:
+        proposal = ExpBranchProposal(N=N, lookahead_merge=args.lookahead_merge)
+        hash_trick = False  # can't use hash trick with ExpBranchProposal
 
     vcsmc = VCSMC(
         q_matrix_decoder,
         proposal,
         N=N,
         K=args.K,
-        hash_trick=args.hash_trick,
+        hash_trick=hash_trick,
         checkpoint_grads=args.checkpoint_grads,
     ).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=args.lr)
