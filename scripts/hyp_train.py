@@ -19,9 +19,7 @@ def main():
 
     device = detect_device()
 
-    file = "data/hohna/DS1.phy"
-
-    N, _S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
+    N, _S, A, data_NxSxA, taxa_N = load_phy(args.file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
 
     distance = Hyperbolic()
@@ -52,7 +50,7 @@ def main():
         optimizer,
         taxa_N,
         data_NxSxA,
-        file,
+        args.file,
         epochs=args.epochs,
         sites_batch_size=args.sites_batch_size,
     )
