@@ -20,16 +20,22 @@ pip install -e .
 
 # Example Runs
 
+Notes:
+
+- `--jc69` uses the JC69 model of evolution. Without this flag, every entry in the Q matrix is learned.
+- `--lookahead-merge` performs "nested" hyperbolic SMC, analogous to VNCSMC.
+- `--hash-trick` uses the hash trick to speed up computation. Pretty much required when using `--lookahead-merge`.
+
 Train primates, JC69:
 
 ```bash
-python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 data/primates.phy
+python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --lookahead-merge --hash-trick data/primates.phy
 ```
 
 Train DS1, JC69:
 
 ```bash
-python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 data/hohna/DS1.phy
+python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --lookahead-merge --hash-trick data/hohna/DS1.phy
 ```
 
 # Generate Paper Figures
