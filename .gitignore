@@ -1,10 +1,7 @@
 __pycache__
 venv
 .DS_Store
+*.egg-info
 runs
-filtered_runs
-saved_models
-playground
 data/simulated.phy
 figures/output
-_*.ipynb
