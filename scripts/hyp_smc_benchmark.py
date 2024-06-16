@@ -1,8 +1,4 @@
 # %%
-from figures_util import set_path
-
-set_path()
-
 from vcsmc import *
 
 device = detect_device()
@@ -79,10 +75,6 @@ for file in files:
     train_with_proposal(file)
 
 # %%
-from figures_util import make_output_dir, set_path
-
-set_path()
-
 import os
 
 import numpy as np
@@ -126,7 +118,9 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
     return ll_mean, ll_std_dev
 
 
-output_file = f"{make_output_dir()}/hyp_smc_benchmark.csv"
+os.makedirs("outputs/figures", exist_ok=True)
+
+output_file = "outputs/figures/hyp_smc_benchmark.csv"
 if os.path.exists(output_file):
     os.remove(output_file)
 

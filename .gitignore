@@ -2,6 +2,6 @@ __pycache__
 venv
 .DS_Store
 *.egg-info
+outputs
 runs
 data/simulated.phy
-figures/output

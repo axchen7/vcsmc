@@ -1,10 +1,4 @@
 # %%
-from typing import Literal
-
-from figures_util import set_path
-
-set_path()
-
 from vcsmc import *
 
 device = detect_device()
@@ -66,10 +60,6 @@ for K in K_vals:
         train_with_proposal(proposal_type, K)
 
 # %%
-from figures_util import make_output_dir, set_path
-
-set_path()
-
 import os
 
 import matplotlib.pyplot as plt
@@ -118,7 +108,9 @@ for i, K in enumerate(K_vals):
 
 plt.tight_layout()
 
-file = f"{make_output_dir()}/proposal_K.png"
+os.makedirs("outputs/figures", exist_ok=True)
+
+file = "outputs/figures/proposal_K.png"
 try:
     os.remove(file)
 except FileNotFoundError:

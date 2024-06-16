@@ -1,51 +1,40 @@
 # %%
-from figures_util import set_path
-
-set_path()
-
 from vcsmc import *
 
 device = detect_device()
 
-D = 2
-K = 256
+K = 128
 lr = 0.01
 epochs = 100
 
-file = "data/hohna/DS1.phy"
+file = "data/primates.phy"
 
 
-def train_with_proposal(initial_mean: float):
+def train_with_proposal(D: int):
     N, S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
 
     distance = Hyperbolic()
-    seq_encoder = EmbeddingTableSequenceEncoder(
-        distance, data_NxSxA, D=D, initial_mean=initial_mean
-    )
+    seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
     merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
     proposal = EmbeddingProposal(distance, seq_encoder, merge_encoder, N=N)
     q_matrix_decoder = JC69QMatrixDecoder(A=A)
     vcsmc = VCSMC(q_matrix_decoder, proposal, N=N, K=K).to(device)
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
-    run_name = f"Hyp_SMC_init_mean{initial_mean}"
+    run_name = f"Hyp_SMC_D{D}"
 
     print(f"Starting {run_name}")
 
     train(vcsmc, optimizer, taxa_N, data_NxSxA, file, epochs=epochs, run_name=run_name)
 
 
-initial_mean_vals = [0.0, 0.25, 0.5, 0.75, 0.9, 0.95]
+D_vals = [1, 2, 3, 4, 6, 8, 12, 16]
 
-for initial_mean in initial_mean_vals:
-    train_with_proposal(initial_mean)
+for D in D_vals:
+    train_with_proposal(D)
 
 # %%
-from figures_util import make_output_dir, set_path
-
-set_path()
-
 import os
 
 import matplotlib.pyplot as plt
@@ -53,8 +42,8 @@ import matplotlib.pyplot as plt
 from vcsmc import *
 
 
-def load_log_likelihoods(initial_mean: float):
-    run_name = f"Hyp_SMC_init_mean{initial_mean}"
+def load_log_likelihoods(D: int):
+    run_name = f"Hyp_SMC_D{D}"
 
     results: TrainResults = torch.load(
         find_most_recent_path(f"runs/*{run_name}", "results.pt")
@@ -62,21 +51,24 @@ def load_log_likelihoods(initial_mean: float):
     return results["log_likelihood_avgs"]
 
 
-initial_mean_vals = [0.0, 0.25, 0.5, 0.75, 0.9, 0.95]
+D_vals = [1, 2, 3, 4, 6, 8, 12, 16]
 
-plt.title("Effect of Embedding Initialization")
+plt.title("Effect of Dimensionality")
 plt.xlabel("Epochs")
 plt.ylabel("Log Likelihood")
-# plt.ylim(-8000, -6300)
+plt.ylim(-8000, -6300)
 
-for i, initial_mean in enumerate(initial_mean_vals):
-    ll = load_log_likelihoods(initial_mean)
-    plt.plot(ll[5:], label=f"Initial mean = {initial_mean}")
+for i, D in enumerate(D_vals):
+    ll = load_log_likelihoods(D)
+    linestyle = "solid" if D == 2 else "dotted"
+    plt.plot(ll[5:], label=f"D = {D}", linestyle=linestyle)
 
 plt.legend()
 plt.tight_layout()
 
-file = f"{make_output_dir()}/hyp_smc_init_mean.png"
+os.makedirs("outputs/figures", exist_ok=True)
+
+file = "outputs/figures/hyp_smc_dim.png"
 if os.path.exists(file):
     os.remove(file)
 
