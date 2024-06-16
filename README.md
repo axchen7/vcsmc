@@ -3,7 +3,7 @@
 First, create a conda environment:
 
 ```bash
-conda create --prefix .conda python=3.11
+conda create --yes --prefix .conda python=3.11
 ```
 
 Next, activate the environment:
