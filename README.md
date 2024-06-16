@@ -23,11 +23,37 @@ pip install -e .
 Train primates, JC69:
 
 ```bash
-python scripts/train_driver.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 data/primates.phy
+python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 data/primates.phy
 ```
 
 Train DS1, JC69:
 
 ```bash
-python scripts/train_driver.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 data/hohna/DS1.phy
+python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 data/hohna/DS1.phy
+```
+
+# Generate Paper Figures
+
+Title: VCSMC vs Hyp SMC with Different K
+
+```bash
+python scripts/proposal_K.py
+```
+
+Title: Effect of Embedding Initialization
+
+```bash
+python scripts/hyp_smc_init_mean.py
+```
+
+Title: Effect of Dimensionality
+
+```bash
+python scripts/hyp_smc_dim.py
+```
+
+Benchmark (output to a .csv):
+
+```bash
+python scripts/hyp_smc_benchmark.py
 ```
