@@ -15,7 +15,7 @@ dependencies = [
     "torch",
     "torch_tb_profiler",
     "tensorboard",
-    "numpy",
+    "numpy < 2", # numpy 2.0.0 breaks tensorboard
     "scipy",
     "matplotlib",
     "tqdm",
