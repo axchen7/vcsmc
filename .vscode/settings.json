@@ -1,11 +1,13 @@
 {
   "editor.formatOnSave": true,
   "python.analysis.typeCheckingMode": "standard",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.importFormat": "relative",
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.codeActionsOnSave": {
-      "source.organizeImports": "explicit",
-      "source.unusedImports": "explicit"
+      "source.organizeImports": "always",
+      "source.unusedImports": "always"
     }
   }
 }
