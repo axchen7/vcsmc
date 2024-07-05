@@ -29,6 +29,7 @@ Notes:
   or VNCSMC otherwise.
 - `--hash-trick`: uses the hash trick to speed up computation. Only applies when
   `--hyperbolic` is set, and essentially required if `--lookahead-merge` is set.
+- `--checkpoint-grads`: use gradient checkpointing to reduce memory usage.
 
 Train primates, JC69:
 
@@ -39,7 +40,7 @@ python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --hyperbo
 Train DS1, JC69:
 
 ```bash
-python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --hyperbolic --lookahead-merge --hash-trick data/hohna/DS1.phy
+python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --hyperbolic --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
 ```
 
 # Generate Paper Figures
