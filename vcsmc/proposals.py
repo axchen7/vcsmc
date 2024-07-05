@@ -3,7 +3,6 @@ import math
 import torch
 from torch import Tensor, nn
 
-from .distance_utils import EPSILON
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
 from .vcsmc_utils import ArangeFn, gather_K, gather_K2
