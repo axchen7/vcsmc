@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from .encoders import Hyperbolic
+from .site_positions_encoders import DummySitePositionsEncoder
 from .train_utils import (
     TemperatureScheduler,
     TrainArgs,
@@ -254,18 +255,20 @@ def train(
 
             save_checkpoint(epoch + 1)
 
-            cosine_similarity = get_data_reconstruction_cosine_similarity()
-
             ZCSMCs.append(log_ZCSMC_sum)
             log_likelihood_avgs.append(log_likelihood_avg)
 
             writer.add_scalar("Log ZCSMC", log_ZCSMC_sum, epoch)
             writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
-            writer.add_scalar(
-                "Data reconstruction cosine similarity",
-                cosine_similarity,
-                epoch,
-            )
+
+            if not isinstance(
+                vcsmc.q_matrix_decoder.site_positions_encoder, DummySitePositionsEncoder
+            ):
+                writer.add_scalar(
+                    "Data reconstruction cosine similarity",
+                    get_data_reconstruction_cosine_similarity(),
+                    epoch,
+                )
 
             if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
                 writer.add_scalar(
