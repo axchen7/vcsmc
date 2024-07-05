@@ -72,7 +72,7 @@ class Hyperbolic(Distance):
 
     def normalize(self, vectors_VxD: Tensor) -> Tensor:
         # return a vector with the same direction but with the norm passed
-        # through f(|x|)=sqrt(1-exp(-|x|^2))
+        # through f(|x|)=sqrt(1-exp(-x^2))
 
         norms_V = safe_norm(vectors_VxD, -1)
         norms_sq_V = torch.sum(vectors_VxD**2, -1)
@@ -123,6 +123,6 @@ class Hyperbolic(Distance):
         )
 
         # use larger epsilon to make float32 stable
-        distance_V = torch.acosh(1 + 2 * delta_V + (EPSILON * 10))
+        distance_V = torch.acosh(1 + delta_V + (EPSILON * 10))
 
         return distance_V * self.scale()
