@@ -263,16 +263,16 @@ def build_newick_tree(
 ) -> str:
     """
     Converts the merge indexes and branch lengths output by VCSMC into a Newick
-    tree.
+    tree. The N1 dimension corresponds to the N-1 merge steps.
 
     Args:
         taxa_N: List of taxa names of length N.
-        merge_indexes_N1x2: Tensor of merge indexes, where the nth entry is the
-            merge indexes at the nth merge step. Shape is (N-1, 2)
-        branch_lengths_N1x2: Tensor of branch lengths, where the nth entry is
-            the branch lengths at the nth merge step. Shape is (N-1, 2)
+        merge1_indexes_N1: Merge indexes of the left child.
+        merge2_indexes_N1: Merge indexes of the right child.
+        branch1_lengths_N1: Branch lengths of the left child.
+        branch2_lengths_N1: Branch lengths of the right child
 
-    Returns: Tensor of the single Newick tree.
+    Returns: a single Newick tree.
     """
 
     N = len(taxa_N)
