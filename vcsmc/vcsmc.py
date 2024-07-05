@@ -1,5 +1,5 @@
 import math
-from typing import Literal, TypedDict, cast
+from typing import TypedDict, cast
 
 import torch
 from torch import Tensor, nn
