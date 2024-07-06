@@ -54,6 +54,7 @@ def main(
         hash_trick=hash_trick,
         checkpoint_grads=checkpoint_grads,
     ).to(device)
+
     optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     train(
