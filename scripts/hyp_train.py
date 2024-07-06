@@ -1,71 +1,72 @@
-from argparse import ArgumentParser
+from typing import Annotated, Optional
+
+import typer
 
 from vcsmc import *
 
 
-def main():
-    parser = ArgumentParser(description="Train a VCSMC model on a phylogenetic dataset")
-    parser.add_argument("file", type=str)
-    parser.add_argument("--K", type=int, required=True)
-    parser.add_argument("--D", type=int, required=True)
-    parser.add_argument("--lr", type=float, required=True)
-    parser.add_argument("--epochs", type=int, required=True)
-    parser.add_argument("--sites-batch-size", type=int, required=False)
-    parser.add_argument("--jc69", action="store_true")
-    parser.add_argument("--hyperbolic", action="store_true")
-    parser.add_argument("--sample-branches", action="store_true")
-    parser.add_argument("--lookahead-merge", action="store_true")
-    parser.add_argument("--hash-trick", action="store_true")
-    parser.add_argument("--checkpoint-grads", action="store_true")
-    args = parser.parse_args()
+def main(
+    file: str,
+    K: Annotated[int, typer.Option()],
+    D: Annotated[int, typer.Option()],
+    lr: Annotated[float, typer.Option()],
+    epochs: Annotated[int, typer.Option()],
+    sites_batch_size: Annotated[Optional[int], typer.Option()] = None,
+    jc69: Annotated[bool, typer.Option()] = False,
+    hyperbolic: Annotated[bool, typer.Option()] = False,
+    sample_branches: Annotated[bool, typer.Option()] = False,
+    lookahead_merge: Annotated[bool, typer.Option()] = False,
+    hash_trick: Annotated[bool, typer.Option()] = False,
+    checkpoint_grads: Annotated[bool, typer.Option()] = False,
+):
+    """Train a VCSMC model on a phylogenetic dataset."""
 
     device = detect_device()
 
-    N, _S, A, data_NxSxA, taxa_N = load_phy(args.file, A4_ALPHABET)
+    N, _S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
 
-    if args.jc69:
+    if jc69:
         q_matrix_decoder = JC69QMatrixDecoder(A=A)
     else:
         q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
 
-    if args.hyperbolic:
+    if hyperbolic:
         distance = Hyperbolic()
-        seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=args.D)
+        seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
         merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
         proposal = EmbeddingProposal(
             distance,
             seq_encoder,
             merge_encoder,
             N=N,
-            lookahead_merge=args.lookahead_merge,
-            sample_branches=args.sample_branches,
+            lookahead_merge=lookahead_merge,
+            sample_branches=sample_branches,
         )
-        hash_trick = args.hash_trick
     else:
-        proposal = ExpBranchProposal(N=N, lookahead_merge=args.lookahead_merge)
+        proposal = ExpBranchProposal(N=N, lookahead_merge=lookahead_merge)
         hash_trick = False  # can't use hash trick with ExpBranchProposal
 
     vcsmc = VCSMC(
         q_matrix_decoder,
         proposal,
         N=N,
-        K=args.K,
+        K=K,
         hash_trick=hash_trick,
-        checkpoint_grads=args.checkpoint_grads,
+        checkpoint_grads=checkpoint_grads,
     ).to(device)
-    optimizer = torch.optim.Adam(vcsmc.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
     train(
         vcsmc,
         optimizer,
         taxa_N,
         data_NxSxA,
-        args.file,
-        epochs=args.epochs,
-        sites_batch_size=args.sites_batch_size,
+        file,
+        epochs=epochs,
+        sites_batch_size=sites_batch_size,
     )
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)

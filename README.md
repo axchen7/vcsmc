@@ -34,13 +34,13 @@ Notes:
 Train primates, JC69:
 
 ```bash
-python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --hyperbolic --lookahead-merge --hash-trick data/primates.phy
+python scripts/hyp_train.py --k 16 --d 2 --lr 0.01 --epochs 200 --jc69 --hyperbolic --lookahead-merge --hash-trick data/primates.phy
 ```
 
 Train DS1, JC69:
 
 ```bash
-python scripts/hyp_train.py --K 16 --D 2 --lr 0.01 --epochs 200 --jc69 --hyperbolic --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
+python scripts/hyp_train.py --k 16 --d 2 --lr 0.01 --epochs 200 --jc69 --hyperbolic --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
 ```
 
 # Generate Paper Figures
