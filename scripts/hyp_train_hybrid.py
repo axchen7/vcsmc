@@ -18,7 +18,7 @@ def main(
     sites_batch_size: Optional[int] = None,
     jc69: bool = False,
     lookahead_merge1: bool = False,
-    hash_trick: bool = False,
+    hash_trick1: bool = False,
     checkpoint_grads: bool = False,
 ):
     """
@@ -60,7 +60,7 @@ def main(
         proposal,
         N=N,
         K=K1,
-        hash_trick=hash_trick,
+        hash_trick=hash_trick1,
         checkpoint_grads=checkpoint_grads,
     ).to(device)
 
