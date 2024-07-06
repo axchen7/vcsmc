@@ -17,12 +17,13 @@ def main(
     D: int = 2,
     sites_batch_size: Optional[int] = None,
     jc69: bool = False,
+    lookahead_merge1: bool = False,
     hash_trick: bool = False,
     checkpoint_grads: bool = False,
 ):
     """
     Train Hyperbolic SMC model on a phylogenetic dataset. Performs two phases:
-    - First, trains using lookahead merge and deterministic branch lengths.
+    - First, trains using deterministic branch lengths and maybe lookahead merge.
     - Second, fixes the tree topology to the best one found and continues training
         using sampled branch lengths and no lookahead merge.
     """
@@ -50,7 +51,7 @@ def main(
         seq_encoder,
         merge_encoder,
         N=N,
-        lookahead_merge=True,
+        lookahead_merge=lookahead_merge1,
         sample_branches=False,
     )
 
