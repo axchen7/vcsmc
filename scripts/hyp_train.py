@@ -13,6 +13,7 @@ def main():
     parser.add_argument("--sites-batch-size", type=int, required=False)
     parser.add_argument("--jc69", action="store_true")
     parser.add_argument("--hyperbolic", action="store_true")
+    parser.add_argument("--sample-branches", action="store_true")
     parser.add_argument("--lookahead-merge", action="store_true")
     parser.add_argument("--hash-trick", action="store_true")
     parser.add_argument("--checkpoint-grads", action="store_true")
@@ -38,6 +39,7 @@ def main():
             merge_encoder,
             N=N,
             lookahead_merge=args.lookahead_merge,
+            sample_branches=args.sample_branches,
         )
         hash_trick = args.hash_trick
     else:
