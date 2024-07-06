@@ -7,10 +7,10 @@ from vcsmc import *
 
 def main(
     file: str,
-    K: Annotated[int, typer.Option()],
-    D: Annotated[int, typer.Option()],
     lr: Annotated[float, typer.Option()],
     epochs: Annotated[int, typer.Option()],
+    K: Annotated[int, typer.Option()],
+    D: int = 2,
     sites_batch_size: Optional[int] = None,
     jc69: bool = False,
     hyperbolic: bool = False,
