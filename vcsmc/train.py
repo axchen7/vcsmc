@@ -244,7 +244,7 @@ def train(
     save_checkpoint(start_epoch)
 
     def train_epochs(prof: torch.profiler.profile | None):
-        for epoch in tqdm(range(epochs - start_epoch)):
+        for epoch in tqdm(range(epochs - start_epoch), desc="Training"):
             if prof:
                 prof.step()
 
