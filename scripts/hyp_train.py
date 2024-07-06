@@ -45,7 +45,6 @@ def main(
         )
     else:
         proposal = ExpBranchProposal(N=N, lookahead_merge=lookahead_merge)
-        hash_trick = False  # can't use hash trick with ExpBranchProposal
 
     vcsmc = VCSMC(
         q_matrix_decoder,
