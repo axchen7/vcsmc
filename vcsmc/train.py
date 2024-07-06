@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from .encoders import Hyperbolic
+from .proposals import EmbeddingProposal
 from .site_positions_encoders import DummySitePositionsEncoder
 from .train_utils import (
     TemperatureScheduler,
@@ -274,6 +275,16 @@ def train(
                 writer.add_scalar(
                     "Hyperbolic scale",
                     vcsmc.proposal.seq_encoder.distance.scale(),
+                    epoch,
+                )
+
+            if (
+                isinstance(vcsmc.proposal, EmbeddingProposal)
+                and vcsmc.proposal.sample_branches
+            ):
+                writer.add_scalar(
+                    "Sample branches sigma",
+                    vcsmc.proposal.sample_branches_sigma(),
                     epoch,
                 )
 

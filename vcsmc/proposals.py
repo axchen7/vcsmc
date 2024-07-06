@@ -200,7 +200,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
-        sample_branches_sigma: float = 0.1,
+        initial_sample_branches_sigma: float = 0.1,
         merge_indexes_N1x2: Tensor | None = None,
     ):
         """
@@ -237,8 +237,13 @@ class EmbeddingProposal(Proposal):
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
-        self.sample_branches_sigma = sample_branches_sigma
+        self.log_sample_branches_sigma = nn.Parameter(
+            torch.tensor(math.log(initial_sample_branches_sigma))
+        )
         self.merge_indexes_N1x2 = merge_indexes_N1x2
+
+    def sample_branches_sigma(self):
+        return self.log_sample_branches_sigma.exp()
 
     def uses_deterministic_branches(self) -> bool:
         return not self.sample_branches
@@ -345,7 +350,7 @@ class EmbeddingProposal(Proposal):
             mu1_KxJ = dist1_KxJ.log()
             mu2_KxJ = dist2_KxJ.log()
 
-            sigma = self.sample_branches_sigma
+            sigma = self.sample_branches_sigma()
 
             # re-parameterization trick: sample from N(0, 1) and transform to
             # log normal distribution (so gradients can flow through the sample)
