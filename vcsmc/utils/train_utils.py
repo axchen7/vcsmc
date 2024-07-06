@@ -1,57 +1,17 @@
 import glob
-import math
 import os
 import shutil
-from typing import Callable, TypedDict
+from typing import Callable
 
 import torch
 from torch import Tensor
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR, LRScheduler
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.data import DataLoader, TensorDataset
 
 from ..vcsmc import VCSMC
-
-
-class TemperatureScheduler:
-    def __call__(self, epoch: int) -> float:
-        raise NotImplementedError
-
-
-class TrainArgs(TypedDict):
-    taxa_N: list[str]
-    data_NxSxA: Tensor
-    file: str
-    temperature_scheduler: TemperatureScheduler | None
-    root: str | None
-    epochs: int
-    sites_batch_size: int | None
-    sample_taxa_count: int | None
-    run_name: str | None
-
-
-class TrainCheckpoint(TypedDict):
-    vcsmc: VCSMC
-    optimizer: Optimizer
-    lr_scheduler: LRScheduler | None
-    start_epoch: int
-
-
-class TrainResults(TypedDict):
-    ZCSMCs: list[float]
-    log_likelihood_avgs: list[float]
-
-
-class ExpDecayTemperatureScheduler(TemperatureScheduler):
-    def __init__(self, initial_temp: float, decay_rate: float):
-        """
-        The temperature decays exponentially from initial_temp to 1.
-        Example args: initial_temp=10, decay_rate=1/100
-        """
-        self.initial_temp = initial_temp
-        self.decay_rate = decay_rate
-
-    def __call__(self, epoch: int) -> float:
-        return 1 + (self.initial_temp - 1) * math.exp(-self.decay_rate * epoch)
+from .train_types import TrainArgs, TrainCheckpoint
+from .vcsmc_types import VcsmcResult
 
 
 class SlowStartLRScheduler(LambdaLR):
@@ -143,3 +103,51 @@ def detect_device() -> torch.device:
         return torch.device("mps")
     else:
         return torch.device("cpu")
+
+
+def get_site_positions_SxSfull(data_NxSxA: Tensor) -> Tensor:
+    S = data_NxSxA.shape[1]
+    site_positions_SxSfull = torch.eye(
+        S, dtype=data_NxSxA.dtype, device=data_NxSxA.device
+    )
+    return site_positions_SxSfull
+
+
+def batch_by_sites(data_NxSxA: Tensor, batch_size: int | None) -> DataLoader:
+    """
+    Returns a (mapped) DataLoader where each element is a tuple
+    (data_batched_SxNxA, site_positions_batched_SxSfull).
+
+    Args:
+        data_NxSxA: The data.
+        batch_size: The batch size. Set to None to use the full dataset.
+    """
+
+    if batch_size is None:
+        S = data_NxSxA.shape[1]
+        batch_size = S
+
+    data_SxNxA = data_NxSxA.permute(1, 0, 2)
+    site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
+
+    # shape: S x ([N, A], [Sfull])
+    dataset = TensorDataset(data_SxNxA, site_positions_SxSfull)
+
+    # shape: V x ([S, N, A], [S, Sfull]), where now S = batch_size
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return dataloader
+
+
+@torch.no_grad()
+def evaluate(
+    vcsmc: VCSMC,
+    taxa_N: list[str],
+    data_NxSxA: Tensor,
+) -> VcsmcResult:
+    dataset = batch_by_sites(data_NxSxA, None)
+
+    # batch is actually the full dataset
+    data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
+    data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
+
+    return vcsmc(taxa_N, data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)

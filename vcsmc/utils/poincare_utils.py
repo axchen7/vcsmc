@@ -10,8 +10,8 @@ from torch import Tensor
 
 from ..distances import Hyperbolic
 from ..proposals import EmbeddingProposal
-from ..train import evaluate, get_site_positions_SxSfull
 from ..vcsmc import VCSMC
+from .train_utils import evaluate, get_site_positions_SxSfull
 from .vcsmc_utils import replace_with_merged_list
 
 

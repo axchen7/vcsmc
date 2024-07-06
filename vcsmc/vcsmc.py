@@ -7,6 +7,7 @@ from torch.utils.checkpoint import checkpoint
 
 from .proposals import Proposal
 from .q_matrix_decoders import QMatrixDecoder
+from .utils.vcsmc_types import VcsmcResult
 from .utils.vcsmc_utils import (
     PriorDist,
     build_newick_tree,
@@ -20,18 +21,6 @@ from .utils.vcsmc_utils import (
     hash_tree_K,
     replace_with_merged_K,
 )
-
-
-class VcsmcResult(TypedDict):
-    log_ZCSMC: Tensor
-    log_likelihood_K: Tensor
-    merge_indexes_KxN1x2: Tensor
-    """left/right node indexes at each step, for all particles"""
-    best_newick_tree: str
-    best_merge_indexes_N1x2: Tensor
-    """left/right node indexes at each step"""
-    best_embeddings_N1xD: Tensor
-    """merged embedding at each step"""
 
 
 class MergeMetadata(TypedDict):

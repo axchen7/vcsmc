@@ -12,6 +12,8 @@ from .train import *
 from .utils.distance_utils import *
 from .utils.encoder_utils import *
 from .utils.poincare_utils import *
+from .utils.train_types import *
 from .utils.train_utils import *
+from .utils.vcsmc_types import *
 from .utils.vcsmc_utils import *
 from .vcsmc import *

@@ -7,54 +7,21 @@ import numpy as np
 import torch
 from Bio import Phylo
 from torch import Tensor
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
 
 from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
 from .site_positions_encoders import DummySitePositionsEncoder
+from .utils.train_types import TrainArgs, TrainCheckpoint, TrainResults
 from .utils.train_utils import (
-    TemperatureScheduler,
-    TrainArgs,
-    TrainCheckpoint,
-    TrainResults,
+    batch_by_sites,
     find_most_recent_path,
+    get_site_positions_SxSfull,
 )
-from .vcsmc import VCSMC, VcsmcResult
-
-
-def get_site_positions_SxSfull(data_NxSxA: Tensor) -> Tensor:
-    S = data_NxSxA.shape[1]
-    site_positions_SxSfull = torch.eye(
-        S, dtype=data_NxSxA.dtype, device=data_NxSxA.device
-    )
-    return site_positions_SxSfull
-
-
-def batch_by_sites(data_NxSxA: Tensor, batch_size: int | None) -> DataLoader:
-    """
-    Returns a (mapped) DataLoader where each element is a tuple
-    (data_batched_SxNxA, site_positions_batched_SxSfull).
-
-    Args:
-        data_NxSxA: The data.
-        batch_size: The batch size. Set to None to use the full dataset.
-    """
-
-    if batch_size is None:
-        S = data_NxSxA.shape[1]
-        batch_size = S
-
-    data_SxNxA = data_NxSxA.permute(1, 0, 2)
-    site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
-
-    # shape: S x ([N, A], [Sfull])
-    dataset = TensorDataset(data_SxNxA, site_positions_SxSfull)
-
-    # shape: V x ([S, N, A], [S, Sfull]), where now S = batch_size
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    return dataloader
+from .utils.vcsmc_types import VcsmcResult
+from .vcsmc import VCSMC
 
 
 def train(
@@ -65,7 +32,6 @@ def train(
     file: str,
     *,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
-    temperature_scheduler: TemperatureScheduler | None = None,
     root: str | None = None,
     epochs: int,
     start_epoch: int = 0,
@@ -105,7 +71,6 @@ def train(
             "taxa_N": taxa_N,
             "data_NxSxA": data_NxSxA,
             "file": file,
-            "temperature_scheduler": temperature_scheduler,
             "root": root,
             "epochs": epochs,
             "sites_batch_size": sites_batch_size,
@@ -170,16 +135,11 @@ def train(
                 samp_data_NxSxA = data_NxSxA
                 samp_data_batched_NxSxA = data_batched_NxSxA
 
-            temperature = None
-            if temperature_scheduler is not None:
-                temperature = temperature_scheduler(epoch)
-
             result: VcsmcResult = vcsmc(
                 samp_taxa_N,
                 samp_data_NxSxA,
                 samp_data_batched_NxSxA,
                 site_positions_batched_SxSfull,
-                temperature=temperature,
             )
 
             log_ZCSMC = result["log_ZCSMC"]
@@ -403,26 +363,3 @@ def train_from_checkpoint(
         )
 
     return data_NxSxA, taxa_N, vcsmc
-
-
-@torch.no_grad()
-def evaluate(
-    vcsmc: VCSMC,
-    taxa_N: list[str],
-    data_NxSxA: Tensor,
-    *,
-    temperature: float | None = None,
-) -> VcsmcResult:
-    dataset = batch_by_sites(data_NxSxA, None)
-
-    # batch is actually the full dataset
-    data_batched_SxNxA, site_positions_batched_SxSfull = next(iter(dataset))
-    data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
-
-    return vcsmc(
-        taxa_N,
-        data_NxSxA,
-        data_batched_NxSxA,
-        site_positions_batched_SxSfull,
-        temperature=temperature,
-    )
