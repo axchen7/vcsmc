@@ -2,9 +2,9 @@ import torch
 from torch import Tensor, nn
 
 from .distances import Distance
-from .encoder_utils import MLP
 from .expm import expm
 from .site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
+from .utils.encoder_utils import MLP
 
 
 class QMatrixDecoder(nn.Module):

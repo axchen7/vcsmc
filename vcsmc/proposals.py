@@ -5,7 +5,7 @@ from torch import Tensor, nn
 
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
-from .vcsmc_utils import ArangeFn, gather_K, gather_K2
+from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2
 
 
 class Proposal(nn.Module):

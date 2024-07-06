@@ -3,7 +3,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from .distance_utils import EPSILON, safe_norm
+from .utils.distance_utils import EPSILON, safe_norm
 
 
 class Distance(nn.Module):

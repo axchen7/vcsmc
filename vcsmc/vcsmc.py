@@ -7,7 +7,7 @@ from torch.utils.checkpoint import checkpoint
 
 from .proposals import Proposal
 from .q_matrix_decoders import QMatrixDecoder
-from .vcsmc_utils import (
+from .utils.vcsmc_utils import (
     PriorDist,
     build_newick_tree,
     compute_log_double_factorials_2N,

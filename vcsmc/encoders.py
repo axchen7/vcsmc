@@ -1,9 +1,9 @@
 import torch
 from torch import Tensor, nn
 
-from .distance_utils import EPSILON, safe_norm
 from .distances import Distance, Euclidean, Hyperbolic
-from .encoder_utils import MLP
+from .utils.distance_utils import EPSILON, safe_norm
+from .utils.encoder_utils import MLP
 
 
 class SequenceEncoder(nn.Module):

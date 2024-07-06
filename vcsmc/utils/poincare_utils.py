@@ -8,10 +8,10 @@ from IPython.display import display
 from ipywidgets import FloatSlider, interactive
 from torch import Tensor
 
-from .distances import Hyperbolic
-from .proposals import EmbeddingProposal
-from .train import evaluate, get_site_positions_SxSfull
-from .vcsmc import VCSMC
+from ..distances import Hyperbolic
+from ..proposals import EmbeddingProposal
+from ..train import evaluate, get_site_positions_SxSfull
+from ..vcsmc import VCSMC
 from .vcsmc_utils import replace_with_merged_list
 
 

@@ -4,7 +4,7 @@ from typing import Callable, Literal
 import torch
 from torch import Tensor
 
-from .expm import expm
+from ..expm import expm
 
 
 def compute_log_double_factorials_2N(N: int) -> Tensor:

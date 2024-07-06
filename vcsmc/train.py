@@ -14,7 +14,7 @@ from tqdm import tqdm
 from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
 from .site_positions_encoders import DummySitePositionsEncoder
-from .train_utils import (
+from .utils.train_utils import (
     TemperatureScheduler,
     TrainArgs,
     TrainCheckpoint,
