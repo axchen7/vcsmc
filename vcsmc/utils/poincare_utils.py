@@ -37,9 +37,7 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
 
     result = evaluate(vcsmc, taxa_N, data_NxSxA)
 
-    merge1_indexes_N1 = result["best_merge_indexes_N1x2"][:, 0]
-    merge2_indexes_N1 = result["best_merge_indexes_N1x2"][:, 1]
-
+    merge_indexes_N1x2 = result["best_merge_indexes_N1x2"]
     embeddings_N1xD = normalize(result["best_embeddings_N1xD"])
 
     points = []
@@ -55,8 +53,8 @@ def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
     labels_t = taxa_N
 
     for r in range(N - 1):
-        idx1 = int(merge1_indexes_N1[r])
-        idx2 = int(merge2_indexes_N1[r])
+        idx1 = int(merge_indexes_N1x2[r][0])
+        idx2 = int(merge_indexes_N1x2[r][1])
 
         emb1_D = embeddings_txD[idx1]
         emb2_D = embeddings_txD[idx2]
