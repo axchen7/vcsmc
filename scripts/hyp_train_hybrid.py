@@ -74,7 +74,7 @@ def main(
         sites_batch_size=sites_batch_size,
     )
 
-    phase1_results = evaluate(vcsmc, taxa_N, data_NxSxA)
+    phase1_result = evaluate(vcsmc, taxa_N, data_NxSxA)
 
     # ===== phase 2 =====
 
@@ -87,7 +87,7 @@ def main(
         N=N,
         lookahead_merge=False,
         sample_branches=True,
-        merge_indexes_N1x2=phase1_results["best_merge_indexes_N1x2"],
+        merge_indexes_KxN1x2=phase1_result["merge_indexes_KxN1x2"],
     )
 
     vcsmc = VCSMC(
