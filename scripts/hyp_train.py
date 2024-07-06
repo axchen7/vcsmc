@@ -11,13 +11,13 @@ def main(
     D: Annotated[int, typer.Option()],
     lr: Annotated[float, typer.Option()],
     epochs: Annotated[int, typer.Option()],
-    sites_batch_size: Annotated[Optional[int], typer.Option()] = None,
-    jc69: Annotated[bool, typer.Option()] = False,
-    hyperbolic: Annotated[bool, typer.Option()] = False,
-    sample_branches: Annotated[bool, typer.Option()] = False,
-    lookahead_merge: Annotated[bool, typer.Option()] = False,
-    hash_trick: Annotated[bool, typer.Option()] = False,
-    checkpoint_grads: Annotated[bool, typer.Option()] = False,
+    sites_batch_size: Optional[int] = None,
+    jc69: bool = False,
+    hyperbolic: bool = False,
+    sample_branches: bool = False,
+    lookahead_merge: bool = False,
+    hash_trick: bool = False,
+    checkpoint_grads: bool = False,
 ):
     """Train a VCSMC model on a phylogenetic dataset."""
 
