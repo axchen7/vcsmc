@@ -27,7 +27,6 @@ class VcsmcResult(TypedDict):
     log_likelihood_K: Tensor
     best_newick_tree: str
     best_merge_indexes_N1x2: Tensor  # left and right node indexes at each step
-    best_branch_lengths_N1x2: Tensor  # left and right branch lengths at each step
     best_embeddings_N1xD: Tensor  # merged embedding at each step
 
 
@@ -518,9 +517,6 @@ class VCSMC(nn.Module):
         merge1_indexes_Kxr = ms["merge1_indexes_Kxr"][best_tree_idx]
         merge2_indexes_Kxr = ms["merge2_indexes_Kxr"][best_tree_idx]
 
-        best_branch1_lengths_N1 = ms["branch1_lengths_Kxr"][best_tree_idx]
-        best_branch2_lengths_N1 = ms["branch2_lengths_Kxr"][best_tree_idx]
-
         # ===== return final results =====
 
         return {
@@ -529,9 +525,6 @@ class VCSMC(nn.Module):
             "best_newick_tree": best_newick_tree,
             "best_merge_indexes_N1x2": torch.stack(
                 [merge1_indexes_Kxr, merge2_indexes_Kxr], 1
-            ),
-            "best_branch_lengths_N1x2": torch.stack(
-                [best_branch1_lengths_N1, best_branch2_lengths_N1], 1
             ),
             "best_embeddings_N1xD": ms["embeddings_KxrxD"][best_tree_idx],
         }
