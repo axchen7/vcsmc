@@ -8,10 +8,18 @@ from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 from ..vcsmc import VCSMC
 from .train_types import TrainArgs, TrainCheckpoint
 from .vcsmc_types import VcsmcResult
+from .vcsmc_utils import (
+    gather_K,
+    hash_forest_K,
+    hash_K,
+    hash_tree_K,
+    replace_with_merged_K,
+)
 
 
 class SlowStartLRScheduler(LambdaLR):
@@ -151,3 +159,109 @@ def evaluate(
     data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
 
     return vcsmc(taxa_N, data_NxSxA, data_batched_NxSxA, site_positions_batched_SxSfull)
+
+
+@torch.no_grad()
+def compute_merge_log_weights_from_merge_indexes(
+    merge_indexes_KxN1x2: Tensor,
+) -> dict[int, Tensor]:
+    """
+    Given the merge indexes of all K particles from the VCSMC output, computes
+    the empirical distribution conditioned on each unique forest.
+
+    Returns a mapping of each unique forest by its hash to a shape (t, t)
+    symmetric matrix of log pairwise merge probabilities.
+
+    Notes:
+    - t is the number of trees in the forest.
+    - The merge probabilities matrix is not normalized.
+    - Returned tensors are on the CPU.
+    """
+
+    K = merge_indexes_KxN1x2.shape[0]
+    N = merge_indexes_KxN1x2.shape[1] + 1
+
+    merge_indexes_KxN1x2 = merge_indexes_KxN1x2.cpu()
+
+    # forest hash -> list of seen merges
+    # (includes all merges, not just unique ones)
+    seen_merges: dict[int, list[tuple[int, int]]] = {}
+
+    # forest hash -> proposal distribution, shape (t, t)
+    merge_proposals: dict[int, Tensor] = {}
+
+    # simultaneously build trees for the K particles
+
+    # tree hashes
+    hashes_Kxt = hash_K(torch.arange(N)).repeat(K, 1)
+
+    for r in range(N - 1):
+        t = N - r  # number of trees in the forest
+
+        forest_hashes_K = hash_forest_K(hashes_Kxt)
+        idx1_K = merge_indexes_KxN1x2[:, r, 0]
+        idx2_K = merge_indexes_KxN1x2[:, r, 1]
+
+        for k in range(K):
+            forest_hash = int(forest_hashes_K[k])
+            idx1 = int(idx1_K[k])
+            idx2 = int(idx2_K[k])
+
+            if forest_hash not in seen_merges:
+                seen_merges[forest_hash] = []
+
+            seen_merges[forest_hash].append((idx1, idx2))
+
+            if forest_hash in merge_proposals:
+                # sanity check (and also for hash collisions)
+                assert merge_proposals[forest_hash].shape[0] == t
+            else:
+                merge_proposals[forest_hash] = torch.zeros(t, t)
+
+        hashes_Kxt = replace_with_merged_K(
+            hashes_Kxt,
+            idx1_K,
+            idx2_K,
+            hash_tree_K(
+                gather_K(hashes_Kxt, idx1_K, torch.arange),
+                gather_K(hashes_Kxt, idx2_K, torch.arange),
+            ),
+            torch.arange,
+        )
+
+    # compute the empirical distribution
+
+    merge_log_weights: dict[int, Tensor] = {}
+
+    for forest_hash, merges in seen_merges.items():
+        for idx1, idx2 in merges:
+            merge_proposals[forest_hash][idx1, idx2] += 1
+            merge_proposals[forest_hash][idx2, idx1] += 1
+
+        merge_log_weights[forest_hash] = merge_proposals[forest_hash].log()
+
+    return merge_log_weights
+
+
+@torch.no_grad()
+def compute_merge_log_weights_from_vcsmc(
+    vcsmc: VCSMC,
+    taxa_N: list[str],
+    data_NxSxA: Tensor,
+    *,
+    samples: int,
+):
+    """
+    Performs multiple samples from the VCSMC to compute the empirical
+    distribution of merge proposals.
+    """
+
+    merge_indexes_KxN1x2_list: list[Tensor] = []
+
+    for _ in tqdm(range(samples), "Sampling merge indexes from VCSMC"):
+        results = evaluate(vcsmc, taxa_N, data_NxSxA)
+        merge_indexes_KxN1x2_list.append(results["merge_indexes_KxN1x2"])
+
+    # flatten particles
+    merge_indexes_KxN1x2 = torch.cat(merge_indexes_KxN1x2_list, dim=0)
+    return compute_merge_log_weights_from_merge_indexes(merge_indexes_KxN1x2)

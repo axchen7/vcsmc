@@ -5,7 +5,7 @@ from torch import Tensor, nn
 
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
-from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2
+from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2, hash_forest_K
 
 
 class Proposal(nn.Module):
@@ -41,7 +41,7 @@ class Proposal(nn.Module):
         raise NotImplementedError
 
     def forward(
-        self, N: int, embeddings_KxtxD: Tensor, arange_fn: ArangeFn
+        self, N: int, embeddings_KxtxD: Tensor, hashes_Kxt: Tensor, arange_fn: ArangeFn
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Propose J different particles, each defined by the two nodes being
@@ -118,7 +118,7 @@ class ExpBranchProposal(Proposal):
         return False
 
     def forward(
-        self, N: int, embeddings_KxtxD: Tensor, arange_fn: ArangeFn
+        self, N: int, embeddings_KxtxD: Tensor, hashes_Kxt: Tensor, arange_fn: ArangeFn
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         device = embeddings_KxtxD.device
 
@@ -201,7 +201,7 @@ class EmbeddingProposal(Proposal):
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
         initial_sample_branches_sigma: float = 0.1,
-        merge_indexes_N1x2: Tensor | None = None,
+        static_merge_log_weights: dict[int, Tensor] | None = None,
     ):
         """
         Only one of `lookahead_merge`, `sample_merge_temp`, and `merge_indexes_N1x2`
@@ -220,8 +220,8 @@ class EmbeddingProposal(Proposal):
             sample_branches: Whether to sample branch lengths from a log normal distribution.
                 If false, simply use the distance between embeddings as the branch length.
             sample_branches_sigma: sigma parameter for the log normal distribution used to sample branch lengths.
-            merge_indexes_N1x2: If not None, always use these merge indexes instead of sampling.
-                This fixes the tree topology.
+            static_merge_log_weights: If not None, sets the fixed merge distribution.
+                See compute_merge_log_weights_from_vcsmc(). Tensors should be on the CPU.
         """
 
         super().__init__(
@@ -240,7 +240,7 @@ class EmbeddingProposal(Proposal):
         self.log_sample_branches_sigma = nn.Parameter(
             torch.tensor(math.log(initial_sample_branches_sigma))
         )
-        self.merge_indexes_N1x2 = merge_indexes_N1x2
+        self.static_merge_log_weights = static_merge_log_weights  # on CPU
 
     def sample_branches_sigma(self):
         return self.log_sample_branches_sigma.exp()
@@ -249,7 +249,7 @@ class EmbeddingProposal(Proposal):
         return not self.sample_branches
 
     def forward(
-        self, N: int, embeddings_KxtxD: Tensor, arange_fn: ArangeFn
+        self, N: int, embeddings_KxtxD: Tensor, hashes_Kxt: Tensor, arange_fn: ArangeFn
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         device = embeddings_KxtxD.device
 
@@ -259,18 +259,20 @@ class EmbeddingProposal(Proposal):
 
         # ===== determine nodes to merge =====
 
-        if self.merge_indexes_N1x2 is not None:
-            J = 1
-            idx1_KxJ = self.merge_indexes_N1x2[r, 0].repeat(K).unsqueeze(1)
-            idx2_KxJ = self.merge_indexes_N1x2[r, 1].repeat(K).unsqueeze(1)
-            log_merge_prob_K = self.zero.expand(K)
-        elif self.lookahead_merge:
+        if self.lookahead_merge:
             J, idx1_KxJ, idx2_KxJ = self.get_lookahead_merge_indexes(K=K, t=t)
             log_merge_prob_K = self.zero.expand(K)
         else:
             J = 1
 
-            if self.sample_merge_temp is not None:
+            if self.static_merge_log_weights is not None:
+                forest_hashes_K = hash_forest_K(hashes_Kxt)
+                forest_hashes_K = forest_hashes_K.cpu()  # copy to CPU all at once
+                merge_log_weights_Kxtxt = torch.stack(
+                    [self.static_merge_log_weights[int(h)] for h in forest_hashes_K]
+                )
+                merge_log_weights_Kxtxt = merge_log_weights_Kxtxt.to(device)
+            elif self.sample_merge_temp is not None:
                 # randomly select two subtrees to merge, using pairwise distances as
                 # negative log probabilities, and incorporating the sample
                 # temperature

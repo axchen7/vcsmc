@@ -254,6 +254,13 @@ def hash_tree_K(child1_hash_K: Tensor, child2_hash_K: Tensor) -> Tensor:
     return hash_K(child1_hash_K + child2_hash_K)
 
 
+def hash_forest_K(hashes_Kxt: Tensor) -> Tensor:
+    """
+    Returns a deterministic hash of all t trees in a forest.
+    """
+    return hash_K(hashes_Kxt.sum(dim=1))
+
+
 def build_newick_tree(
     taxa_N: list[str],
     merge1_indexes_N1: Tensor,

@@ -11,6 +11,7 @@ def main(
     lr2: Annotated[float, typer.Option()],
     epochs1: Annotated[int, typer.Option()],
     epochs2: Annotated[int, typer.Option()],
+    merge_samples: Annotated[int, typer.Option()],
     K1: Annotated[int, typer.Option()],
     K2: Annotated[int, typer.Option()],
     D: int = 2,
@@ -74,11 +75,14 @@ def main(
         sites_batch_size=sites_batch_size,
     )
 
-    phase1_result = evaluate(vcsmc, taxa_N, data_NxSxA)
-
     # ===== phase 2 =====
 
     print("Running phase 2...")
+
+    # use vcsmc from phase 1
+    static_merge_log_weights = compute_merge_log_weights_from_vcsmc(
+        vcsmc, taxa_N, data_NxSxA, samples=merge_samples
+    )
 
     proposal = EmbeddingProposal(
         distance,
@@ -87,7 +91,7 @@ def main(
         N=N,
         lookahead_merge=False,
         sample_branches=True,
-        merge_indexes_KxN1x2=phase1_result["merge_indexes_KxN1x2"],
+        static_merge_log_weights=static_merge_log_weights,
     )
 
     vcsmc = VCSMC(
