@@ -25,9 +25,13 @@ from .vcsmc_utils import (
 class VcsmcResult(TypedDict):
     log_ZCSMC: Tensor
     log_likelihood_K: Tensor
+    merge_indexes_KxN1x2: Tensor
+    """left/right node indexes at each step, for all particles"""
     best_newick_tree: str
-    best_merge_indexes_N1x2: Tensor  # left and right node indexes at each step
-    best_embeddings_N1xD: Tensor  # merged embedding at each step
+    best_merge_indexes_N1x2: Tensor
+    """left/right node indexes at each step"""
+    best_embeddings_N1xD: Tensor
+    """merged embedding at each step"""
 
 
 class MergeMetadata(TypedDict):
@@ -514,17 +518,17 @@ class VCSMC(nn.Module):
             ms["branch2_lengths_Kxr"][best_tree_idx],
         )
 
-        merge1_indexes_Kxr = ms["merge1_indexes_Kxr"][best_tree_idx]
-        merge2_indexes_Kxr = ms["merge2_indexes_Kxr"][best_tree_idx]
+        merge_indexes_KxN1x2 = torch.stack(
+            [ms["merge1_indexes_Kxr"], ms["merge2_indexes_Kxr"]], 2
+        )
 
         # ===== return final results =====
 
         return {
             "log_ZCSMC": log_ZCSMC,
             "log_likelihood_K": ms["log_likelihood_K"],
+            "merge_indexes_KxN1x2": merge_indexes_KxN1x2,
             "best_newick_tree": best_newick_tree,
-            "best_merge_indexes_N1x2": torch.stack(
-                [merge1_indexes_Kxr, merge2_indexes_Kxr], 1
-            ),
+            "best_merge_indexes_N1x2": merge_indexes_KxN1x2[best_tree_idx],
             "best_embeddings_N1xD": ms["embeddings_KxrxD"][best_tree_idx],
         }
