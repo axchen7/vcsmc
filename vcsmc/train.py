@@ -343,13 +343,13 @@ def load_checkpoint(
 
 def train_from_checkpoint(
     *,
-    epochs: int | None = None,
+    additional_epochs: int,
     start_epoch: int | Literal["best"] | None = None,
     search_dir: str = "runs",
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
-        epochs: The epoch to stop training at.
+        additional_epochs: Train for this many additional epochs.
             If set, overrides the number of epochs in the checkpoint.
         start_epoch: Start training from the state at the start of this epoch (before parameter update).
             If None, starts from the latest checkpoint.
@@ -366,8 +366,7 @@ def train_from_checkpoint(
     taxa_N = args["taxa_N"]
     vcsmc = checkpoint["vcsmc"]
 
-    if epochs is not None:
-        args["epochs"] = epochs
+    args["epochs"] = checkpoint["start_epoch"] + additional_epochs
 
     train(
         vcsmc,
