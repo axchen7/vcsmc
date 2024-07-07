@@ -5,7 +5,7 @@ import typer
 from vcsmc import *
 
 
-def main(
+def hyp_train(
     file: str,
     lr: Annotated[float, typer.Option()],
     epochs: Annotated[int, typer.Option()],
@@ -71,4 +71,4 @@ def main(
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    typer.run(hyp_train)
