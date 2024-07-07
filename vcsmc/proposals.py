@@ -5,6 +5,7 @@ from torch import Tensor, nn
 
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
+from .utils.distance_utils import EPSILON
 from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2, hash_forest_K
 
 __all__ = ["Proposal", "ExpBranchProposal", "EmbeddingProposal"]
@@ -370,9 +371,12 @@ class EmbeddingProposal(Proposal):
             normal1_KxJ = torch.randn([K, J], device=device)
             normal2_KxJ = torch.randn([K, J], device=device)
 
+            dist1_sqrt_KxJ = torch.sqrt(dist1_KxJ + EPSILON)
+            dist2_sqrt_KxJ = torch.sqrt(dist2_KxJ + EPSILON)
+
             # X ~ N(sqrt(dist), sigma)
-            X1_KxJ = dist1_KxJ.sqrt() + sigma * normal1_KxJ
-            X2_KxJ = dist2_KxJ.sqrt() + sigma * normal2_KxJ
+            X1_KxJ = dist1_sqrt_KxJ + sigma * normal1_KxJ
+            X2_KxJ = dist2_sqrt_KxJ + sigma * normal2_KxJ
 
             # Y = X^2
             branch1_KxJ = X1_KxJ**2
@@ -380,8 +384,8 @@ class EmbeddingProposal(Proposal):
 
             # compute log of the pdf of Y
 
-            X1_distr_KxJ = torch.distributions.Normal(dist1_KxJ.sqrt(), sigma)
-            X2_distr_KxJ = torch.distributions.Normal(dist2_KxJ.sqrt(), sigma)
+            X1_distr_KxJ = torch.distributions.Normal(dist1_sqrt_KxJ, sigma)
+            X2_distr_KxJ = torch.distributions.Normal(dist2_sqrt_KxJ, sigma)
 
             # can show: pdf_Y(y) = (1/2|X|) * [pdf_X(X) + pdf_X(-X)]
             log_branch1_prob_KxJ = (
