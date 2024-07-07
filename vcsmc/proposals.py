@@ -200,7 +200,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
-        initial_sample_branches_sigma: float = 0.1,
+        initial_sample_branches_sigma: float = 0.01,
         static_merge_log_weights: dict[int, Tensor] | None = None,
     ):
         """
@@ -355,37 +355,48 @@ class EmbeddingProposal(Proposal):
         dist2_KxJ = dist2_KJ.reshape(K, J)
 
         if self.sample_branches:
-            # sample branch lengths from log normal distributions whose medians
-            # are the distances between children and merged embeddings
-
-            # log of median gives the mean of the inner normal distribution
-            mu1_KxJ = dist1_KxJ.log()
-            mu2_KxJ = dist2_KxJ.log()
+            # branch lengths are the random variable Y = X^2, where
+            # X ~ N(sqrt(distance), sigma), with `distance` being the distance
+            # between the children and the merged embedding; Y will be centered
+            # around `distance`
 
             sigma = self.sample_branches_sigma()
 
-            # re-parameterization trick: sample from N(0, 1) and transform to
-            # log normal distribution (so gradients can flow through the sample)
+            # # re-parameterization trick: sample from N(0, 1) and transform to
+            # squared normal distribution (so gradients can flow through the sample)
 
             normal1_KxJ = torch.randn([K, J], device=device)
             normal2_KxJ = torch.randn([K, J], device=device)
 
-            # branch length = exp(mu + sigma * Z), where Z ~ N(0, 1)
-            branch1_KxJ = torch.exp(mu1_KxJ + sigma * normal1_KxJ)
-            branch2_KxJ = torch.exp(mu2_KxJ + sigma * normal2_KxJ)
+            # X ~ N(sqrt(dist), sigma)
+            X1_KxJ = dist1_KxJ.sqrt() + sigma * normal1_KxJ
+            X2_KxJ = dist2_KxJ.sqrt() + sigma * normal2_KxJ
 
-            # log of log normal pdf
+            # Y = X^2
+            branch1_KxJ = X1_KxJ**2
+            branch2_KxJ = X2_KxJ**2
+
+            # compute log of the pdf of Y
+
+            X1_distr_KxJ = torch.distributions.Normal(dist1_KxJ.sqrt(), sigma)
+            X2_distr_KxJ = torch.distributions.Normal(dist2_KxJ.sqrt(), sigma)
+
+            # can show: pdf_Y(y) = (1/2|X|) * [pdf_X(X) + pdf_X(-X)]
             log_branch1_prob_KxJ = (
-                -((branch1_KxJ.log() - mu1_KxJ) ** 2) / (2 * sigma**2)
-                - branch1_KxJ.log()
-                - math.log(sigma)
-                - math.log(2 * math.pi) / 2
+                -math.log(2)
+                - X1_KxJ.abs().log()
+                + torch.log(
+                    X1_distr_KxJ.log_prob(X1_KxJ).exp()
+                    + X1_distr_KxJ.log_prob(-X1_KxJ).exp()
+                )
             )
             log_branch2_prob_KxJ = (
-                -((branch2_KxJ.log() - mu2_KxJ) ** 2) / (2 * sigma**2)
-                - branch2_KxJ.log()
-                - math.log(sigma)
-                - math.log(2 * math.pi) / 2
+                -math.log(2)
+                - X2_KxJ.abs().log()
+                + torch.log(
+                    X2_distr_KxJ.log_prob(X2_KxJ).exp()
+                    + X2_distr_KxJ.log_prob(-X2_KxJ).exp()
+                )
             )
         else:
             branch1_KxJ = dist1_KxJ
