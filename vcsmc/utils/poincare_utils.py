@@ -11,12 +11,17 @@ from torch import Tensor
 from ..distances import Hyperbolic
 from ..proposals import EmbeddingProposal
 from ..vcsmc import VCSMC
+from .train_types import TrainArgs, TrainCheckpoint
 from .train_utils import evaluate, get_site_positions_SxSfull
 from .vcsmc_utils import replace_with_merged_list
 
 
 @torch.no_grad()
-def interactive_poincare(vcsmc: VCSMC, data_NxSxA: Tensor, taxa_N: list[str]):
+def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):
+    data_NxSxA = args["data_NxSxA"]
+    taxa_N = args["taxa_N"]
+    vcsmc = checkpoint["vcsmc"]
+
     N = len(taxa_N)
 
     proposal = vcsmc.proposal
