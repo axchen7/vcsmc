@@ -45,8 +45,12 @@ def hyp_smc_benchmark():
         f.flush()
 
         for dataset in DATASETS:
-            train(dataset)
-            ll_mean, ll_std_dev = estimate_latest_run_ll(ESTIMATE_LL_SAMPLES)
+            try:
+                train(dataset)
+                ll_mean, ll_std_dev = estimate_latest_run_ll(ESTIMATE_LL_SAMPLES)
+            except Exception as e:
+                print(f"Error while processing {dataset}: {e}")
+                continue
 
             print(f"{dataset} LL estimate: {ll_mean:.2f} ± {ll_std_dev:.2f}")
 
