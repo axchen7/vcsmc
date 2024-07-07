@@ -82,15 +82,24 @@ def main(
 
     print("Running phase 2...")
 
-    # use vcsmc from phase 1
+    # find best checkpoint from phase 1
+    _args, checkpoint = load_checkpoint(start_epoch="best")
+
+    best_vcsmc = checkpoint["vcsmc"]
+    best_proposal = vcsmc.proposal
+
+    assert isinstance(best_proposal, EmbeddingProposal)
+
+    # initialize new models
+
     static_merge_log_weights = compute_merge_log_weights_from_vcsmc(
-        vcsmc, taxa_N, data_NxSxA, samples=merge_samples
+        best_vcsmc, taxa_N, data_NxSxA, samples=merge_samples
     )
 
     proposal = EmbeddingProposal(
-        distance,
-        seq_encoder,
-        merge_encoder,
+        best_proposal.distance,
+        best_proposal.seq_encoder,
+        best_proposal.merge_encoder,
         N=N,
         lookahead_merge=False,
         sample_branches=True,
@@ -98,7 +107,7 @@ def main(
     )
 
     vcsmc = VCSMC(
-        q_matrix_decoder,
+        best_vcsmc.q_matrix_decoder,
         proposal,
         N=N,
         K=K2,
@@ -114,8 +123,8 @@ def main(
         taxa_N,
         data_NxSxA,
         file,
-        start_epoch=epochs1,
-        epochs=epochs1 + epochs2,
+        start_epoch=checkpoint["start_epoch"],
+        epochs=checkpoint["start_epoch"] + epochs2,
         sites_batch_size=sites_batch_size,
         run_name=f"{run_name}-phase2" if run_name else None,
     )
