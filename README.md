@@ -48,23 +48,23 @@ python scripts/train/hyp_train.py --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbo
 Title: VCSMC vs Hyp SMC with Different K
 
 ```bash
-python scripts/proposal_K.py
+python scripts/figures/proposal_K.py
 ```
 
 Title: Effect of Embedding Initialization
 
 ```bash
-python scripts/hyp_smc_init_mean.py
+python scripts/figures/hyp_smc_init_mean.py
 ```
 
 Title: Effect of Dimensionality
 
 ```bash
-python scripts/hyp_smc_dim.py
+python scripts/figures/hyp_smc_dim.py
 ```
 
 Benchmark (output to a .csv):
 
 ```bash
-python scripts/hyp_smc_benchmark.py
+python scripts/benchmark/hyp_smc_benchmark.py
 ```

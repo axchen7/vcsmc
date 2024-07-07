@@ -124,7 +124,7 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
 
 os.makedirs("outputs", exist_ok=True)
 
-output_file = "outputs/hyp_smc_benchmark.csv"
+output_file = "outputs/benchmark/hyp_smc_benchmark.csv"
 if os.path.exists(output_file):
     os.remove(output_file)
 
