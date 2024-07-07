@@ -233,41 +233,29 @@ def train(
         ZCSMCs.append(log_ZCSMC_sum)
         log_likelihood_avgs.append(log_likelihood_avg)
 
-        wandb.log(
-            {"Log ZCSMC": log_ZCSMC_sum, "Log likelihood avg": log_likelihood_avg},
-            step=epoch,
-        )
+        log: dict = {
+            "Log ZCSMC": log_ZCSMC_sum,
+            "Log likelihood avg": log_likelihood_avg,
+        }
 
         if log_likelihood_K is not None:
-            wandb.log(
-                {"Log likelihoods": wandb.Histogram(log_likelihood_K.tolist())},
-                step=epoch,
-            )
+            log["Log likelihoods"] = wandb.Histogram(log_likelihood_K.tolist())
 
         if not isinstance(
             vcsmc.q_matrix_decoder.site_positions_encoder, DummySitePositionsEncoder
         ):
-            wandb.log(
-                {
-                    "Data reconstruction cosine similarity": get_data_reconstruction_cosine_similarity()
-                },
-                step=epoch,
+            log["Data reconstruction cosine similarity"] = (
+                get_data_reconstruction_cosine_similarity()
             )
 
         if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
-            wandb.log(
-                {"Hyperbolic scale": vcsmc.proposal.seq_encoder.distance.scale()},
-                step=epoch,
-            )
+            log["Hyperbolic scale"] = vcsmc.proposal.seq_encoder.distance.scale()
 
         if (
             isinstance(vcsmc.proposal, EmbeddingProposal)
             and vcsmc.proposal.sample_branches
         ):
-            wandb.log(
-                {"Sample branches sigma": vcsmc.proposal.sample_branches_sigma()},
-                step=epoch,
-            )
+            log["Sample branches sigma"] = vcsmc.proposal.sample_branches_sigma()
 
         if (epoch + 1) % 4 == 0:
             # ===== best tree =====
@@ -282,13 +270,15 @@ def train(
                 phylo_tree.root_with_outgroup(outgroup_root)
             Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
-            wandb.log({"Best tree": fig}, step=epoch)
+            log["Best tree"] = fig
 
             # ===== Q matrix =====
 
             fig, ax = plt.subplots()
             ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
-            wandb.log({"Root Q matrix (average across sites)": fig}, step=epoch)
+            log["Root Q matrix (average across sites)"] = fig
+
+        wandb.log(log, step=epoch, commit=True)
 
     wandb.finish()
 
