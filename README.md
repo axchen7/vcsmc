@@ -34,13 +34,13 @@ Notes:
 Train primates, JC69:
 
 ```bash
-python scripts/train/hyp_train.py --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbolic --lookahead-merge --hash-trick data/primates.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbolic --lookahead-merge --hash-trick data/primates.phy
 ```
 
 Train DS1, JC69:
 
 ```bash
-python scripts/train/hyp_train.py --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbolic --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbolic --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
 ```
 
 # Generate Paper Figures
@@ -48,23 +48,23 @@ python scripts/train/hyp_train.py --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbo
 Title: VCSMC vs Hyp SMC with Different K
 
 ```bash
-python scripts/figures/proposal_K.py
+python -m scripts.figures.proposal_K
 ```
 
 Title: Effect of Embedding Initialization
 
 ```bash
-python scripts/figures/hyp_smc_init_mean.py
+python -m scripts.figures.hyp_smc_init_mean
 ```
 
 Title: Effect of Dimensionality
 
 ```bash
-python scripts/figures/hyp_smc_dim.py
+python -m scripts.figures.hyp_smc_dim
 ```
 
 Benchmark (output to a .csv):
 
 ```bash
-python scripts/benchmark/hyp_smc_benchmark.py
+python -m scripts.benchmark.hyp_smc_benchmark
 ```
