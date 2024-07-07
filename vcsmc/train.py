@@ -337,7 +337,9 @@ def load_checkpoint(
     )
 
     start_epoch = checkpoint["start_epoch"]
-    print(f"Loaded checkpoint at epoch {start_epoch} (after epoch {start_epoch - 1}).")
+    print(
+        f"Loaded checkpoint at the start of epoch {start_epoch} (after epoch {start_epoch - 1})."
+    )
 
     return args, checkpoint
 
