@@ -92,6 +92,7 @@ def train(
 
     def save_results():
         results: TrainResults = {
+            "start_epoch": start_epoch,  # passed in via train() args
             "ZCSMCs": ZCSMCs,
             "log_likelihood_avgs": log_likelihood_avgs,
         }
@@ -321,7 +322,7 @@ def load_checkpoint(
         # pre-update LL, so we want to start at epoch i; in this case,
         # results[i] is max, and loading epoch i will give the model state
         # before the parameter update at step i
-        return int(np.argmax(results["ZCSMCs"]))
+        return int(np.argmax(results["ZCSMCs"])) + results["start_epoch"]
 
     if start_epoch == "best":
         start_epoch = find_best_epoch()

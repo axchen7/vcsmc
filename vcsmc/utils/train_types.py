@@ -27,5 +27,7 @@ class TrainCheckpoint(TypedDict):
 
 
 class TrainResults(TypedDict):
+    start_epoch: int
+    """First result is from this epoch (before parameter update)."""
     ZCSMCs: list[float]
     log_likelihood_avgs: list[float]
