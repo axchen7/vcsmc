@@ -6,6 +6,15 @@ from .expm import expm
 from .site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
 from .utils.encoder_utils import MLP
 
+__all__ = [
+    "QMatrixDecoder",
+    "JC69QMatrixDecoder",
+    "DenseStationaryQMatrixDecoder",
+    "DenseMLPQMatrixDecoder",
+    "GT16StationaryQMatrixDecoder",
+    "DensePerSiteStatProbsMLPQMatrixDecoder",
+]
+
 
 class QMatrixDecoder(nn.Module):
     def __init__(self, site_positions_encoder: SitePositionsEncoder | None = None):

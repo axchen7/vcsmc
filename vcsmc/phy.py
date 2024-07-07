@@ -4,6 +4,8 @@ import numpy as np
 import torch
 from torch import Tensor
 
+__all__ = ["A4_ALPHABET", "GT10_ALPHABET", "load_phy"]
+
 # fmt: off
 
 # state encoding reference:

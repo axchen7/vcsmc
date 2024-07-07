@@ -1,5 +1,6 @@
 from typing import Annotated, Optional
 
+import torch
 import typer
 
 from vcsmc import *

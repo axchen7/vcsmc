@@ -38,6 +38,7 @@ for D in D_vals:
 import os
 
 import matplotlib.pyplot as plt
+import torch
 
 from vcsmc import *
 

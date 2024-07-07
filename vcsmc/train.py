@@ -23,6 +23,8 @@ from .utils.train_utils import (
 from .utils.vcsmc_types import VcsmcResult
 from .vcsmc import VCSMC
 
+__all__ = ["train", "load_checkpoint", "train_from_checkpoint"]
+
 
 def train(
     vcsmc: VCSMC,

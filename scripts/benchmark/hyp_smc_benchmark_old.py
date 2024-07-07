@@ -1,4 +1,6 @@
 # %%
+import torch
+
 from vcsmc import *
 
 device = detect_device()
@@ -78,7 +80,7 @@ for file in files:
 import os
 
 import numpy as np
-import tqdm
+from tqdm import tqdm
 
 from vcsmc import *
 

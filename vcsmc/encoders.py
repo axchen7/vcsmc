@@ -5,6 +5,19 @@ from .distances import Distance, Euclidean, Hyperbolic
 from .utils.distance_utils import EPSILON, safe_norm
 from .utils.encoder_utils import MLP
 
+__all__ = [
+    "SequenceEncoder",
+    "DummySequenceEncoder",
+    "EmbeddingTableSequenceEncoder",
+    "MLPSequenceEncoder",
+    "MergeEncoder",
+    "MLPMergeEncoder",
+    "EuclideanMidpointMergeEncoder",
+    "HyperbolicGeodesicClosestMergeEncoder",
+    "HyperbolicGeodesicMidpointMergeEncoder",
+    "HyperbolicGeodesicClosestMLPMergeEncoder",
+]
+
 
 class SequenceEncoder(nn.Module):
     """Encodes sequences into embeddings."""

@@ -5,6 +5,8 @@ from torch import Tensor, nn
 
 from .utils.distance_utils import EPSILON, safe_norm
 
+__all__ = ["Distance", "Euclidean", "Hyperbolic"]
+
 
 class Distance(nn.Module):
     def normalize(self, vectors_VxD: Tensor) -> Tensor:

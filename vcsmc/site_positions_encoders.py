@@ -3,6 +3,12 @@ from torch import Tensor, nn
 
 from .utils.encoder_utils import MLP
 
+__all__ = [
+    "SitePositionsEncoder",
+    "DummySitePositionsEncoder",
+    "MLPSitePositionsEncoder",
+]
+
 
 class SitePositionsEncoder(nn.Module):
     """

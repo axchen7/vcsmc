@@ -1,4 +1,8 @@
 # %%
+from typing import Literal
+
+import torch
+
 from vcsmc import *
 
 device = detect_device()
@@ -96,7 +100,7 @@ for i, K in enumerate(K_vals):
     hyp_smc_ll = load_log_likelihoods("hyp_smc", K)
     hyp_nsmc_ll = load_log_likelihoods("hyp_nsmc", K)
 
-    ax = axs[i // 2, i % 2]
+    ax = axs[i // 2, i % 2]  # type: ignore
     ax.set_title(f"K = {K}")
     ax.set_xlabel("Epochs")
     ax.set_ylabel("Log Likelihood")

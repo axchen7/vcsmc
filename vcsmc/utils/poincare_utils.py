@@ -15,6 +15,13 @@ from .train_types import TrainArgs, TrainCheckpoint
 from .train_utils import evaluate, get_site_positions_SxSfull
 from .vcsmc_utils import replace_with_merged_list
 
+__all__ = [
+    "interactive_poincare",
+    "plot_embeddings",
+    "interactive_q_matrix",
+    "interactive_stat_probs",
+]
+
 
 @torch.no_grad()
 def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):

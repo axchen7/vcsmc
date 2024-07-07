@@ -21,6 +21,15 @@ from .vcsmc_utils import (
     replace_with_merged_K,
 )
 
+__all__ = [
+    "SlowStartLRScheduler",
+    "find_most_recent_path",
+    "filter_runs",
+    "detect_device",
+    "evaluate",
+    "compute_merge_log_weights_from_vcsmc",
+]
+
 
 class SlowStartLRScheduler(LambdaLR):
     """

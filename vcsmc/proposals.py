@@ -7,6 +7,8 @@ from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
 from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2, hash_forest_K
 
+__all__ = ["Proposal", "ExpBranchProposal", "EmbeddingProposal"]
+
 
 class Proposal(nn.Module):
     """

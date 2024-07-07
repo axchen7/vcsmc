@@ -2,6 +2,8 @@ from typing import TypedDict
 
 from torch import Tensor
 
+__all__ = ["VcsmcResult"]
+
 
 class VcsmcResult(TypedDict):
     log_ZCSMC: Tensor

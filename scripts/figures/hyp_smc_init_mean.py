@@ -41,6 +41,7 @@ for initial_mean in initial_mean_vals:
 import os
 
 import matplotlib.pyplot as plt
+import torch
 
 from vcsmc import *
 

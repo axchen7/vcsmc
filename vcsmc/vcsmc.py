@@ -22,6 +22,8 @@ from .utils.vcsmc_utils import (
     replace_with_merged_K,
 )
 
+__all__ = ["VCSMC"]
+
 
 class MergeMetadata(TypedDict):
     device: torch.device
