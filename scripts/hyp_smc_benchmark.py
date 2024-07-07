@@ -96,9 +96,13 @@ def estimate_log_likelihood(file: str) -> tuple[float, float]:
     fname = file.split("/")[-1]
     run_name = f"Hyp_SMC_{fname}"
 
-    data_NxSxA, taxa_N, vcsmc = train_from_checkpoint(
-        load_only=True, start_epoch="best", search_dir=f"runs/*{run_name}"
+    args, checkpoint = load_checkpoint(
+        start_epoch="best", search_dir=f"runs/*{run_name}"
     )
+
+    data_NxSxA = args["data_NxSxA"]
+    taxa_N = args["taxa_N"]
+    vcsmc = checkpoint["vcsmc"]
 
     # hack to avoid OOM
     if fname == "DS7.phy":

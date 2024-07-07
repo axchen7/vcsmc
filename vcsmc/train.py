@@ -1,6 +1,6 @@
 import os
 from io import StringIO
-from typing import Callable, Literal
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -294,26 +294,20 @@ def train(
     save_results()
 
 
-def train_from_checkpoint(
+def load_checkpoint(
     *,
-    epochs: int | None = None,
-    load_only: bool = False,
     start_epoch: int | Literal["best"] | None = None,
-    modify_args: Callable[[TrainArgs, TrainCheckpoint], None] | None = None,
     search_dir: str = "runs",
-) -> tuple[Tensor, list[str], VCSMC]:
+) -> tuple[TrainArgs, TrainCheckpoint]:
     """
     Args:
-        epochs: The epoch to stop training at.
-            If set, overrides the number of epochs in the checkpoint.
-        load_only: If True, loads the checkpoint and returns the data and model without training.
-        start_epoch: The epoch to start training from. If None, starts from the latest checkpoint.
-            If "best", starts from the epoch with the highest ZCSMC.
-        modify_args: A function that modifies the args and checkpoint before training.
+        start_epoch: Load the state at the start of this epoch (before parameter update).
+            If None, loads the latest checkpoint.
+            If "best", loads the epoch with the highest ZCSMC.
         search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
 
     Returns:
-        data_NxSxA, taxa_N, vcsmc
+        args, checkpoint
     """
 
     checkpoints_dir = find_most_recent_path(search_dir, "checkpoints")
@@ -323,9 +317,10 @@ def train_from_checkpoint(
         results: TrainResults = torch.load(
             find_most_recent_path(checkpoints_dir, "results.pt")
         )
-        # there is no off-by-one error here: say epoch 1 has the highest LL;
-        # then, results[0] is max, and loading epoch 0 will give the model state
-        # before the optimizer step at epoch 1
+        # there is no off-by-one error here: say epoch i has the highest
+        # pre-update LL, so we want to start at epoch i; in this case,
+        # results[i] is max, and loading epoch i will give the model state
+        # before the parameter update at step i
         return int(np.argmax(results["ZCSMCs"]))
 
     if start_epoch == "best":
@@ -340,26 +335,46 @@ def train_from_checkpoint(
         find_most_recent_path(checkpoints_dir, checkpoint_glob)
     )
 
-    if modify_args is not None:
-        modify_args(args, checkpoint)
+    start_epoch = checkpoint["start_epoch"]
+    print(f"Loaded checkpoint at epoch {start_epoch} (after epoch {start_epoch - 1}).")
 
-    print(f"Loaded checkpoint at epoch {checkpoint['start_epoch']}.")
+    return args, checkpoint
+
+
+def train_from_checkpoint(
+    *,
+    epochs: int | None = None,
+    start_epoch: int | Literal["best"] | None = None,
+    search_dir: str = "runs",
+) -> tuple[Tensor, list[str], VCSMC]:
+    """
+    Args:
+        epochs: The epoch to stop training at.
+            If set, overrides the number of epochs in the checkpoint.
+        start_epoch: Start training from the state at the start of this epoch (before parameter update).
+            If None, starts from the latest checkpoint.
+            If "best", starts from the epoch with the highest ZCSMC.
+        search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
+
+    Returns:
+        data_NxSxA, taxa_N, vcsmc
+    """
+
+    args, checkpoint = load_checkpoint(start_epoch=start_epoch, search_dir=search_dir)
 
     data_NxSxA = args["data_NxSxA"]
     taxa_N = args["taxa_N"]
+    vcsmc = checkpoint["vcsmc"]
 
     if epochs is not None:
         args["epochs"] = epochs
 
-    vcsmc = checkpoint["vcsmc"]
-
-    if not load_only:
-        train(
-            vcsmc,
-            checkpoint["optimizer"],
-            lr_scheduler=checkpoint["lr_scheduler"],
-            start_epoch=checkpoint["start_epoch"],
-            **args,
-        )
+    train(
+        vcsmc,
+        checkpoint["optimizer"],
+        lr_scheduler=checkpoint["lr_scheduler"],
+        start_epoch=checkpoint["start_epoch"],
+        **args,
+    )
 
     return data_NxSxA, taxa_N, vcsmc

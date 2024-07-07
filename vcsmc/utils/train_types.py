@@ -23,6 +23,7 @@ class TrainCheckpoint(TypedDict):
     optimizer: Optimizer
     lr_scheduler: LRScheduler | None
     start_epoch: int
+    """Checkpoint contains the state at the start of this epoch (before parameter update)."""
 
 
 class TrainResults(TypedDict):
