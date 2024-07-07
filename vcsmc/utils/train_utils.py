@@ -202,15 +202,26 @@ def compute_merge_log_weights_from_merge_indexes(
         idx1_K = merge_indexes_KxN1x2[:, r, 0]
         idx2_K = merge_indexes_KxN1x2[:, r, 1]
 
+        # we must output the indexes w.r.t. the list of trees sorted by hash,
+        # as the order of trees is otherwise arbitrary
+
+        # unsort_idx_Kxt[k, i] is the index of the i-th original tree of
+        # particle k as found in the sorted list of trees
+        unsort_idx_Kxt = hashes_Kxt.argsort(dim=1).argsort(dim=1)
+
         for k in range(K):
             forest_hash = int(forest_hashes_K[k])
-            idx1 = int(idx1_K[k])
-            idx2 = int(idx2_K[k])
+
+            idx1 = idx1_K[k]
+            idx2 = idx2_K[k]
+
+            sorted_idx1 = int(unsort_idx_Kxt[k, idx1])
+            sorted_idx2 = int(unsort_idx_Kxt[k, idx2])
 
             if forest_hash not in seen_merges:
                 seen_merges[forest_hash] = []
 
-            seen_merges[forest_hash].append((idx1, idx2))
+            seen_merges[forest_hash].append((sorted_idx1, sorted_idx2))
 
             if forest_hash in merge_proposals:
                 # sanity check (and also for hash collisions)

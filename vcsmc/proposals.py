@@ -308,9 +308,6 @@ class EmbeddingProposal(Proposal):
             idx1_K = flattened_sample_K // t
             idx2_K = flattened_sample_K % t
 
-            idx1_KxJ = idx1_K.unsqueeze(1)
-            idx2_KxJ = idx2_K.unsqueeze(1)
-
             # merge prob = merge weight * 2 / sum of all weights
 
             # the factor of 2 is because merging (idx1, idx2) is equivalent to
@@ -323,6 +320,19 @@ class EmbeddingProposal(Proposal):
             log_merge_prob_K = log_merge_prob_K - torch.logsumexp(
                 merge_log_weights_Kxtxt, [1, 2]
             )
+
+            if self.static_merge_log_weights is not None:
+                # in this case, idx1_K and idx2_K are w.r.t. the list of trees sorted by hash,
+                # so we must map to the original indexes
+
+                # sort_idx_Kxt[k, i] is the index of the i-th sorted tree of
+                # particle k as found in the original list of trees
+                sort_idx_Kxt = torch.argsort(hashes_Kxt, dim=1)
+                idx1_K = gather_K(sort_idx_Kxt, idx1_K, arange_fn)
+                idx2_K = gather_K(sort_idx_Kxt, idx2_K, arange_fn)
+
+            idx1_KxJ = idx1_K.unsqueeze(1)
+            idx2_KxJ = idx2_K.unsqueeze(1)
 
         # ===== get merged embedding =====
 
