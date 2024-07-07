@@ -1,0 +1,56 @@
+import csv
+import os
+
+from scripts.train.hyp_train_hybrid import hyp_train_hybrid
+from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
+
+# skip DS7; some literature refers to DS8 as DS7
+DATASETS = ["DS1", "DS2", "DS3", "DS4", "DS5", "DS6", "DS8"]
+
+ESTIMATE_LL_SAMPLES = 10
+OUTPUT_FILE = "outputs/benchmark/hyp_smc_benchmark.csv"
+
+
+def train(dataset: str):
+    hyp_train_hybrid(
+        file=f"data/hohna/{dataset}.phy",
+        # below are good parameters...
+        lr1=0.01,
+        lr2=0.01,
+        epochs1=100,
+        epochs2=100,
+        merge_samples=100,
+        K1=512,
+        K2=512,
+        D=2,
+        jc69=True,
+        lookahead_merge1=False,  # no lookahead seems to score better
+        hash_trick1=True,  # free performance
+        checkpoint_grads=False,  # not needed
+        run_name=dataset,
+    )
+
+
+def hyp_smc_benchmark():
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+
+    with open(OUTPUT_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+
+        # write csv headers
+        writer.writerows(["dataset", "LL mean", "LL std dev"])
+        f.flush()
+
+        for dataset in DATASETS:
+            train(dataset)
+            ll_mean, ll_std_dev = estimate_latest_run_ll(ESTIMATE_LL_SAMPLES)
+
+            print(f"{dataset} LL estimate: {ll_mean:.2f} ± {ll_std_dev:.2f}")
+
+            # write row
+            writer.writerow([dataset, ll_mean, ll_std_dev])
+            f.flush()
+
+
+if __name__ == "__main__":
+    hyp_smc_benchmark()
