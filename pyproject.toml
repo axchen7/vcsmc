@@ -16,13 +16,13 @@ dependencies = [
     "ipywidgets",
     "matplotlib",
     "notebook",
-    "numpy < 2", # numpy 2.0.0 breaks tensorboard
+    "numpy",
+    "plotly", # required for wandb figures
     "scipy",
-    "tensorboard",
     "torch",
-    "torch_tb_profiler",
     "tqdm",
     "typer",
+    "wandb",
 ]
 
 [build-system]

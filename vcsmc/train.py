@@ -1,5 +1,7 @@
 import os
+from datetime import datetime
 from io import StringIO
+from os import path
 from typing import Callable, Literal
 
 import matplotlib.pyplot as plt
@@ -8,8 +10,9 @@ import torch
 from Bio import Phylo
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter  # type: ignore
 from tqdm import tqdm
+
+import wandb
 
 from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
@@ -26,6 +29,15 @@ from .vcsmc import VCSMC
 __all__ = ["train", "load_checkpoint", "train_from_checkpoint"]
 
 
+def get_checkpoints_dir(run_name: str | None = None) -> str:
+    date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    parent_dir = "checkpoints"
+    child_dir = date
+    if run_name is not None:
+        child_dir += f"_{run_name}"
+    return path.join(parent_dir, child_dir)
+
+
 def train(
     vcsmc: VCSMC,
     optimizer: torch.optim.Optimizer,
@@ -40,9 +52,11 @@ def train(
     sites_batch_size: int | None = None,
     sample_taxa_count: int | None = None,
     run_name: str | None = None,
-    profile: bool = False,
 ):
     # ===== setup =====
+
+    checkpoints_dir = get_checkpoints_dir(run_name)
+    os.makedirs(checkpoints_dir, exist_ok=True)
 
     if root is None:
         outgroup_root = None
@@ -53,23 +67,14 @@ def train(
 
     site_positions_SxSfull = get_site_positions_SxSfull(data_NxSxA)
 
-    writer = SummaryWriter(
-        comment=f"-{run_name}" if run_name is not None else "",
-    )
-
     # track data across epochs
     ZCSMCs: list[float] = []
     log_likelihood_avgs: list[float] = []
 
     # ===== helper functions =====
 
-    def get_checkpoints_dir():
-        dirname = os.path.join(writer.get_logdir(), "checkpoints")
-        os.makedirs(dirname, exist_ok=True)
-        return dirname
-
-    def save_args():
-        args: TrainArgs = {
+    def get_args() -> TrainArgs:
+        return {
             "taxa_N": taxa_N,
             "data_NxSxA": data_NxSxA,
             "file": file,
@@ -79,18 +84,26 @@ def train(
             "sample_taxa_count": sample_taxa_count,
             "run_name": run_name,
         }
-        filename = "args.pt"
-        torch.save(args, os.path.join(get_checkpoints_dir(), filename))
 
-    def save_checkpoint(start_epoch: int):
-        checkpoint: TrainCheckpoint = {
+    def get_checkpoint() -> TrainCheckpoint:
+        return {
             "vcsmc": vcsmc,
             "optimizer": optimizer,
             "lr_scheduler": lr_scheduler,
             "start_epoch": start_epoch,
         }
+
+    def init_wandb():
+        config = {**get_args(), **get_checkpoint()}
+        wandb.init(project="vcsmc", name=run_name, config=config)
+
+    def save_args():
+        filename = "args.pt"
+        torch.save(get_args(), path.join(checkpoints_dir, filename))
+
+    def save_checkpoint(start_epoch: int):
         filename = f"checkpoint_{start_epoch}.pt"
-        torch.save(checkpoint, os.path.join(get_checkpoints_dir(), filename))
+        torch.save(get_checkpoint(), path.join(checkpoints_dir, filename))
 
     def save_results():
         results: TrainResults = {
@@ -99,7 +112,7 @@ def train(
             "log_likelihood_avgs": log_likelihood_avgs,
         }
         filename = "results.pt"
-        torch.save(results, os.path.join(get_checkpoints_dir(), filename))
+        torch.save(results, path.join(checkpoints_dir, filename))
 
     def train_step(
         dataloader: DataLoader,
@@ -203,94 +216,81 @@ def train(
 
     # ===== train =====
 
+    init_wandb()
     save_args()
     save_checkpoint(start_epoch)
 
-    def train_epochs(prof: torch.profiler.profile | None):
-        for epoch in tqdm(range(epochs - start_epoch), desc="Training"):
-            if prof:
-                prof.step()
+    for epoch in tqdm(range(epochs - start_epoch), desc="Training"):
+        epoch += start_epoch
 
-            epoch += start_epoch
+        log_ZCSMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
+            train_step(dataloader, epoch)
+        )
 
-            log_ZCSMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
-                train_step(dataloader, epoch)
+        save_checkpoint(epoch + 1)
+        save_results()  # overwrite each time
+
+        ZCSMCs.append(log_ZCSMC_sum)
+        log_likelihood_avgs.append(log_likelihood_avg)
+
+        wandb.log(
+            {"Log ZCSMC": log_ZCSMC_sum, "Log likelihood avg": log_likelihood_avg},
+            step=epoch,
+        )
+
+        if log_likelihood_K is not None:
+            wandb.log(
+                {"Log likelihoods": wandb.Histogram(log_likelihood_K.tolist())},
+                step=epoch,
             )
 
-            save_checkpoint(epoch + 1)
-            save_results()  # overwrite each time
+        if not isinstance(
+            vcsmc.q_matrix_decoder.site_positions_encoder, DummySitePositionsEncoder
+        ):
+            wandb.log(
+                {
+                    "Data reconstruction cosine similarity": get_data_reconstruction_cosine_similarity()
+                },
+                step=epoch,
+            )
 
-            ZCSMCs.append(log_ZCSMC_sum)
-            log_likelihood_avgs.append(log_likelihood_avg)
+        if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
+            wandb.log(
+                {"Hyperbolic scale": vcsmc.proposal.seq_encoder.distance.scale()},
+                step=epoch,
+            )
 
-            writer.add_scalar("Log ZCSMC", log_ZCSMC_sum, epoch)
-            writer.add_scalar("Log likelihood avg", log_likelihood_avg, epoch)
+        if (
+            isinstance(vcsmc.proposal, EmbeddingProposal)
+            and vcsmc.proposal.sample_branches
+        ):
+            wandb.log(
+                {"Sample branches sigma": vcsmc.proposal.sample_branches_sigma()},
+                step=epoch,
+            )
 
-            if not isinstance(
-                vcsmc.q_matrix_decoder.site_positions_encoder, DummySitePositionsEncoder
-            ):
-                writer.add_scalar(
-                    "Data reconstruction cosine similarity",
-                    get_data_reconstruction_cosine_similarity(),
-                    epoch,
-                )
+        if (epoch + 1) % 4 == 0:
+            # ===== best tree =====
 
-            if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
-                writer.add_scalar(
-                    "Hyperbolic scale",
-                    vcsmc.proposal.seq_encoder.distance.scale(),
-                    epoch,
-                )
+            N = sample_taxa_count if sample_taxa_count is not None else len(taxa_N)
+            fig, ax = plt.subplots(figsize=(10, N * 0.2))
 
-            if (
-                isinstance(vcsmc.proposal, EmbeddingProposal)
-                and vcsmc.proposal.sample_branches
-            ):
-                writer.add_scalar(
-                    "Sample branches sigma",
-                    vcsmc.proposal.sample_branches_sigma(),
-                    epoch,
-                )
+            phylo_tree = Phylo.read(  # type: ignore
+                StringIO(best_newick_tree), "newick"
+            )
+            if outgroup_root is not None:
+                phylo_tree.root_with_outgroup(outgroup_root)
+            Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
-            if log_likelihood_K is not None:
-                writer.add_histogram("Log likelihoods", log_likelihood_K, epoch)
+            wandb.log({"Best tree": fig}, step=epoch)
 
-            if (epoch + 1) % 4 == 0:
-                # ===== best tree =====
+            # ===== Q matrix =====
 
-                N = sample_taxa_count if sample_taxa_count is not None else len(taxa_N)
-                fig, ax = plt.subplots(figsize=(10, N * 0.2))
+            fig, ax = plt.subplots()
+            ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
+            wandb.log({"Root Q matrix (average across sites)": fig}, step=epoch)
 
-                phylo_tree = Phylo.read(  # type: ignore
-                    StringIO(best_newick_tree), "newick"
-                )
-                if outgroup_root is not None:
-                    phylo_tree.root_with_outgroup(outgroup_root)
-                Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
-
-                writer.add_figure("Best tree", fig, epoch)
-
-                # ===== Q matrix =====
-
-                fig, ax = plt.subplots()
-                ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
-                writer.add_figure("Root Q matrix (average across sites)", fig, epoch)
-
-            writer.flush()
-
-    if profile:
-        with torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                writer.get_logdir()
-            ),
-            record_shapes=True,
-            profile_memory=True,
-            # with_stack=True, (deprecated/broken)
-        ) as prof:
-            train_epochs(prof)
-    else:
-        train_epochs(None)
+    wandb.finish()
 
     # ===== done training! =====
 
@@ -300,25 +300,23 @@ def train(
 def load_checkpoint(
     *,
     start_epoch: int | Literal["best"] | None = None,
-    search_dir: str = "runs",
+    search_dir: str = "checkpoints",
 ) -> tuple[TrainArgs, TrainCheckpoint]:
     """
     Args:
         start_epoch: Load the state at the start of this epoch (before parameter update).
             If None, loads the latest checkpoint.
             If "best", loads the epoch with the highest ZCSMC.
-        search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
+        search_dir: The directory to search for the checkpoint. E.g. "checkpoints/*label".
 
     Returns:
         args, checkpoint
     """
 
-    checkpoints_dir = find_most_recent_path(search_dir, "checkpoints")
-
     def find_best_epoch():
         """Returns the epoch with the highest ZCSMC"""
         results: TrainResults = torch.load(
-            find_most_recent_path(checkpoints_dir, "results.pt")
+            find_most_recent_path(search_dir, "results.pt")
         )
         # there is no off-by-one error here: say epoch i has the highest
         # pre-update LL, so we want to start at epoch i; in this case,
@@ -333,9 +331,9 @@ def load_checkpoint(
         "checkpoint_*.pt" if start_epoch is None else f"checkpoint_{start_epoch}.pt"
     )
 
-    args: TrainArgs = torch.load(find_most_recent_path(checkpoints_dir, "args.pt"))
+    args: TrainArgs = torch.load(find_most_recent_path(search_dir, "args.pt"))
     checkpoint: TrainCheckpoint = torch.load(
-        find_most_recent_path(checkpoints_dir, checkpoint_glob)
+        find_most_recent_path(search_dir, checkpoint_glob)
     )
 
     start_epoch = checkpoint["start_epoch"]
@@ -350,7 +348,7 @@ def train_from_checkpoint(
     *,
     additional_epochs: int,
     start_epoch: int | Literal["best"] | None = None,
-    search_dir: str = "runs",
+    search_dir: str = "checkpoints",
     modify_args: Callable[[TrainArgs, TrainCheckpoint], None] | None = None,
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
@@ -360,7 +358,7 @@ def train_from_checkpoint(
         start_epoch: Start training from the state at the start of this epoch (before parameter update).
             If None, starts from the latest checkpoint.
             If "best", starts from the epoch with the highest ZCSMC.
-        search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
+        search_dir: The directory to search for the checkpoint. E.g. "checkpoints/*label".
         modify_args: Function to mutate the args and checkpoint before training.
 
     Returns:

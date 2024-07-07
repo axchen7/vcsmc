@@ -3,7 +3,6 @@
     "ms-python.black-formatter",
     "ms-python.isort",
     "ms-toolsai.jupyter",
-    "ms-python.python",
-    "ms-toolsai.tensorboard"
+    "ms-python.python"
   ]
 }

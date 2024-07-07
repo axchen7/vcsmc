@@ -12,10 +12,17 @@ Next, activate the environment:
 conda activate ./.conda
 ```
 
-Finally, install the project in editable mode:
+Then, install the project in editable mode:
 
 ```bash
 pip install -e .
+```
+
+Finally, create a [Wandb](https://wandb.ai) account to save run metrics. Link
+your account to the CLI by running:
+
+```bash
+wandb login
 ```
 
 # Example Runs
