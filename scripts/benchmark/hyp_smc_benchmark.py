@@ -8,7 +8,7 @@ from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
 # skip DS7; some literature refers to DS8 as DS7
 DATASETS = ["DS1", "DS2", "DS3", "DS4", "DS5", "DS6", "DS8"]
 
-ESTIMATE_LL_SAMPLES = 10
+ESTIMATE_LL_SAMPLES = 100
 
 
 def train(dataset: str):
