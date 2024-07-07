@@ -17,7 +17,6 @@ dependencies = [
     "matplotlib",
     "notebook",
     "numpy",
-    "plotly", # required for wandb figures
     "scipy",
     "torch",
     "tqdm",
