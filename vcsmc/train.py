@@ -349,8 +349,7 @@ def train_from_checkpoint(
     additional_epochs: int,
     start_epoch: int | Literal["best"] | None = None,
     search_dir: str = "runs",
-    modify_args: Callable[[TrainArgs], None] | None = None,
-    modify_checkpoint: Callable[[TrainCheckpoint], None] | None = None,
+    modify_args: Callable[[TrainArgs, TrainCheckpoint], None] | None = None,
 ) -> tuple[Tensor, list[str], VCSMC]:
     """
     Args:
@@ -360,8 +359,7 @@ def train_from_checkpoint(
             If None, starts from the latest checkpoint.
             If "best", starts from the epoch with the highest ZCSMC.
         search_dir: The directory to search for the checkpoint. E.g. "runs/*label".
-        modify_args: Function to mutate the args before training.
-        modify_checkpoint: Function to mutate the checkpoint before training.
+        modify_args: Function to mutate the args and checkpoint before training.
 
     Returns:
         data_NxSxA, taxa_N, vcsmc
@@ -370,9 +368,7 @@ def train_from_checkpoint(
     args, checkpoint = load_checkpoint(start_epoch=start_epoch, search_dir=search_dir)
 
     if modify_args:
-        modify_args(args)
-    if modify_checkpoint:
-        modify_checkpoint(checkpoint)
+        modify_args(args, checkpoint)
 
     data_NxSxA = args["data_NxSxA"]
     taxa_N = args["taxa_N"]
