@@ -1,14 +1,20 @@
 import glob
+import io
 import os
 import shutil
 from typing import Callable
 
 import torch
+from matplotlib import pyplot as plt
+from matplotlib.figure import Figure
+from PIL import Image
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
+
+import wandb
 
 from ..vcsmc import VCSMC
 from .train_types import TrainArgs, TrainCheckpoint
@@ -285,3 +291,13 @@ def compute_merge_log_weights_from_vcsmc(
     # flatten particles
     merge_indexes_KxN1x2 = torch.cat(merge_indexes_KxN1x2_list, dim=0)
     return compute_merge_log_weights_from_merge_indexes(merge_indexes_KxN1x2)
+
+
+def fig_to_wandb_image(fig: Figure) -> wandb.Image:
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    image = wandb.Image(Image.open(buf))
+    buf.close()
+    return image

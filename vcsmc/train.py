@@ -20,6 +20,7 @@ from .site_positions_encoders import DummySitePositionsEncoder
 from .utils.train_types import TrainArgs, TrainCheckpoint, TrainResults
 from .utils.train_utils import (
     batch_by_sites,
+    fig_to_wandb_image,
     find_most_recent_path,
     get_site_positions_SxSfull,
 )
@@ -270,12 +271,13 @@ def train(
                 phylo_tree.root_with_outgroup(outgroup_root)
             Phylo.draw(phylo_tree, axes=ax, do_show=False)  # type: ignore
 
-            log["Best tree"] = fig
+            log["Best tree"] = fig_to_wandb_image(fig)
 
             # ===== Q matrix =====
 
             fig, ax = plt.subplots()
             ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
+
             log["Root Q matrix (average across sites)"] = fig
 
         wandb.log(log, step=epoch, commit=True)
