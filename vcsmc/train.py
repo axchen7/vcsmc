@@ -216,6 +216,7 @@ def train(
             )
 
             save_checkpoint(epoch + 1)
+            save_results()  # overwrite each time
 
             ZCSMCs.append(log_ZCSMC_sum)
             log_likelihood_avgs.append(log_likelihood_avg)
@@ -292,7 +293,6 @@ def train(
     # ===== done training! =====
 
     print("Training complete!")
-    save_results()
 
 
 def load_checkpoint(
