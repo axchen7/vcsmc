@@ -18,6 +18,7 @@ def main(
     lookahead_merge: bool = False,
     hash_trick: bool = False,
     checkpoint_grads: bool = False,
+    run_name: Optional[str] = None,
 ):
     """Train a VCSMC model on a phylogenetic dataset."""
 
@@ -65,6 +66,7 @@ def main(
         file,
         epochs=epochs,
         sites_batch_size=sites_batch_size,
+        run_name=run_name,
     )
 
 

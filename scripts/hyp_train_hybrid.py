@@ -20,6 +20,7 @@ def main(
     lookahead_merge1: bool = False,
     hash_trick1: bool = False,
     checkpoint_grads: bool = False,
+    run_name: Optional[str] = None,
 ):
     """
     Train Hyperbolic SMC model on a phylogenetic dataset. Performs two phases:
@@ -74,6 +75,7 @@ def main(
         file,
         epochs=epochs1,
         sites_batch_size=sites_batch_size,
+        run_name=f"{run_name}-phase1" if run_name else None,
     )
 
     # ===== phase 2 =====
@@ -115,6 +117,7 @@ def main(
         start_epoch=epochs1,
         epochs=epochs1 + epochs2,
         sites_batch_size=sites_batch_size,
+        run_name=f"{run_name}-phase2" if run_name else None,
     )
 
 
