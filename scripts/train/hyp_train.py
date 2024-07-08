@@ -19,6 +19,7 @@ def hyp_train(
     lookahead_merge: bool = False,
     hash_trick: bool = False,
     checkpoint_grads: bool = False,
+    embedding_shuffle_rate: Optional[float] = None,
     run_name: Optional[str] = None,
 ):
     """Train a VCSMC model on a phylogenetic dataset."""
@@ -35,7 +36,12 @@ def hyp_train(
 
     if hyperbolic:
         distance = Hyperbolic()
-        seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
+        seq_encoder = EmbeddingTableSequenceEncoder(
+            distance,
+            data_NxSxA,
+            D=D,
+            shuffle_rate=embedding_shuffle_rate,
+        )
         merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
         proposal = EmbeddingProposal(
             distance,

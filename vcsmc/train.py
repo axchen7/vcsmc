@@ -184,6 +184,8 @@ def train(
             log_ZCSMC_sum += log_ZCSMC.item()
             log_likelihood_sum += log_likelihood_avg.item()
 
+        vcsmc.proposal.step()
+
         if lr_scheduler is not None:
             lr_scheduler.step()
 

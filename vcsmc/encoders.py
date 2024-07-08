@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import Tensor, nn
 
@@ -38,6 +39,13 @@ class SequenceEncoder(nn.Module):
     def extra_repr(self) -> str:
         return custom_module_repr({"D": self.D})
 
+    def step(self):
+        """
+        Called after the parameter update(s) of each epoch. Some
+        subclasses may adjust their parameters here.
+        """
+        pass  # by default, do nothing
+
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         """
         Args:
@@ -74,6 +82,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
         D: int,
         initial_mean: float = 0.9,  # this default works well empirically
         initial_std: float = 0.1,
+        shuffle_rate: float | None = None,
     ):
         """
         Args:
@@ -84,6 +93,8 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
             D: Number of dimensions sequence embeddings.
             initial_mean: Mean of the normal distribution used to initialize the embeddings.
             initial_std: Std dev of the normal distribution used to initialize the embeddings.
+            shuffle_rate: If not None, embeddings are randomly switched each step.
+                The precise number of switches follows a Poisson distribution with this rate.
         """
 
         super().__init__(distance, D=D)
@@ -95,6 +106,35 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
         self.embedding_table = nn.Parameter(
             torch.normal(initial_mean, initial_std, size=(N, D))
         )
+
+        self.initial_mean = initial_mean
+        self.initial_std = initial_std
+        self.shuffle_rate = shuffle_rate
+
+    def extra_repr(self) -> str:
+        return custom_module_repr(
+            {
+                "D": self.D,
+                "initial_mean": self.initial_mean,
+                "initial_std": self.initial_std,
+                "shuffle_rate": self.shuffle_rate,
+            }
+        )
+
+    def step(self):
+        if self.shuffle_rate is None:
+            return
+
+        with torch.no_grad():
+            N = self.embedding_table.shape[0]
+            num_switches = np.random.poisson(self.shuffle_rate)
+            for _ in range(num_switches):
+                i, j = np.random.choice(N, 2, replace=False)
+                self.embedding_table[i], self.embedding_table[j] = (
+                    self.embedding_table[j],
+                    self.embedding_table[i],
+                )
+                print("switched!")
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         if torch.equal(sequences_VxSxA, self.data_NxSxA):

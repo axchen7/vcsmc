@@ -44,6 +44,10 @@ class Proposal(nn.Module):
         """
         raise NotImplementedError
 
+    def step(self):
+        """Called after the parameter update(s) of each epoch."""
+        pass  # by default, do nothing
+
     def forward(
         self, N: int, embeddings_KxtxD: Tensor, hashes_Kxt: Tensor, arange_fn: ArangeFn
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
@@ -274,6 +278,9 @@ class EmbeddingProposal(Proposal):
 
     def uses_deterministic_branches(self) -> bool:
         return not self.sample_branches
+
+    def step(self):
+        self.seq_encoder.step()
 
     def forward(
         self, N: int, embeddings_KxtxD: Tensor, hashes_Kxt: Tensor, arange_fn: ArangeFn
