@@ -92,13 +92,14 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
 
         self.register_buffer("data_NxSxA", data_NxSxA)
 
-        self.embedding_table = nn.Embedding(N, D)
-        nn.init.normal_(self.embedding_table.weight, mean=initial_mean, std=initial_std)
+        self.embedding_table = nn.Parameter(
+            torch.normal(initial_mean, initial_std, size=(N, D))
+        )
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         if torch.equal(sequences_VxSxA, self.data_NxSxA):
             # shortcut for exact match
-            return self.embedding_table.weight
+            return self.embedding_table
         else:
             # find the indices of the sequences in the data
             indices_V = torch.tensor([], dtype=torch.int, device=sequences_VxSxA.device)
@@ -112,7 +113,7 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
                     raise ValueError("Sequence not found in data.")
                 # if multiple matches, take the first one
                 indices_V = torch.cat((indices_V, index_1[0].unsqueeze(0)))
-            return self.embedding_table(indices_V)
+            return self.embedding_table[indices_V]
 
 
 class MLPSequenceEncoder(SequenceEncoder):
