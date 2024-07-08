@@ -54,7 +54,10 @@ def hyp_smc_benchmark():
                 print(f"Error while processing {dataset}: {e}")
                 continue
 
-            print(f"{dataset} LL estimate: {ll_mean:.2f} ± {ll_std_dev:.2f}")
+            ll_mean = round(ll_mean, 2)
+            ll_std_dev = round(ll_std_dev, 2)
+
+            print(f"{dataset} LL estimate: {ll_mean} ± {ll_std_dev}")
 
             # write row
             writer.writerow([dataset, ll_mean, ll_std_dev])
