@@ -17,6 +17,7 @@ import wandb
 from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
 from .site_positions_encoders import DummySitePositionsEncoder
+from .utils.poincare_utils import PoincarePlot
 from .utils.train_types import TrainArgs, TrainCheckpoint, TrainResults
 from .utils.train_utils import (
     batch_by_sites,
@@ -120,7 +121,9 @@ def train(
         filename = "results.pt"
         torch.save(results, path.join(checkpoints_dir, filename))
 
-    def train_step(dataloader: DataLoader) -> tuple[float, Tensor | None, float, str]:
+    def train_step(
+        dataloader: DataLoader,
+    ) -> tuple[float, Tensor | None, float, str, VcsmcResult | None]:
         """
         Trains one epoch, iterating through batches.
 
@@ -129,6 +132,7 @@ def train(
             log_likelihood_K: log likelihoods, or None if there are multiple batches.
             log_likelihood_sum: Sum across batches of log likelihoods averaged across particles.
             best_newick_tree: best of the K newick trees from the first epoch.
+            result: Vcsmc result, or None if there are multiple batches.
         """
 
         log_ZCSMC_sum = 0.0
@@ -137,6 +141,7 @@ def train(
         best_newick_tree = ""
 
         log_likelihood_K = None
+        result: VcsmcResult | None = None
 
         for data_batched_SxNxA, site_positions_batched_SxSfull in dataloader:
             data_batched_NxSxA = data_batched_SxNxA.permute(1, 0, 2)
@@ -154,20 +159,21 @@ def train(
                 samp_data_NxSxA = data_NxSxA
                 samp_data_batched_NxSxA = data_batched_NxSxA
 
-            result: VcsmcResult = vcsmc(
+            cur_result: VcsmcResult = vcsmc(
                 samp_taxa_N,
                 samp_data_NxSxA,
                 samp_data_batched_NxSxA,
                 site_positions_batched_SxSfull,
             )
+            result = cur_result
 
-            log_ZCSMC = result["log_ZCSMC"]
-            log_likelihood_K = result["log_likelihood_K"]
+            log_ZCSMC = cur_result["log_ZCSMC"]
+            log_likelihood_K = cur_result["log_likelihood_K"]
 
             log_likelihood_avg = log_likelihood_K.mean()
 
             if best_newick_tree == "":
-                best_newick_tree = result["best_newick_tree"]
+                best_newick_tree = cur_result["best_newick_tree"]
 
             loss = -log_ZCSMC
 
@@ -183,8 +189,15 @@ def train(
 
         if len(dataloader) > 1:
             log_likelihood_K = None
+            result = None
 
-        return log_ZCSMC_sum, log_likelihood_K, log_likelihood_sum, best_newick_tree
+        return (
+            log_ZCSMC_sum,
+            log_likelihood_K,
+            log_likelihood_sum,
+            best_newick_tree,
+            result,
+        )
 
     @torch.no_grad()
     def get_avg_root_Q_matrix_AxA():
@@ -226,9 +239,13 @@ def train(
     for epoch in tqdm(range(epochs - start_epoch), desc="Training"):
         epoch += start_epoch
 
-        log_ZCSMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
-            train_step(dataloader)
-        )
+        (
+            log_ZCSMC_sum,
+            log_likelihood_K,
+            log_likelihood_avg,
+            best_newick_tree,
+            result,
+        ) = train_step(dataloader)
 
         save_checkpoint(epoch + 1)
         save_results()  # overwrite each time
@@ -281,6 +298,16 @@ def train(
             ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
 
             log["Root Q matrix (average across sites)"] = fig
+
+            # ===== poincare plot =====
+
+            if (
+                result
+                and isinstance(vcsmc.proposal, EmbeddingProposal)
+                and isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic)
+            ):
+                interactive_poincare = PoincarePlot(vcsmc, taxa_N, data_NxSxA, result)
+                log["Poincare plot"] = interactive_poincare.to_wandb_image()
 
         run.log(log, step=epoch, commit=True)
 

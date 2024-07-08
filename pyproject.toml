@@ -11,6 +11,7 @@ requires-python = "~=3.11"
 dependencies = [
     # sort these alphabetically
     "bio",
+    "drawsvg[raster]",
     "hyperbolic",
     "ipykernel",
     "ipywidgets",

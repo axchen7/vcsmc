@@ -1,3 +1,4 @@
+import io
 import math
 
 import matplotlib.pyplot as plt
@@ -6,7 +7,10 @@ from drawsvg import Drawing, Text
 from hyperbolic import euclid, poincare
 from IPython.display import display
 from ipywidgets import FloatSlider, interactive
+from PIL import Image
 from torch import Tensor
+
+import wandb
 
 from ..distances import Distance, Hyperbolic
 from ..proposals import EmbeddingProposal
@@ -24,7 +28,7 @@ __all__ = [
 ]
 
 
-class InteractivePoincare:
+class PoincarePlot:
     @torch.no_grad()
     def __init__(
         self,
@@ -164,6 +168,19 @@ class InteractivePoincare:
             ),
         )
 
+    def to_wandb_image(self) -> wandb.Image:
+        d = self.make_drawing(
+            size=self.initial_size,
+            origin_x=self.initial_origin_x,
+            origin_y=self.initial_origin_y,
+        )
+        buf = io.BytesIO()
+        d.save_png(buf)
+        buf.seek(0)
+        image = wandb.Image(Image.open(buf))
+        buf.close()
+        return image
+
 
 @torch.no_grad()
 def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):
@@ -171,7 +188,7 @@ def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):
     taxa_N = args["taxa_N"]
     vcsmc = checkpoint["vcsmc"]
     result = evaluate(vcsmc, taxa_N, data_NxSxA)
-    return InteractivePoincare(vcsmc, taxa_N, data_NxSxA, result).interactive()
+    return PoincarePlot(vcsmc, taxa_N, data_NxSxA, result).interactive()
 
 
 @torch.no_grad()
