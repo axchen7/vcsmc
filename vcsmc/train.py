@@ -96,7 +96,7 @@ def train(
 
     def init_wandb():
         config = {**get_args(), **get_checkpoint()}
-        wandb.init(project="vcsmc", name=run_name, config=config)
+        wandb.init(project="vcsmc", job_type="train", name=run_name, config=config)
 
     def save_args():
         filename = "args.pt"
@@ -282,11 +282,15 @@ def train(
 
         wandb.log(log, step=epoch, commit=True)
 
-    wandb.finish()
-
     # ===== done training! =====
 
+    print("Uploading artifacts...")
+    artifact = wandb.Artifact(name="checkpoints", type="checkpoint")
+    artifact.add_dir(checkpoints_dir)
+    wandb.log_artifact(artifact)
+
     print("Training complete!")
+    wandb.finish()
 
 
 def load_checkpoint(
