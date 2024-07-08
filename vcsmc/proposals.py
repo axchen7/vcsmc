@@ -6,6 +6,7 @@ from torch import Tensor, nn
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
 from .utils.distance_utils import EPSILON
+from .utils.repr_utils import custom_module_repr
 from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2, hash_forest_K
 
 __all__ = ["Proposal", "ExpBranchProposal", "EmbeddingProposal"]
@@ -105,11 +106,20 @@ class ExpBranchProposal(Proposal):
         # value of variable is passed through exp() later
         initial_log_rates_N1 = torch.full([N - 1], math.log(initial_rate))
 
+        self.initial_branch_len = initial_branch_len
         self.lookahead_merge = lookahead_merge
 
         # exponential distribution rates for sampling branch lengths; N1 -> N-1
         self.log_rates1_N1 = nn.Parameter(initial_log_rates_N1)
         self.log_rates2_N1 = nn.Parameter(initial_log_rates_N1)
+
+    def extra_repr(self) -> str:
+        return custom_module_repr(
+            {
+                "initial_branch_len": self.initial_branch_len,
+                "lookahead_merge": self.lookahead_merge,
+            }
+        )
 
     def rates(self, r: int):
         # use exp to ensure rates are positive
@@ -240,10 +250,24 @@ class EmbeddingProposal(Proposal):
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
+        self.initial_sample_branches_sigma = initial_sample_branches_sigma
         self.log_sample_branches_sigma = nn.Parameter(
             torch.tensor(math.log(initial_sample_branches_sigma))
         )
         self.static_merge_log_weights = static_merge_log_weights  # on CPU
+
+    def extra_repr(self) -> str:
+        return custom_module_repr(
+            {
+                "lookahead_merge": self.lookahead_merge,
+                "sample_merge_temp": self.sample_merge_temp,
+                "sample_branches": self.sample_branches,
+                "initial_sample_branches_sigma": self.initial_sample_branches_sigma,
+                "static_merge_log_weights": (
+                    "provided" if self.static_merge_log_weights else None
+                ),
+            }
+        )
 
     def sample_branches_sigma(self):
         return self.log_sample_branches_sigma.exp()

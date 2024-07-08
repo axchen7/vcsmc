@@ -7,6 +7,7 @@ from torch.utils.checkpoint import checkpoint
 
 from .proposals import Proposal
 from .q_matrix_decoders import QMatrixDecoder
+from .utils.repr_utils import custom_module_repr
 from .utils.vcsmc_types import VcsmcResult
 from .utils.vcsmc_utils import (
     PriorDist,
@@ -103,6 +104,17 @@ class VCSMC(nn.Module):
 
         max_arange = max(N, proposal.max_sub_particles * K)
         self.register_buffer("arange_cache", torch.arange(max_arange))
+
+    def extra_repr(self) -> str:
+        return custom_module_repr(
+            {
+                "K": self.K,
+                "hash_trick": self.hash_trick,
+                "checkpoint_grads": self.checkpoint_grads,
+                "prior_dist": self.prior_dist,
+                "prior_branch_len": self.prior_branch_len,
+            }
+        )
 
     def arange(self, end: int):
         """Uses the arange cache to avoid re-allocating memory."""

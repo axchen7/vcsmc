@@ -4,6 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from .utils.distance_utils import EPSILON, safe_norm
+from .utils.repr_utils import custom_module_repr
 
 __all__ = ["Distance", "Euclidean", "Hyperbolic"]
 
@@ -61,10 +62,21 @@ class Hyperbolic(Distance):
     def __init__(self, *, initial_scale: float = 0.1, fixed_scale: bool = False):
         super().__init__()
 
+        self.initial_scale = initial_scale
+        self.fixed_scale = fixed_scale
+
         if fixed_scale:
             self.log_scale = math.log(initial_scale)
         else:
             self.log_scale = nn.Parameter(torch.tensor(math.log(initial_scale)))
+
+    def extra_repr(self) -> str:
+        return custom_module_repr(
+            {
+                "initial_scale": self.initial_scale,
+                "fixed_scale": self.fixed_scale,
+            }
+        )
 
     def scale(self):
         if isinstance(self.log_scale, Tensor):

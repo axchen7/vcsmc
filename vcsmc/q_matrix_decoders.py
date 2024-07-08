@@ -5,6 +5,7 @@ from .distances import Distance
 from .expm import expm
 from .site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
 from .utils.encoder_utils import MLP
+from .utils.repr_utils import custom_module_repr
 
 __all__ = [
     "QMatrixDecoder",
@@ -17,12 +18,18 @@ __all__ = [
 
 
 class QMatrixDecoder(nn.Module):
-    def __init__(self, site_positions_encoder: SitePositionsEncoder | None = None):
+    def __init__(
+        self, *, A: int, site_positions_encoder: SitePositionsEncoder | None = None
+    ):
         super().__init__()
 
+        self.A = A
         self.site_positions_encoder: SitePositionsEncoder = (
             site_positions_encoder or DummySitePositionsEncoder()
         )
+
+    def extra_repr(self) -> str:
+        return custom_module_repr({"A": self.A})
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -56,7 +63,7 @@ class JC69QMatrixDecoder(QMatrixDecoder):
             A: The alphabet size.
         """
 
-        super().__init__()
+        super().__init__(A=A)
 
         # make off-diagonal entries sum to 1 within each row, matching the
         # normalization used in DenseStationaryQMatrixDecoder
@@ -103,7 +110,7 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
             t_inf: Large t value used to approximate the stationary distribution.
         """
 
-        super().__init__()
+        super().__init__(A=A)
         self.register_buffer("zeros_A", torch.zeros(A))
         self.register_buffer("ones_A", torch.ones(A))
 
@@ -171,7 +178,7 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
             t_inf: Large t value used to approximate the stationary distribution.
         """
 
-        super().__init__()
+        super().__init__(A=A)
         self.register_buffer("zeros_A", torch.zeros(A))
         self.register_buffer("ones_A", torch.ones(A))
 
@@ -242,7 +249,7 @@ class GT16StationaryQMatrixDecoder(QMatrixDecoder):
                 Helps prevent the model from converging to a degenerate solution.
         """
 
-        super().__init__()
+        super().__init__(A=16)
 
         self.exchanges_baseline = exchanges_baseline
         self.stat_props_baseline = stat_props_baseline
@@ -360,7 +367,7 @@ class DensePerSiteStatProbsMLPQMatrixDecoder(QMatrixDecoder):
                 Helps prevent the model from converging to a degenerate solution.
         """
 
-        super().__init__(site_positions_encoder)
+        super().__init__(A=A, site_positions_encoder=site_positions_encoder)
         self.register_buffer("zero", torch.zeros(1))
 
         self.distance = distance

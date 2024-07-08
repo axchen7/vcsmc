@@ -4,6 +4,7 @@ from torch import Tensor, nn
 from .distances import Distance, Euclidean, Hyperbolic
 from .utils.distance_utils import EPSILON, safe_norm
 from .utils.encoder_utils import MLP
+from .utils.repr_utils import custom_module_repr
 
 __all__ = [
     "SequenceEncoder",
@@ -33,6 +34,9 @@ class SequenceEncoder(nn.Module):
 
         self.distance = distance
         self.D = D
+
+    def extra_repr(self) -> str:
+        return custom_module_repr({"D": self.D})
 
     def forward(self, sequences_VxSxA: Tensor) -> Tensor:
         """
