@@ -8,11 +8,12 @@ from IPython.display import display
 from ipywidgets import FloatSlider, interactive
 from torch import Tensor
 
-from ..distances import Hyperbolic
+from ..distances import Distance, Hyperbolic
 from ..proposals import EmbeddingProposal
 from ..vcsmc import VCSMC
 from .train_types import TrainArgs, TrainCheckpoint
 from .train_utils import evaluate, get_site_positions_SxSfull
+from .vcsmc_types import VcsmcResult
 from .vcsmc_utils import replace_with_merged_list
 
 __all__ = [
@@ -23,21 +24,121 @@ __all__ = [
 ]
 
 
-@torch.no_grad()
-def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):
-    data_NxSxA = args["data_NxSxA"]
-    taxa_N = args["taxa_N"]
-    vcsmc = checkpoint["vcsmc"]
+class InteractivePoincare:
+    @torch.no_grad()
+    def __init__(
+        self,
+        vcsmc: VCSMC,
+        taxa_N: list[str],
+        data_NxSxA: Tensor,
+        result: VcsmcResult,
+    ):
+        N = len(taxa_N)
 
-    N = len(taxa_N)
+        proposal = vcsmc.proposal
+        assert isinstance(proposal, EmbeddingProposal)
 
-    proposal = vcsmc.proposal
-    assert isinstance(proposal, EmbeddingProposal)
+        distance = proposal.seq_encoder.distance
+        assert isinstance(distance, Hyperbolic)
 
-    distance = proposal.seq_encoder.distance
-    assert isinstance(distance, Hyperbolic)
+        merge_indexes_N1x2 = result["best_merge_indexes_N1x2"]
+        embeddings_N1xD = self._normalize(distance, result["best_embeddings_N1xD"])
 
-    def normalize(embeddings_VxD: Tensor):
+        points = []
+        lines = []
+        texts = []
+
+        min_x = math.inf
+        max_x = -math.inf
+        min_y = math.inf
+        max_y = -math.inf
+
+        embeddings_txD: list[Tensor] = list(
+            self._normalize(distance, proposal.seq_encoder(data_NxSxA))
+        )
+        labels_t = taxa_N
+
+        for r in range(N - 1):
+            idx1 = int(merge_indexes_N1x2[r][0])
+            idx2 = int(merge_indexes_N1x2[r][1])
+
+            emb1_D = embeddings_txD[idx1]
+            emb2_D = embeddings_txD[idx2]
+            parent_emb_D = embeddings_N1xD[r]
+
+            # flip y coordinate to match matplotlib display orientation
+            unpack = lambda x: (float(x[0]), -float(x[1]))
+
+            emb1 = unpack(emb1_D)
+            emb2 = unpack(emb2_D)
+            parent_embed = unpack(parent_emb_D)
+
+            label1 = labels_t[idx1]
+            label2 = labels_t[idx2]
+
+            p1 = poincare.Point(emb1[0], emb1[1])
+            p2 = poincare.Point(emb2[0], emb2[1])
+            p3 = poincare.Point(parent_embed[0], parent_embed[1])
+            points.extend([p1, p2, p3])
+
+            if p1 != p3:
+                l1 = poincare.Line.from_points(*p1, *p3, segment=True)
+                lines.append(l1)
+            if p2 != p3:
+                l2 = poincare.Line.from_points(*p2, *p3, segment=True)
+                lines.append(l2)
+
+            if label1 != "":
+                t1 = (label1, emb1[0], emb1[1])
+                texts.append(t1)
+            if label2 != "":
+                t2 = (label2, emb2[0], emb2[1])
+                texts.append(t2)
+
+            min_x = min(min_x, emb1[0], emb2[0], parent_embed[0])
+            max_x = max(max_x, emb1[0], emb2[0], parent_embed[0])
+            min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
+            max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
+
+            embeddings_txD = replace_with_merged_list(
+                embeddings_txD, idx1, idx2, parent_emb_D
+            )
+            labels_t = replace_with_merged_list(labels_t, idx1, idx2, "")
+
+        dx = max_x - min_x
+        dy = max_y - min_y
+
+        self.initial_size = max(dx, dy) * 1.1
+
+        self.initial_origin_x = -self.initial_size / 2 + (min_x + max_x) / 2
+        self.initial_origin_y = -self.initial_size / 2 + (min_y + max_y) / 2
+
+        self.points = points
+        self.lines = lines
+        self.texts = texts
+
+    def make_drawing(self, size: float, origin_x: float, origin_y: float):
+        stroke_width = size / 500
+        radius = 2 * stroke_width
+        text_size = size / 100
+
+        d = Drawing(size, size, origin=(origin_x, origin_y))
+        d.draw(euclid.Circle(0, 0, 1), fill="silver")
+
+        for l in self.lines:
+            d.draw(l, stroke_width=stroke_width, stroke="green", fill="none")
+
+        for p in self.points:
+            d.draw(p, radius=radius, fill="orange")
+
+        for t in self.texts:
+            d.draw(Text(t[0], text_size, t[1], t[2], fill="black"))
+
+        d.set_render_size(w=750)
+        return d
+
+    @staticmethod
+    def _normalize(distance: Distance, embeddings_VxD: Tensor):
         """Normalize and ensure |x| < 1"""
         max_norm = 1 - 1e-6
         embeddings_VxD = distance.normalize(embeddings_VxD)
@@ -47,104 +148,30 @@ def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):
             norms_V.unsqueeze(-1) < max_norm, embeddings_VxD, unit_vectors_VxD
         )
 
-    result = evaluate(vcsmc, taxa_N, data_NxSxA)
-
-    merge_indexes_N1x2 = result["best_merge_indexes_N1x2"]
-    embeddings_N1xD = normalize(result["best_embeddings_N1xD"])
-
-    points = []
-    lines = []
-    texts = []
-
-    min_x = math.inf
-    max_x = -math.inf
-    min_y = math.inf
-    max_y = -math.inf
-
-    embeddings_txD: list[Tensor] = list(normalize(proposal.seq_encoder(data_NxSxA)))
-    labels_t = taxa_N
-
-    for r in range(N - 1):
-        idx1 = int(merge_indexes_N1x2[r][0])
-        idx2 = int(merge_indexes_N1x2[r][1])
-
-        emb1_D = embeddings_txD[idx1]
-        emb2_D = embeddings_txD[idx2]
-        parent_emb_D = embeddings_N1xD[r]
-
-        # flip y coordinate to match matplotlib display orientation
-        unpack = lambda x: (float(x[0]), -float(x[1]))
-
-        emb1 = unpack(emb1_D)
-        emb2 = unpack(emb2_D)
-        parent_embed = unpack(parent_emb_D)
-
-        label1 = labels_t[idx1]
-        label2 = labels_t[idx2]
-
-        p1 = poincare.Point(emb1[0], emb1[1])
-        p2 = poincare.Point(emb2[0], emb2[1])
-        p3 = poincare.Point(parent_embed[0], parent_embed[1])
-        points.extend([p1, p2, p3])
-
-        if p1 != p3:
-            l1 = poincare.Line.from_points(*p1, *p3, segment=True)
-            lines.append(l1)
-        if p2 != p3:
-            l2 = poincare.Line.from_points(*p2, *p3, segment=True)
-            lines.append(l2)
-
-        if label1 != "":
-            t1 = (label1, emb1[0], emb1[1])
-            texts.append(t1)
-        if label2 != "":
-            t2 = (label2, emb2[0], emb2[1])
-            texts.append(t2)
-
-        min_x = min(min_x, emb1[0], emb2[0], parent_embed[0])
-        max_x = max(max_x, emb1[0], emb2[0], parent_embed[0])
-        min_y = min(min_y, emb1[1], emb2[1], parent_embed[1])
-        max_y = max(max_y, emb1[1], emb2[1], parent_embed[1])
-
-        embeddings_txD = replace_with_merged_list(
-            embeddings_txD, idx1, idx2, parent_emb_D
-        )
-        labels_t = replace_with_merged_list(labels_t, idx1, idx2, "")
-
-    dx = max_x - min_x
-    dy = max_y - min_y
-
-    initial_size = max(dx, dy) * 1.1
-
-    initial_origin_x = -initial_size / 2 + (min_x + max_x) / 2
-    initial_origin_y = -initial_size / 2 + (min_y + max_y) / 2
-
-    def plot_poincare(size, origin_x, origin_y):
-        stroke_width = size / 500
-        radius = 2 * stroke_width
-        text_size = size / 100
-
-        d = Drawing(size, size, origin=(origin_x, origin_y))
-        d.draw(euclid.Circle(0, 0, 1), fill="silver")
-
-        for l in lines:
-            d.draw(l, stroke_width=stroke_width, stroke="green", fill="none")
-
-        for p in points:
-            d.draw(p, radius=radius, fill="orange")
-
-        for t in texts:
-            d.draw(Text(t[0], text_size, t[1], t[2], fill="black"))
-
-        d.set_render_size(w=750)
+    def _interactive_fn(self, size: float, origin_x: float, origin_y: float):
+        d = self.make_drawing(size, origin_x, origin_y)
         display(d)
 
-    return interactive(
-        plot_poincare,
-        size=FloatSlider(value=initial_size, min=0, max=2, step=0.001),
-        origin_x=FloatSlider(value=initial_origin_x, min=-1, max=1, step=0.001),
-        origin_y=FloatSlider(value=initial_origin_y, min=-1, max=1, step=0.001),
-    )
+    def interactive(self):
+        return interactive(
+            self._interactive_fn,
+            size=FloatSlider(value=self.initial_size, min=0, max=2, step=0.001),
+            origin_x=FloatSlider(
+                value=self.initial_origin_x, min=-1, max=1, step=0.001
+            ),
+            origin_y=FloatSlider(
+                value=self.initial_origin_y, min=-1, max=1, step=0.001
+            ),
+        )
+
+
+@torch.no_grad()
+def interactive_poincare(args: TrainArgs, checkpoint: TrainCheckpoint):
+    data_NxSxA = args["data_NxSxA"]
+    taxa_N = args["taxa_N"]
+    vcsmc = checkpoint["vcsmc"]
+    result = evaluate(vcsmc, taxa_N, data_NxSxA)
+    return InteractivePoincare(vcsmc, taxa_N, data_NxSxA, result).interactive()
 
 
 @torch.no_grad()
