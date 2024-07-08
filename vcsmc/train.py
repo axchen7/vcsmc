@@ -297,7 +297,7 @@ def train(
             fig, ax = plt.subplots()
             ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
 
-            log["Root Q matrix (average across sites)"] = fig
+            log["Root Q matrix (average across sites)"] = fig_to_wandb_image(fig)
 
             # ===== poincare plot =====
 
