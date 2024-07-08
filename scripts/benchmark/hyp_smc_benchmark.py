@@ -2,8 +2,10 @@ import csv
 import os
 from datetime import datetime
 
+import wandb
 from scripts.train.hyp_train_hybrid import hyp_train_hybrid
 from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
+from vcsmc.utils.wandb_utils import WANDB_PROJECT, WandbRunType
 
 # skip DS7; some literature refers to DS8 as DS7
 DATASETS = ["DS1", "DS2", "DS3", "DS4", "DS5", "DS6", "DS8"]
@@ -57,6 +59,14 @@ def hyp_smc_benchmark():
             # write row
             writer.writerow([dataset, ll_mean, ll_std_dev])
             f.flush()
+
+    run = wandb.init(
+        project=WANDB_PROJECT,
+        job_type=WandbRunType.HYP_SMC_BENCHMARK,
+        name="Benchmark Results",
+    )
+    run.log_artifact(output_file, name="hyp_smc_benchmark", type="result")
+    run.finish()
 
 
 if __name__ == "__main__":

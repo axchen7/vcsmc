@@ -313,12 +313,9 @@ def train(
 
     # ===== done training! =====
 
-    print("Uploading artifacts...")
-    artifact = wandb.Artifact(name="checkpoints", type="checkpoint")
-    artifact.add_dir(checkpoints_dir)
-    run.log_artifact(artifact)
-
     print("Training complete!")
+
+    run.log_artifact(checkpoints_dir, name="checkpoints", type="checkpoint")
     run.finish()
 
 
