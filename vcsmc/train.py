@@ -25,6 +25,7 @@ from .utils.train_utils import (
     get_site_positions_SxSfull,
 )
 from .utils.vcsmc_types import VcsmcResult
+from .utils.wandb_utils import WandbRunType
 from .vcsmc import VCSMC
 
 __all__ = ["train", "load_checkpoint", "train_from_checkpoint"]
@@ -95,8 +96,12 @@ def train(
         }
 
     def init_wandb():
-        config = {**get_args(), **get_checkpoint()}
-        wandb.init(project="vcsmc", job_type="train", name=run_name, config=config)
+        wandb.init(
+            project="vcsmc",
+            job_type=WandbRunType.TRAIN,
+            name=run_name,
+            config={**get_args(), **get_checkpoint()},
+        )
 
     def save_args():
         filename = "args.pt"
