@@ -115,10 +115,7 @@ def train(
         filename = "results.pt"
         torch.save(results, path.join(checkpoints_dir, filename))
 
-    def train_step(
-        dataloader: DataLoader,
-        epoch: int,
-    ) -> tuple[float, Tensor | None, float, str]:
+    def train_step(dataloader: DataLoader) -> tuple[float, Tensor | None, float, str]:
         """
         Trains one epoch, iterating through batches.
 
@@ -225,7 +222,7 @@ def train(
         epoch += start_epoch
 
         log_ZCSMC_sum, log_likelihood_K, log_likelihood_avg, best_newick_tree = (
-            train_step(dataloader, epoch)
+            train_step(dataloader)
         )
 
         save_checkpoint(epoch + 1)
