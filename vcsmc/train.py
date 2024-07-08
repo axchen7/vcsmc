@@ -25,7 +25,7 @@ from .utils.train_utils import (
     get_site_positions_SxSfull,
 )
 from .utils.vcsmc_types import VcsmcResult
-from .utils.wandb_utils import WandbRunType
+from .utils.wandb_utils import WANDB_PROJECT, WandbRunType
 from .vcsmc import VCSMC
 
 __all__ = ["train", "load_checkpoint", "train_from_checkpoint"]
@@ -96,8 +96,8 @@ def train(
         }
 
     def init_wandb():
-        wandb.init(
-            project="vcsmc",
+        return wandb.init(
+            project=WANDB_PROJECT,
             job_type=WandbRunType.TRAIN,
             name=run_name,
             config={**get_args(), **get_checkpoint()},
@@ -219,7 +219,7 @@ def train(
 
     # ===== train =====
 
-    init_wandb()
+    run = init_wandb()
     save_args()
     save_checkpoint(start_epoch)
 
@@ -282,17 +282,17 @@ def train(
 
             log["Root Q matrix (average across sites)"] = fig
 
-        wandb.log(log, step=epoch, commit=True)
+        run.log(log, step=epoch, commit=True)
 
     # ===== done training! =====
 
     print("Uploading artifacts...")
     artifact = wandb.Artifact(name="checkpoints", type="checkpoint")
     artifact.add_dir(checkpoints_dir)
-    wandb.log_artifact(artifact)
+    run.log_artifact(artifact)
 
     print("Training complete!")
-    wandb.finish()
+    run.finish()
 
 
 def load_checkpoint(
