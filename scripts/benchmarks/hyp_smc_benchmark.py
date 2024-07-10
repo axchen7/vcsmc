@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 
 import wandb
+
 from scripts.train.hyp_train_hybrid import hyp_train_hybrid
 from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
 from vcsmc.utils.wandb_utils import WANDB_PROJECT, WandbRunType
@@ -35,7 +36,7 @@ def train(dataset: str):
 
 def hyp_smc_benchmark():
     date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_file = f"outputs/benchmark/hyp_smc_benchmark_{date}.csv"
+    output_file = f"outputs/benchmarks/hyp_smc_benchmark_{date}.csv"
 
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 

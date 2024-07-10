@@ -73,5 +73,5 @@ python -m scripts.figures.hyp_smc_dim
 Benchmark (output to a .csv):
 
 ```bash
-python -m scripts.benchmark.hyp_smc_benchmark
+python -m scripts.benchmarks.hyp_smc_benchmark
 ```
