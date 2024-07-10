@@ -18,6 +18,7 @@ from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
 from .site_positions_encoders import DummySitePositionsEncoder
 from .utils.poincare_utils import PoincarePlot
+from .utils.repr_utils import module_to_config
 from .utils.train_types import TrainArgs, TrainCheckpoint, TrainResults
 from .utils.train_utils import (
     batch_by_sites,
@@ -97,11 +98,21 @@ def train(
         }
 
     def init_wandb():
+        config = {
+            **get_args(),
+            **get_checkpoint(),
+            **module_to_config(vcsmc),
+            "lr": optimizer.param_groups[0].get("lr"),
+        }
+        config = {
+            k: v for k, v in config.items() if isinstance(v, (bool, int, float, str))
+        }
+
         return wandb.init(
             project=WANDB_PROJECT,
             job_type=WandbRunType.TRAIN,
             name=run_name,
-            config={**get_args(), **get_checkpoint()},
+            config=config,
         )
 
     def save_args():
