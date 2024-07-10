@@ -47,7 +47,7 @@ def module_to_config(module: nn.Module) -> dict:
 
     for line in repr(module).split("\n"):
         line = line.strip()
-        match = re.match(r"\((\w+)\):\s(\w+)", line)
+        match = re.match(r"\((\w+)\):\s([^(]+)", line)
         if match:
             key, val = match.groups()
             config[key] = str_to_val(val)
