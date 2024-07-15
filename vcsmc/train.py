@@ -319,7 +319,9 @@ def train(
                 and vcsmc.proposal.seq_encoder.D == 2
             ):
                 interactive_poincare = PoincarePlot(vcsmc, taxa_N, data_NxSxA, result)
-                log["Poincare plot"] = interactive_poincare.to_wandb_image()
+                poincare_image = interactive_poincare.to_wandb_image()
+                if poincare_image:
+                    log["Poincare plot"] = poincare_image
 
         run.log(log, step=epoch, commit=True)
 

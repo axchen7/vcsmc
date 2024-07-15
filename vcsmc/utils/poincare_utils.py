@@ -168,18 +168,24 @@ class PoincarePlot:
             ),
         )
 
-    def to_wandb_image(self) -> wandb.Image:
+    def to_wandb_image(self) -> wandb.Image | None:
+        """Returns None on error."""
         d = self.make_drawing(
             size=self.initial_size,
             origin_x=self.initial_origin_x,
             origin_y=self.initial_origin_y,
         )
         buf = io.BytesIO()
-        d.save_png(buf)
-        buf.seek(0)
-        image = wandb.Image(Image.open(buf))
-        buf.close()
-        return image
+        try:
+            d.save_png(buf)
+            buf.seek(0)
+            return wandb.Image(Image.open(buf))
+        except Exception as e:
+            print(e)
+            print("Failed to save drawing to PNG, skipping")
+            return None
+        finally:
+            buf.close()
 
 
 @torch.no_grad()
