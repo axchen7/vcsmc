@@ -3,7 +3,7 @@ import typer
 
 from vcsmc import *
 
-INITIAL_MEANS = [0.0, 0.3, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+INITIAL_MEANS = [0.7, 0.8, 0.9, 1.0, 1.1]
 INITIAL_STDS = [0.05, 0.1, 0.2]
 
 
