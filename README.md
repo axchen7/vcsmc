@@ -18,6 +18,12 @@ Then, install the project in editable mode:
 pip install -e .
 ```
 
+On Mac OS, you will also need `cairo` to rasterize SVGs of poincare plots:
+
+```bash
+brew install cairo
+```
+
 Finally, create a [Wandb](https://wandb.ai) account to save run metrics. Link
 your account to the CLI by running:
 
