@@ -41,15 +41,19 @@ def embedding_initialization(
 
             optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
 
-            train(
-                vcsmc,
-                optimizer,
-                taxa_N,
-                data_NxSxA,
-                file,
-                epochs=epochs,
-                run_name=f"HYP-SMC-INIT-MEAN-{initial_mean}-STD-{initial_std}",
-            )
+            try:
+                train(
+                    vcsmc,
+                    optimizer,
+                    taxa_N,
+                    data_NxSxA,
+                    file,
+                    epochs=epochs,
+                    run_name=f"HYP-SMC-INIT-MEAN-{initial_mean}-STD-{initial_std}",
+                )
+            except Exception as e:
+                print(e)
+                print("Moving onto the next run...")
 
 
 if __name__ == "__main__":
