@@ -13,6 +13,7 @@ __all__ = [
     "MLPSequenceEncoder",
     "MergeEncoder",
     "MLPMergeEncoder",
+    "EuclideanMLPMergeEncoder",
     "EuclideanMidpointMergeEncoder",
     "HyperbolicGeodesicClosestMergeEncoder",
     "HyperbolicGeodesicMidpointMergeEncoder",
@@ -197,6 +198,39 @@ class MLPMergeEncoder(MergeEncoder):
         midpoints_VxD = p * alpha_Vx1 + q * (1 - alpha_Vx1)
         parents_VxD = midpoints_VxD * beta_Vx1
         return parents_VxD
+
+
+class EuclideanMLPMergeEncoder(MergeEncoder):
+    def __init__(self, distance: Distance, *, D: int, width: int, depth: int):
+        """
+        Args:
+            distance: Must be Euclidean.
+            D: Number of dimensions in output embeddings.
+            width: Width of each hidden layer.
+            depth: Number of hidden layers.
+        """
+
+        super().__init__()
+        assert isinstance(distance, Euclidean)
+
+        self.mlp = MLP(D, D, width, depth)
+
+    def forward(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
+        p = children1_VxD
+        q = children2_VxD
+
+        # symmetric in p and q
+
+        p_to_q = q - p
+        add_to_p = self.mlp(p_to_q)
+        new_from_p = p + add_to_p
+
+        q_to_p = p - q
+        add_to_q = self.mlp(q_to_p)
+        new_from_q = q + add_to_q
+
+        middle = (new_from_p + new_from_q) / 2
+        return middle
 
 
 class EuclideanMidpointMergeEncoder(MergeEncoder):
