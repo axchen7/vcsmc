@@ -7,7 +7,7 @@ authors = [
     { name="Alex Chen", email="azc2110@columbia.edu" },
     { name="Antonio Moretti", email="am4134@columbia.edu" },
 ]
-requires-python = "~=3.11"
+requires-python = ">=3.10"
 dependencies = [
     # sort these alphabetically
     "bio",
