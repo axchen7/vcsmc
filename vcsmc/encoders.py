@@ -72,7 +72,9 @@ class EmbeddingTableSequenceEncoder(SequenceEncoder):
         data_NxSxA: Tensor,
         *,
         D: int,
-        initial_mean: float = 0.9,  # this default works well empirically
+        # these default works well empirically:
+        # https://wandb.ai/azc2110-Columbia%20University/vcsmc/reports/Effect-of-Hyperbolic-Embedding-Initialization--Vmlldzo4NzU2MDA1?accessToken=zodozvfqe8onlr7tdhflgq36ee85ysp6w1d0vi6m5tm2zql7fsygsnnzz479gbhn
+        initial_mean: float = 0.7,
         initial_std: float = 0.1,
     ):
         """
