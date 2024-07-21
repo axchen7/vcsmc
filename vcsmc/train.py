@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import wandb
+from vcsmc.utils.embedding_distance_mse import compute_embedding_distance_mse
 
 from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
@@ -188,6 +189,19 @@ def train(
                 best_newick_tree = cur_result["best_newick_tree"]
 
             loss = -log_ZCSMC
+
+            if len(dataloader) == 1 and isinstance(vcsmc.proposal, EmbeddingProposal):
+                EMBEDDING_DISTANCE_MSE_LAMBDA = 1e3
+
+                embedding_distance_mse = compute_embedding_distance_mse(
+                    vcsmc.proposal, samp_data_NxSxA, cur_result
+                )
+                loss = loss + EMBEDDING_DISTANCE_MSE_LAMBDA * embedding_distance_mse
+
+                print(
+                    "embedding_distance_mse",
+                    EMBEDDING_DISTANCE_MSE_LAMBDA * embedding_distance_mse.item(),
+                )
 
             loss.backward()
             optimizer.step()
