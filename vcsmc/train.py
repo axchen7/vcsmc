@@ -16,6 +16,7 @@ import wandb
 
 from .encoders import Hyperbolic
 from .proposals import EmbeddingProposal
+from .q_matrix_decoders import JC69QMatrixDecoder
 from .site_positions_encoders import DummySitePositionsEncoder
 from .utils.poincare_utils import PoincarePlot
 from .utils.repr_utils import module_to_config
