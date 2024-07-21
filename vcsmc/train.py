@@ -305,10 +305,10 @@ def train(
 
             # ===== Q matrix =====
 
-            fig, ax = plt.subplots()
-            ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
-
-            log["Root Q matrix (average across sites)"] = fig_to_wandb_image(fig)
+            if not isinstance(vcsmc.q_matrix_decoder, JC69QMatrixDecoder):
+                fig, ax = plt.subplots()
+                ax.imshow(get_avg_root_Q_matrix_AxA().cpu())
+                log["Root Q matrix (average across sites)"] = fig_to_wandb_image(fig)
 
             # ===== poincare plot =====
 
