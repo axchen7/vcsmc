@@ -10,6 +10,8 @@ class VcsmcResult(TypedDict):
     log_likelihood_K: Tensor
     merge_indexes_KxN1x2: Tensor
     """left/right node indexes at each step, for all particles"""
+    branch_lengths_KxN1x2: Tensor
+    """left/right branch lengths at each step, for all particles"""
     best_newick_tree: str
     best_merge_indexes_N1x2: Tensor
     """left/right node indexes at each step"""

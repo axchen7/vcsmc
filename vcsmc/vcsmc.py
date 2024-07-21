@@ -512,6 +512,9 @@ class VCSMC(nn.Module):
         merge_indexes_KxN1x2 = torch.stack(
             [ms["merge1_indexes_Kxr"], ms["merge2_indexes_Kxr"]], 2
         )
+        branch_lengths_KxN1x2 = torch.stack(
+            [ms["branch1_lengths_Kxr"], ms["branch2_lengths_Kxr"]], 2
+        )
 
         # ===== return final results =====
 
@@ -519,6 +522,7 @@ class VCSMC(nn.Module):
             "log_ZCSMC": log_ZCSMC,
             "log_likelihood_K": ms["log_likelihood_K"],
             "merge_indexes_KxN1x2": merge_indexes_KxN1x2,
+            "branch_lengths_KxN1x2": branch_lengths_KxN1x2,
             "best_newick_tree": best_newick_tree,
             "best_merge_indexes_N1x2": merge_indexes_KxN1x2[best_tree_idx],
             "best_embeddings_N1xD": ms["embeddings_KxrxD"][best_tree_idx],
