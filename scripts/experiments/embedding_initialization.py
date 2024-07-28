@@ -1,5 +1,5 @@
-import torch
 import typer
+from torch.optim.adam import Adam
 
 from vcsmc import *
 
@@ -39,7 +39,7 @@ def embedding_initialization(
 
             vcsmc = VCSMC(q_matrix_decoder, proposal, N=N, K=K).to(device)
 
-            optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
+            optimizer = Adam(vcsmc.parameters(), lr=lr)
 
             train(
                 vcsmc,

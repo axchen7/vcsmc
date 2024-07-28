@@ -1,7 +1,7 @@
 from typing import Annotated, Optional
 
-import torch
 import typer
+from torch.optim.adam import Adam
 
 from vcsmc import *
 
@@ -57,7 +57,7 @@ def hyp_train(
         checkpoint_grads=checkpoint_grads,
     ).to(device)
 
-    optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr)
+    optimizer = Adam(vcsmc.parameters(), lr=lr)
 
     train(
         vcsmc,

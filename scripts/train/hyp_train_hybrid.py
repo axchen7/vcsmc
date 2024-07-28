@@ -1,7 +1,7 @@
 from typing import Annotated, Optional
 
-import torch
 import typer
+from torch.optim.adam import Adam
 
 from vcsmc import *
 
@@ -66,7 +66,7 @@ def hyp_train_hybrid(
         checkpoint_grads=checkpoint_grads,
     ).to(device)
 
-    optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr1)
+    optimizer = Adam(vcsmc.parameters(), lr=lr1)
 
     train(
         vcsmc,
@@ -116,7 +116,7 @@ def hyp_train_hybrid(
         checkpoint_grads=checkpoint_grads,
     ).to(device)
 
-    optimizer = torch.optim.Adam(vcsmc.parameters(), lr=lr2)
+    optimizer = Adam(vcsmc.parameters(), lr=lr2)
 
     train(
         vcsmc,

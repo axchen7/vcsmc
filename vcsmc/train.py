@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from Bio import Phylo
 from torch import Tensor
+from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -45,12 +47,12 @@ def get_checkpoints_dir(run_name: str | None = None) -> str:
 
 def train(
     vcsmc: VCSMC,
-    optimizer: torch.optim.Optimizer,
+    optimizer: Optimizer,
     taxa_N: list[str],
     data_NxSxA: Tensor,
     file: str,
     *,
-    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
+    lr_scheduler: LRScheduler | None = None,
     root: str | None = None,
     epochs: int,
     start_epoch: int = 0,
