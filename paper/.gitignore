@@ -1,0 +1,10 @@
+# latex outputs
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+
+# paper pdf
+*.pdf
