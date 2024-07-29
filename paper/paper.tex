@@ -34,6 +34,15 @@
 \usepackage{xcolor}         % colors
 
 
+% additional packages
+\usepackage{siunitx}
+\usepackage{physics}
+
+
+% additional declarations
+\DeclareMathOperator{\arcosh}{arcosh}
+
+
 \title{Hyperbolic SMC: a Variational Proposal for Sequential Monte Carlo Phylogenetic Inference}
 
 
@@ -68,6 +77,91 @@
 \begin{abstract}
   Variational combinatorial sequential Monte Carlo (VCSMC) provides a robust and flexible framework for learning distributions over phylogenetic state space. In the original VCSMC implementation, learnable branch length parameters are linked to each coalescent event. We propose a new variational proposal distribution in which the tips of the phylogenetic tree are embedded in a hyperbolic latent space that captures the evolutionary distance between biological sequences. We show that our proposal parameters can be efficiently optimized to maximize the evidence lower bound (ELBO) using stochastic gradient descent. Our method, Hyperbolic SMC, produces likelihood estimates that are competitive with state-of-the-art combinatorial sequential Monte Carlo (CSMC) methods. Hyperbolic SMC produces tight likelihood estimates on even very large datasets, requires no preliminary tree search, and is highly parallelized to take advantage of modern GPUs.
 \end{abstract}
+
+\section{Introduction}
+
+
+\section{Background}
+
+
+\section{The Hyperbolic SMC proposal}
+
+
+Consider constructing a binary phylogenetic tree over $N$ biological sequences. In the original VCSMC proposal, $2(N-1)$ parameters capture the distributions of branches emanating from the $N-1$ internal nodes. A key drawback is that the parameters are identified by coalescent event order, which means the role of each parameter is sensitive to the random order in which nodes are coalesced.
+
+
+The central idea behind Hyperbolic SMC is to parameterize the branch length distributions by embedding the biological sequences into a hyperbolic latent space, such that distances in this space correspond roughly to evolutionary distances between sequences. The Hyperbolic SMC proposal can be explained in three parts:
+
+
+\begin{enumerate}
+  \item How are biological sequences (tree tips) embedded into latent space?
+  \item Given the embeddings of the $N$ tree tips, and prescribed a tree topology, how are the $N-1$ internal nodes embedded?
+  \item For a given branch, how to the embeddings of the two terminal nodes determine the distribution from which the branch length is sampled?
+\end{enumerate}
+
+
+\subsection{Embedding biological sequences}
+
+
+% TODO cite? (https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance)
+Many schemes exist for embedding biological sequences, characterized primarily by the embedding dimensionality and distance metric used. Hyperbolic SMC uses the Poincaré ball model, in which embeddings exist in a $D$-dimensional vector space. The distance between vectors $u$ and $v$ is given by
+
+
+\begin{equation}
+  d(u, v) = \arcosh\!\qty(1 + 2 \frac{\norm{u - v}^2}{(1 - \norm{u}^2)(1 - \norm{v}^2)}) \; .
+  \label{eq:hyp-distance}
+  \footnote{The gradient of $\arcosh(\cdot)$ is unbounded as its argument approaches $1$. We solve this by adding a small $\epsilon \approx \num{1e-7}$ to the argument.}
+\end{equation}
+
+
+In this raw form, every embedding $v$ must satisfy $\norm{v} < 1$. However, even if all embeddings satisfy this condition initially, gradient updates may push embeddings outside the unit ball. To solve this, we represent ``raw'' embeddings as vectors $v' \in \mathbb{R}^D$ that are then ``projected'' into the unit ball under a transformation that affects only magnitude:
+
+
+\begin{equation}
+  \norm{v} = \sqrt{1 - \exp(-\norm{v'}^2)} \; .
+\end{equation}
+
+
+Under this particular transformation, the fraction in \ref{eq:hyp-distance} takes a convenient form that is everywhere positive and continuous with respect to the raw embeddings $u'$ and $v'$:
+
+
+\begin{equation}
+  d(u, v) = \arcosh\!\qty(1 + 2 \, \norm{u - v}^2 \exp(\norm{u'}^2) \exp(\norm{v'}^2)) \; .
+\end{equation}
+
+
+% TODO cite (find that paper that projected onto a hypersphere)
+Experimentally, this technique yields better results than simply projecting onto a hypersphere of learnable radius.
+
+
+% TODO mention that D=2 is sufficient, and the 2D Poincaré disk can be easily visualized
+
+
+\subsection{Embedding internal nodes}
+
+
+\subsection{Sampling branch lengths}
+
+
+\subsection{Nested Hyperbolic SMC}
+
+
+\subsection{Two-phased training}
+
+
+\section{Computational optimizations}
+
+
+\subsection{The hash trick}
+
+
+\subsection{Float32 precision}
+
+
+\section{Experiments}
+
+
+\section{Discussion}
 
 
 \section{Submission of papers to NeurIPS 2024}
