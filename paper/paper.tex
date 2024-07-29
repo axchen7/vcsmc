@@ -37,6 +37,8 @@
 % additional packages
 \usepackage{siunitx}
 \usepackage{physics}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 
 
 % additional declarations
@@ -85,6 +87,9 @@
 
 
 \section{The Hyperbolic SMC proposal}
+
+
+\subsection{Motivation}
 
 
 Consider constructing a binary phylogenetic tree over $N$ biological sequences. In the original VCSMC proposal, $2(N-1)$ parameters capture the distributions of branches emanating from the $N-1$ internal nodes. A key drawback is that the parameters are identified by coalescent event order, which means the role of each parameter is sensitive to the random order in which nodes are coalesced.
@@ -140,7 +145,66 @@ Experimentally, this technique yields better results than simply projecting onto
 \subsection{Embedding internal nodes}
 
 
+At each coalescent event, two trees from the forest are selected uniformly to be merged under a new internal node. Hyperbolic SMC requires a deterministic function that maps the embeddings of two tree roots to the embedding of the new internal node. A reasonable choice is the midpoint of the geodesic between the two roots. However, a desirable property is that the internal node falls closer to the origin than either of the two roots. We want trees to grow outward so that child nodes can leverage the increased space toward the boundary of the unit ball.
+
+% TODO run an experiment to test different internal embedding functions
+An improved heuristic is to first project the further root node onto the same hypersphere as the closer root node. Then, the geodesic midpoint is taken as the new internal node. A key requirement of the embedding function is that internal node embeddings are differentiable with respect to the embeddings of their subtree roots. This allows all internal embeddings to be optimized indirectly via gradient steps on the tip embeddings.
+
+
+% TODO write up the math for the geodesic midpoint, which is simpler in the case that the two roots are already on the same hypersphere
+
+
 \subsection{Sampling branch lengths}
+
+
+% TODO test log normal vs "squared normal" again
+Ultimately, after selecting two trees to merge at a coalescent event, we must manifest the two branch length distributions. Whichever class of distributions is used, the child-parent embedding distances should govern the mean of the distribution. The original VCSMC proposal uses exponential distribution. However, we adopt the commonly used log-normal distribution.
+
+
+At each coalescent event, the two branch lengths are sampled independently from log-normal distributions with means equal to the embedding distances and variances equal to a global learnable parameter. The reparameterization trick is used to propagate gradients through the sampling process to the embeddings.
+
+
+\subsection{Implementation}
+
+
+Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits into the VCSMC framework.
+
+
+% TODO replace this with Hyperbolic SMC
+\begin{algorithm}
+  \caption{Hyperbolic Sequential Monte Carlo}
+  \label{alg:hyperbolic-smc}
+  \begin{algorithmic}[1]
+    \Require $\mathbf{Y} = \{Y_1, \cdots, Y_M\} \in \Omega^{N \times M}$, $\theta = (Q, \{\lambda_i\}_{i=1}^{|E|})$
+    \State \textbf{Initialization.} $\forall k, s_0^k \leftarrow \bot, w_0^k \leftarrow 1/K$
+    \For{$r = 1$ to $R = N - 1$}
+    \For{$k = 1$ to $K$}
+    \State \textbf{Resample} $\mathbb{P}(a_{r-1}^k = i) = \frac{w_{r-1}^i}{\sum_{l=1}^K w_{r-1}^l}$
+    \For{$i = 1$ to $L = \binom{N-r}{2}$}
+    \For{$m = 1$ to $M$}
+    \State \textbf{Form look-ahead partial state}
+    \[
+      s_r^{k,m}[i] \sim q(\cdot|s_{r-1}^{a_{r-1}^k})
+    \]
+    \State \textbf{Compute potentials}
+    \[
+      w_r^{k,m}[i] = \frac{\pi(s_r^{k,m}[i]) \cdot \nu^{-}(s_{r-1}^{a_{r-1}^k})}{\pi(s_{r-1}^{a_{r-1}^k}) q(s_r^{k,m}[i] | s_{r-1}^{a_{r-1}^k})}
+    \]
+    \EndFor
+    \EndFor
+    \State \textbf{Extend partial state}
+    \[
+      s_r^k = s_r^{k,J}[I], \quad \mathbb{P}(I = i, J = j) = \frac{w_r^{k,j}[i]}{\sum_{l=1}^L \sum_{m=1}^M w_r^{k,m}[l]}
+    \]
+    \State \textbf{Compute weights}
+    \[
+      w_r^k = \frac{1}{ML} \sum_{i=1}^L \sum_{m=1}^M w_r^{k,m}[i]
+    \]
+    \EndFor
+    \EndFor
+    \Ensure $s_{1:R}^{1:K}, w_{1:R}^{1:K}$
+  \end{algorithmic}
+\end{algorithm}
 
 
 \subsection{Nested Hyperbolic SMC}
