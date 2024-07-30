@@ -212,7 +212,7 @@ Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits
     \State
     Update tree root embeddings
     \[
-      \qty{v_r^{k,1}, \cdots, v_r^{k,N-r}} \leftarrow \qty(\qty{v_{r-1}^{k,1}, \cdots, v_{r-1}^{k,N-r+1}} \setminus \qty{v_{r-1}^{t_\text{left}}, v_{r-1}^{t_\text{right}}}) \cup \qty{v_\text{parent}}
+      \qty{v_r^{k,1}, \cdots, v_r^{k,N-r}} \leftarrow \qty(\qty{v_{r-1}^{k,1}, \cdots, v_{r-1}^{k,N-r+1}} \setminus \qty{v_{r-1}^{k,t_\text{left}}, v_{r-1}^{k,t_\text{right}}}) \cup \qty{v_\text{parent}}
     \]
     \EndFor
     \EndFor
