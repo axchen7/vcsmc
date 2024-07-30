@@ -161,7 +161,7 @@ An improved heuristic is to first project the further root node onto the same hy
 Ultimately, after selecting two trees to merge at a coalescent event, we must manifest the two branch length distributions. Whichever class of distributions is used, the child-parent embedding distances should govern the mean of the distribution. The original VCSMC proposal uses exponential distribution. However, we adopt the commonly used log-normal distribution.
 
 
-At each coalescent event, the two branch lengths are sampled independently from log-normal distributions with means equal to the embedding distances and variances equal to a global learnable parameter. The reparameterization trick is used to propagate gradients through the sampling process to the embeddings.
+At each coalescent event, the two branch lengths are sampled independently from log-normal distributions with medians equal to the embedding distances and variances equal to a global learnable parameter. The reparameterization trick is used to propagate gradients through the sampling process to the embeddings.
 
 
 \subsection{Implementation}
@@ -175,34 +175,48 @@ Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits
   \caption{Hyperbolic Sequential Monte Carlo}
   \label{alg:hyperbolic-smc}
   \begin{algorithmic}[1]
-    \Require $\mathbf{Y} = \{Y_1, \cdots, Y_M\} \in \Omega^{N \times M}$, $\theta = (Q, \{\lambda_i\}_{i=1}^{|E|})$
-    \State \textbf{Initialization.} $\forall k, s_0^k \leftarrow \bot, w_0^k \leftarrow 1/K$
-    \For{$r = 1$ to $R = N - 1$}
-    \For{$k = 1$ to $K$}
-    \State \textbf{Resample} $\mathbb{P}(a_{r-1}^k = i) = \frac{w_{r-1}^i}{\sum_{l=1}^K w_{r-1}^l}$
-    \For{$i = 1$ to $L = \binom{N-r}{2}$}
-    \For{$m = 1$ to $M$}
-    \State \textbf{Form look-ahead partial state}
+    \State \textbf{Input:} $\theta = (Q, v_0^{1:N}, \sigma)$
+    \State Initialize $\forall k \in [K], s_0^k \leftarrow \bot, w_0^k \leftarrow 1/K$
+    \State Initialize $\forall k \in [K], \forall n \in [N], v_0^{k,n} \leftarrow v_0^n$
+    \For{$r = 1$ \textbf{to} $R = N - 1$}
+    \For{$k \in [K]$}
+    \State Resample particle
     \[
-      s_r^{k,m}[i] \sim q(\cdot|s_{r-1}^{a_{r-1}^k})
+      \mathbb{P}(i_\text{resample} = i) = \frac{w_{r-1}^i}{\sum_{l=1}^K w_{r-1}^l} \; , \forall \, i \in [K]
     \]
-    \State \textbf{Compute potentials}
+    \State Sample two trees uniformly
     \[
-      w_r^{k,m}[i] = \frac{\pi(s_r^{k,m}[i]) \cdot \nu^{-}(s_{r-1}^{a_{r-1}^k})}{\pi(s_{r-1}^{a_{r-1}^k}) q(s_r^{k,m}[i] | s_{r-1}^{a_{r-1}^k})}
+      \mathbb{P}(t_\text{left} = i, t_\text{right} = j) = \frac{1}{\binom{N-r+1}{2}} , \; \forall \, i < j
+    \]
+    \State Form internal embedding $v_\text{parent}$ from $v_{r-1}^{k,t_\text{left}}, v_{r-1}^{k,t_\text{right}}$
+    \State Compute parent-child distances
+    \[
+      d_\text{left} = d\qty(v_{r-1}^{k,t_\text{left}}, v_\text{parent}) \;,\; d_\text{right} = d\qty(v_{r-1}^{k,t_\text{right}}, v_\text{parent})
+    \]
+    \State Sample branch lengths from log-normal distributions (with reparameterization trick)
+    \[
+      b_\text{left} = \exp(\log(d_\text{left}) + \sigma Z_\text{left}) \;,\; b_\text{right} = \exp(\log(d_\text{right}) + \sigma Z_\text{right})
+    \]
+    \[
+      Z_\text{left}, Z_\text{right} \sim \mathcal{N}(0, 1)
+    \]
+    \State Form new partial state $s_r^k$ by merging trees $t_\text{left}, t_\text{right}$
+    \State Compute proposal probability
+    \[
+      q(s_r^k | s_{r-1}^{i_\text{resample}}) = \mathbb{P}(t_\text{left} = i, t_\text{right} = j) \cdot f_\text{log-normal}(b_\text{left} | d_\text{left}, \sigma) \cdot f_\text{log-normal}(b_\text{right} | d_\text{right}, \sigma)
+    \]
+    \State Compute weight
+    \[
+      w_r^k = \frac{\pi(s_r^k) \cdot \nu^-(s_{r-1}^{i_\text{resample}})}{\pi(s_{r-1}^{i_\text{resample}}) \cdot  q(s_r^k | s_{r-1}^{i_\text{resample}})}
+    \]
+    \State
+    Update tree root embeddings
+    \[
+      \qty{v_r^{k,1}, \cdots, v_r^{k,N-r}} \leftarrow \qty(\qty{v_{r-1}^{k,1}, \cdots, v_{r-1}^{k,N-r+1}} \setminus \qty{v_{r-1}^{t_\text{left}}, v_{r-1}^{t_\text{right}}}) \cup \qty{v_\text{parent}}
     \]
     \EndFor
     \EndFor
-    \State \textbf{Extend partial state}
-    \[
-      s_r^k = s_r^{k,J}[I], \quad \mathbb{P}(I = i, J = j) = \frac{w_r^{k,j}[i]}{\sum_{l=1}^L \sum_{m=1}^M w_r^{k,m}[l]}
-    \]
-    \State \textbf{Compute weights}
-    \[
-      w_r^k = \frac{1}{ML} \sum_{i=1}^L \sum_{m=1}^M w_r^{k,m}[i]
-    \]
-    \EndFor
-    \EndFor
-    \Ensure $s_{1:R}^{1:K}, w_{1:R}^{1:K}$
+    \State \Return $s_{1:R}^{1:K}, w_{1:R}^{1:K}$
   \end{algorithmic}
 \end{algorithm}
 
