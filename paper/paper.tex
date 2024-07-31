@@ -95,14 +95,17 @@
 Consider constructing a binary phylogenetic tree over $N$ biological sequences. In the original VCSMC proposal, $2(N-1)$ parameters capture the distributions of branches emanating from the $N-1$ internal nodes. A key drawback is that the parameters are identified by coalescent event order, which means the role of each parameter is sensitive to the random order in which nodes are coalesced.
 
 
-The central idea behind Hyperbolic SMC is to parameterize the branch length distributions by embedding the biological sequences into a hyperbolic latent space, such that distances in this space correspond roughly to evolutionary distances between sequences. The Hyperbolic SMC proposal can be explained in three parts:
+The central idea behind Hyperbolic SMC is to parameterize the branch length distributions by embedding the biological sequences into a hyperbolic latent space, such that distances in this space correspond roughly to evolutionary distances between sequences. The Hyperbolic SMC proposal can be broken into three main tasks:
 
 
 \begin{enumerate}
-  \item How are biological sequences (tree tips) embedded into latent space?
-  \item Given the embeddings of the $N$ tree tips, and prescribed a tree topology, how are the $N-1$ internal nodes embedded?
-  \item For a given branch, how do the embeddings of the two terminal nodes determine the distribution from which the branch length is sampled?
+  \item Embed biological sequences (tree tips) into latent space.
+  \item Given the embeddings of the $N$ tree tips, and prescribed a tree topology, derive embeddings for the $N-1$ internal nodes.
+  \item Sample branch lengths from a distribution parameterized by the embeddings of the two terminal nodes.
 \end{enumerate}
+
+
+% TODO explain why hyperbolic space is a good choice for tree embeddings
 
 
 \subsection{Embedding biological sequences}
