@@ -3,7 +3,6 @@ import os
 from datetime import datetime
 
 import wandb
-
 from scripts.train.hyp_train_hybrid import hyp_train_hybrid
 from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
 from vcsmc.utils.wandb_utils import WANDB_PROJECT, WandbRunType
@@ -53,6 +52,7 @@ def hyp_smc_benchmark():
                 ll_mean, ll_std_dev = estimate_latest_run_ll(ESTIMATE_LL_SAMPLES)
             except Exception as e:
                 print(f"Error while processing {dataset}: {e}")
+                wandb.finish(exit_code=1)
                 continue
 
             ll_mean = round(ll_mean, 2)
