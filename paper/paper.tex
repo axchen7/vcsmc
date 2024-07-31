@@ -37,6 +37,7 @@
 % additional packages
 \usepackage{siunitx}
 \usepackage{physics}
+\usepackage{cancel}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 
@@ -209,11 +210,11 @@ Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits
     \State Form new partial state $s_r^k$ by merging trees $t_\text{left}, t_\text{right}$
     \State Compute proposal probability
     \[
-      q(s_r^k | s_{r-1}^{i_\text{resample}}) = \mathbb{P}(t_\text{left} = i, t_\text{right} = j) \cdot f_\text{log-normal}(b_\text{left} | d_\text{left}, \sigma) \cdot f_\text{log-normal}(b_\text{right} | d_\text{right}, \sigma)
+      q\qty(s_r^k | s_{r-1}^{i_\text{resample}}) = \mathbb{P}(t_\text{left} = i, t_\text{right} = j) \cdot f_\text{log-normal}(b_\text{left} | d_\text{left}, \sigma) \cdot f_\text{log-normal}(b_\text{right} | d_\text{right}, \sigma)
     \]
     \State Compute weight
     \[
-      w_r^k = \frac{\pi(s_r^k) \cdot \nu^-(s_{r-1}^{i_\text{resample}})}{\pi(s_{r-1}^{i_\text{resample}}) \cdot  q(s_r^k | s_{r-1}^{i_\text{resample}})}
+      w_r^k = \frac{\pi\qty(s_r^k) \cdot \nu^-\qty(s_{r-1}^{i_\text{resample}})}{\pi\qty(s_{r-1}^{i_\text{resample}}) \cdot  q\qty(s_r^k | s_{r-1}^{i_\text{resample}})}
     \]
     \State
     Update tree root embeddings
@@ -231,6 +232,19 @@ Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits
 
 
 \subsection{Two-phased training}
+
+
+Hyperbolic SMC converges especially fast when the variance in the likelihood estimate is minimized. A large share of the variance is due to branch length sampling. One can imagine an alternate Hyperbolic SMC proposal where parent-child embedding distance are taken directly as branch lengths, with no sampling. We must drop the continuous $f_\text{log-normal}(b_\text{left/right} | d_\text{left/right}, \sigma)$ terms from $q(s_r^k | s_{r-1}^{i_\text{resample}})$, but this introduces a bias in the likelihood estimate. To see this effect more clearly, consider the expectation (over topology $\tau$ and branch lengths $\mathcal B$) of the log weights:
+
+
+\begin{equation}
+  \mathbb{E}_{\tau, \mathcal B \sim q\qty(\cdot | s_{r-1}^{i_\text{resample}})} \qty[\log w_r^k]
+  = \dots - \mathbb{E}_{\tau, \mathcal B} \qty[\log q\qty(\tau | s_{r-1}^{i_\text{resample}})]  - \cancel{\mathbb{E}_{\tau, \mathcal B} \qty[\log q\qty(\mathcal B | \tau, s_{r-1}^{i_\text{resample}})]} \; .
+\end{equation}
+
+In the ``deterministic branch length'' setting, we drop the last term the penalizes the ELBO when the branch length distribution is sharply peaked. Namely, we overestimate the ELBO by $O(\log (1/\sigma))$, where $\sigma$ is is the interval over which sampling from $\text{Uniform}(b-\sigma, b+\sigma)$ approximates taking $b$ as the branch length.
+
+In practice, we can form a biased likelihood estimator that---despite not being a valid ELBO---allows us to efficiently optimize the tip embeddings. In a two-phased training scheme, we first optimize embeddings while simultaneously exploring topology space under the low-variance, biased likelihood estimator. Empirically, the learned embeddings form a solid baseline for sampling under the true ELBO (i.e., with proper branch length distributions).
 
 
 \section{Computational optimizations}
