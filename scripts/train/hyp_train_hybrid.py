@@ -104,7 +104,7 @@ def hyp_train_hybrid(
         N=N,
         lookahead_merge=False,
         sample_branches=True,
-        # static_merge_log_weights=static_merge_log_weights,
+        static_merge_log_weights=static_merge_log_weights,
     )
 
     vcsmc = VCSMC(
