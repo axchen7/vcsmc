@@ -167,7 +167,11 @@ At each coalescent event, the two branch lengths are sampled independently from 
 \subsection{Implementation}
 
 
-Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits into the VCSMC framework.
+% TODO cite https://www.stats.ox.ac.uk/~doucet/wang_bouchardcote_doucet_BayesianphylogeneticscombinatorialSMC_JASA2015.pdf
+Algorithm \ref{alg:hyperbolic-smc} outlines how the Hyperbolic SMC proposal fits into the VCSMC framework. At each optimization step, the algorithm takes as input $Q$, the (possibly learnable) transition matrix, $v_0^{1:N}$, the learned embeddings of the $N$ tree tips, and $\sigma$, the global branch length variance. Following the VCSMC framework, at each step $r$, we resample the $k$ particles, then extend each partial state $s_{r-1}^{i_\text{resample}}$ to $s_r^k$ via the proposal distribution $q(\cdot | s_{r-1}^{i_\text{resample}})$. The two chosen trees dictate the new internal embedding $v_\text{parent}$, which sets the branch length distributions. $\nu^-(\cdot)$ corrects for the overcounting problem detailed in [Wang et al]. As in the original VCSMC framework, an unbiased estimate for the marginal likelihood is
+\begin{align*}
+  \hat{\mathcal{Z}}_\text{CSMC} = \prod_{r=1}^R \qty(\frac{1}{K} \sum_{k=1}^K w_r^k) \; .
+\end{align*}
 
 
 % TODO replace this with Hyperbolic SMC
