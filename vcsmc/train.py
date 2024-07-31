@@ -355,7 +355,8 @@ def load_checkpoint(
     def find_best_epoch():
         """Returns the epoch with the highest ZCSMC"""
         results: TrainResults = torch.load(
-            find_most_recent_path(search_dir, "results.pt")
+            find_most_recent_path(search_dir, "results.pt"),
+            weights_only=False,
         )
         # there is no off-by-one error here: say epoch i has the highest
         # pre-update LL, so we want to start at epoch i; in this case,
@@ -370,9 +371,13 @@ def load_checkpoint(
         "checkpoint_*.pt" if start_epoch is None else f"checkpoint_{start_epoch}.pt"
     )
 
-    args: TrainArgs = torch.load(find_most_recent_path(search_dir, "args.pt"))
+    args: TrainArgs = torch.load(
+        find_most_recent_path(search_dir, "args.pt"),
+        weights_only=False,
+    )
     checkpoint: TrainCheckpoint = torch.load(
-        find_most_recent_path(search_dir, checkpoint_glob)
+        find_most_recent_path(search_dir, checkpoint_glob),
+        weights_only=False,
     )
 
     start_epoch = checkpoint["start_epoch"]

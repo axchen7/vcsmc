@@ -50,7 +50,8 @@ def load_log_likelihoods(initial_mean: float):
     run_name = f"Hyp_SMC_init_mean{initial_mean}"
 
     results: TrainResults = torch.load(
-        find_most_recent_path(f"runs/*{run_name}", "results.pt")
+        find_most_recent_path(f"runs/*{run_name}", "results.pt"),
+        weights_only=False,
     )
     return results["log_likelihood_avgs"]
 

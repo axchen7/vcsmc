@@ -96,10 +96,12 @@ def filter_runs(filter_fn: Callable[[TrainCheckpoint, TrainArgs], bool]):
 
         try:
             args: TrainArgs = torch.load(
-                find_most_recent_path(checkpoints_dir, "args.pt")
+                find_most_recent_path(checkpoints_dir, "args.pt"),
+                weights_only=False,
             )
             checkpoint: TrainCheckpoint = torch.load(
-                find_most_recent_path(checkpoints_dir, "checkpoint_*.pt")
+                find_most_recent_path(checkpoints_dir, "checkpoint_*.pt"),
+                weights_only=False,
             )
 
             matches = filter_fn(checkpoint, args)

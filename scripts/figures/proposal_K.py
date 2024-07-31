@@ -84,7 +84,8 @@ def load_log_likelihoods(
         run_name = f"Hyp_NSMC_K{K}"
 
     results: TrainResults = torch.load(
-        find_most_recent_path(f"runs/*{run_name}", "results.pt")
+        find_most_recent_path(f"runs/*{run_name}", "results.pt"),
+        weights_only=False,
     )
     return results["log_likelihood_avgs"]
 
