@@ -118,7 +118,6 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         self.t_inf = t_inf
 
         self.log_Q_matrix_AxA = nn.Parameter(torch.zeros(A, A))
-        self.log_stat_probs_A = nn.Parameter(torch.zeros(A))
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
