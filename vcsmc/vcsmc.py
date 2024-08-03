@@ -126,9 +126,7 @@ class VCSMC(nn.Module):
         embeddings_NxD: Tensor = self.proposal.seq_encoder(data_NxSxA)
         return embeddings_NxD.repeat(self.K, 1, 1)
 
-    def merge_step(
-        self, ms: MergeState, mm: MergeMetadata, indexes_K: Tensor
-    ) -> MergeState:
+    def merge_step(self, ms: MergeState, mm: MergeMetadata) -> MergeState:
         device = mm["device"]
 
         N = mm["N"]
@@ -137,6 +135,11 @@ class VCSMC(nn.Module):
         D = mm["D"]
 
         # ===== resample =====
+
+        # sample indexes_K outside checkpoint so we get a predictable # of
+        # unique particles (under hash trick)
+        resample_distr = torch.distributions.Categorical(logits=ms["log_weight_K"])
+        indexes_K = resample_distr.sample(torch.Size([K]))
 
         merge1_indexes_Kxr = ms["merge1_indexes_Kxr"][indexes_K]
         merge2_indexes_Kxr = ms["merge2_indexes_Kxr"][indexes_K]
@@ -464,11 +467,6 @@ class VCSMC(nn.Module):
 
         # iterate over merge steps
         for _ in range(N - 1):
-            # sample indexes_K outside checkpoint so we get a predictable # of
-            # unique particles (under hash trick)
-            resample_distr = torch.distributions.Categorical(logits=ms["log_weight_K"])
-            indexes_K = resample_distr.sample(torch.Size([K]))
-
             if self.checkpoint_grads:
                 # checkpoint loop body to save memory
                 ms = cast(
@@ -477,13 +475,12 @@ class VCSMC(nn.Module):
                         self.merge_step,
                         ms,
                         mm,
-                        indexes_K,
                         use_reentrant=False,
-                        preserve_rng_state=False,
+                        preserve_rng_state=True,
                     ),
                 )
             else:
-                ms = self.merge_step(ms, mm, indexes_K)
+                ms = self.merge_step(ms, mm)
 
         # ===== compute ZCSMC =====
 
