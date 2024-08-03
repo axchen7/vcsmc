@@ -27,7 +27,6 @@ __all__ = ["VCSMC"]
 
 
 class MergeMetadata(TypedDict):
-    device: torch.device
     N: int
     A: int
     K: int
@@ -127,8 +126,6 @@ class VCSMC(nn.Module):
         return embeddings_NxD.repeat(self.K, 1, 1)
 
     def merge_step(self, ms: MergeState, mm: MergeMetadata) -> MergeState:
-        device = mm["device"]
-
         N = mm["N"]
         A = mm["A"]
         K = mm["K"]
@@ -427,15 +424,12 @@ class VCSMC(nn.Module):
                 "Warning: using hash trick with a proposal that doesn't produce deterministic branch lengths!"
             )
 
-        device = data_batched_NxSxA.device
-
         N = data_batched_NxSxA.shape[0]
         A = data_batched_NxSxA.shape[2]
         K = self.K
         D = self.proposal.seq_encoder.D
 
         mm: MergeMetadata = {
-            "device": device,
             "N": N,
             "A": A,
             "K": K,
