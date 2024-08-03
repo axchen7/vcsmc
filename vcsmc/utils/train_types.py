@@ -1,8 +1,8 @@
 from typing import TypedDict
 
 from torch import Tensor
-from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.optimizer import Optimizer
 
 from ..vcsmc import VCSMC
 
@@ -15,6 +15,7 @@ class TrainArgs(TypedDict):
     file: str
     root: str | None
     epochs: int
+    grad_accumulation_steps: int
     sites_batch_size: int | None
     sample_taxa_count: int | None
     run_name: str | None

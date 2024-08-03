@@ -12,6 +12,7 @@ def hyp_train(
     epochs: Annotated[int, typer.Option()],
     K: Annotated[int, typer.Option()],
     D: int = 2,
+    grad_accumulation_steps: int = 1,
     sites_batch_size: Optional[int] = None,
     jc69: bool = False,
     hyperbolic: bool = False,
@@ -66,6 +67,7 @@ def hyp_train(
         data_NxSxA,
         file,
         epochs=epochs,
+        grad_accumulation_steps=grad_accumulation_steps,
         sites_batch_size=sites_batch_size,
         run_name=run_name,
     )

@@ -56,6 +56,7 @@ def train(
     root: str | None = None,
     epochs: int,
     start_epoch: int = 0,
+    grad_accumulation_steps: int = 1,
     sites_batch_size: int | None = None,
     sample_taxa_count: int | None = None,
     run_name: str | None = None,
@@ -87,6 +88,7 @@ def train(
             "file": file,
             "root": root,
             "epochs": epochs,
+            "grad_accumulation_steps": grad_accumulation_steps,
             "sites_batch_size": sites_batch_size,
             "sample_taxa_count": sample_taxa_count,
             "run_name": run_name,
@@ -137,16 +139,16 @@ def train(
 
     def train_step(
         dataloader: DataLoader,
-    ) -> tuple[float, Tensor | None, float, str, VcsmcResult | None]:
+    ) -> tuple[float, list[float] | None, float, str, VcsmcResult | None]:
         """
         Trains one epoch, iterating through batches.
 
         Returns:
             log_ZCSMC_sum: Sum across batches of ZCSMCs.
-            log_likelihood_K: log likelihoods, or None if there are multiple batches.
+            log_likelihoods: log likelihoods (across all grad accumulation steps), or None if there are multiple batches.
             log_likelihood_sum: Sum across batches of log likelihoods averaged across particles.
-            best_newick_tree: best of the K newick trees from the first epoch.
-            result: Vcsmc result, or None if there are multiple batches.
+            best_newick_tree: best of the K newick trees from the first epoch (last grad accumulation step).
+            result: Vcsmc result, or None if there are multiple batches (last grad accumulation step).
         """
 
         log_ZCSMC_sum = 0.0
@@ -154,7 +156,7 @@ def train(
 
         best_newick_tree = ""
 
-        log_likelihood_K = None
+        log_likelihoods: list[float] | None = None
         result: VcsmcResult | None = None
 
         for data_batched_SxNxA, site_positions_batched_SxSfull in dataloader:
@@ -173,41 +175,49 @@ def train(
                 samp_data_NxSxA = data_NxSxA
                 samp_data_batched_NxSxA = data_batched_NxSxA
 
-            cur_result: VcsmcResult = vcsmc(
-                samp_taxa_N,
-                samp_data_NxSxA,
-                samp_data_batched_NxSxA,
-                site_positions_batched_SxSfull,
-            )
-            result = cur_result
+            log_likelihoods = []
 
-            log_ZCSMC = cur_result["log_ZCSMC"]
-            log_likelihood_K = cur_result["log_likelihood_K"]
+            for _ in range(grad_accumulation_steps):
+                cur_result: VcsmcResult = vcsmc(
+                    samp_taxa_N,
+                    samp_data_NxSxA,
+                    samp_data_batched_NxSxA,
+                    site_positions_batched_SxSfull,
+                )
+                result = cur_result
 
-            log_likelihood_avg = log_likelihood_K.mean()
+                log_ZCSMC = cur_result["log_ZCSMC"]
+                log_likelihood_K = cur_result["log_likelihood_K"]
 
-            if best_newick_tree == "":
-                best_newick_tree = cur_result["best_newick_tree"]
+                log_likelihood_avg = log_likelihood_K.mean()
 
-            loss = -log_ZCSMC
+                if best_newick_tree == "":
+                    best_newick_tree = cur_result["best_newick_tree"]
 
-            loss.backward()
+                loss = -log_ZCSMC
+                loss = loss / grad_accumulation_steps
+                loss.backward()
+
+                log_ZCSMC_sum += log_ZCSMC.item() / grad_accumulation_steps
+                log_likelihood_sum += (
+                    log_likelihood_avg.item() / grad_accumulation_steps
+                )
+
+                log_likelihoods.extend(log_likelihood_K.tolist())
+
             optimizer.step()
             optimizer.zero_grad()
-
-            log_ZCSMC_sum += log_ZCSMC.item()
-            log_likelihood_sum += log_likelihood_avg.item()
 
         if lr_scheduler is not None:
             lr_scheduler.step()
 
         if len(dataloader) > 1:
-            log_likelihood_K = None
+            log_likelihoods = None
             result = None
 
         return (
             log_ZCSMC_sum,
-            log_likelihood_K,
+            log_likelihoods,
             log_likelihood_sum,
             best_newick_tree,
             result,
@@ -255,7 +265,7 @@ def train(
 
         (
             log_ZCSMC_sum,
-            log_likelihood_K,
+            log_likelihoods,
             log_likelihood_avg,
             best_newick_tree,
             result,
@@ -272,8 +282,8 @@ def train(
             "Log likelihood avg": log_likelihood_avg,
         }
 
-        if log_likelihood_K is not None:
-            log["Log likelihoods"] = wandb.Histogram(log_likelihood_K.tolist())
+        if log_likelihoods is not None:
+            log["Log likelihoods"] = wandb.Histogram(log_likelihoods)
 
         if not isinstance(
             vcsmc.q_matrix_decoder.site_positions_encoder, DummySitePositionsEncoder
