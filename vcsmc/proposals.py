@@ -261,8 +261,6 @@ class EmbeddingProposal(Proposal):
         )
         self.static_merge_log_weights = static_merge_log_weights  # on CPU
 
-        self.manifold = PoincareBall()
-
     def extra_repr(self) -> str:
         return custom_module_repr(
             {
@@ -398,12 +396,14 @@ class EmbeddingProposal(Proposal):
                 child1_D: Tensor,
                 child2_D: Tensor,
             ):
+                manifold = PoincareBall()
+
                 # use transported samples as the new embeddings
                 embedding_normalized_D = self.distance.normalize(
                     embedding_D.unsqueeze(0)
                 ).squeeze(0)
-                transported_D = self.manifold.transp0(embedding_normalized_D, samples_D)
-                embedding_normalized_D = self.manifold.expmap(
+                transported_D = manifold.transp0(embedding_normalized_D, samples_D)
+                embedding_normalized_D = manifold.expmap(
                     embedding_normalized_D, transported_D
                 )
                 embedding_D = self.distance.unnormalize(
