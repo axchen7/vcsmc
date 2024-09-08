@@ -417,22 +417,18 @@ class EmbeddingProposal(Proposal):
 
                 return branches_2, (branch1, branch2, embedding_D)
 
-            # jacobian_KJxDx2, (branch1_KJ, branch2_KJ, embedding_KJxD) = torch.vmap(
-            #     torch.func.jacrev(
-            #         samples_to_branches_and_embedding, argnums=0, has_aux=True
-            #     )
-            # )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
-
-            _, (branch1_KJ, branch2_KJ, embedding_KJxD) = torch.vmap(
-                samples_to_branches_and_embedding
+            jacobian_KJxDx2, (branch1_KJ, branch2_KJ, embedding_KJxD) = torch.vmap(
+                torch.func.jacfwd(
+                    samples_to_branches_and_embedding, argnums=0, has_aux=True
+                )
             )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
-            jacobian_KJxDx2 = torch.eye(2, device=device).expand(K * J, D, 2)
 
             # requires D=2 !
             determinants_KJ = jacobian_KJxDx2.det().abs()
             log_deteterminants_KJ = determinants_KJ.log()
 
-            log_branches_prob_KJ = sample_logprobs_KJ + log_deteterminants_KJ
+            # must divide by the jacobian determinant
+            log_branches_prob_KJ = sample_logprobs_KJ - log_deteterminants_KJ
 
         else:
             branch1_KJ: Tensor = self.distance(child1_KJxD, embedding_KJxD)
