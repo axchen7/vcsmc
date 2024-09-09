@@ -403,9 +403,10 @@ class EmbeddingProposal(Proposal):
                     embedding_D.unsqueeze(0)
                 ).squeeze(0)
                 transported_D = manifold.transp0(embedding_normalized_D, samples_D)
+                # expmap only works on CPU
                 embedding_normalized_D = manifold.expmap(
-                    embedding_normalized_D, transported_D
-                )
+                    embedding_normalized_D.to("cpu"), transported_D.to("cpu")
+                ).to(device)
                 embedding_D = self.distance.unnormalize(
                     embedding_normalized_D.unsqueeze(0)
                 ).squeeze(0)
