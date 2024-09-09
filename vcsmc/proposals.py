@@ -5,16 +5,9 @@ from torch import Tensor, nn
 
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
+from .manifolds import PoincareBall
 from .utils.repr_utils import custom_module_repr
 from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2, hash_forest_K
-
-# importing geoopt the first time fails for some reason, but subsequent imports work
-try:
-    import geoopt
-except:
-    pass
-
-from geoopt.manifolds import PoincareBall
 
 __all__ = ["Proposal", "ExpBranchProposal", "EmbeddingProposal"]
 
@@ -382,7 +375,7 @@ class EmbeddingProposal(Proposal):
         if self.sample_branches:
             zero_D = self.zero.expand(D)
             # TODO use self.sample_branches_sigma() instead of 0.1
-            cov_DxD = torch.eye(D, device=device) * 0.1**2
+            cov_DxD = torch.eye(D, device=device) * 0.01**2
             distr = torch.distributions.MultivariateNormal(zero_D, cov_DxD)
             samples_KJxD = distr.sample(torch.Size([K * J]))
             sample_logprobs_KJ = distr.log_prob(samples_KJxD)
