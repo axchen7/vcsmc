@@ -213,7 +213,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
-        initial_sample_branches_sigma: float = 0.1,
+        sample_branches_sigma: float = 0.01,
         static_merge_log_weights: dict[int, Tensor] | None = None,
     ):
         """
@@ -248,10 +248,7 @@ class EmbeddingProposal(Proposal):
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
-        self.initial_sample_branches_sigma = initial_sample_branches_sigma
-        self.log_sample_branches_sigma = nn.Parameter(
-            torch.tensor(math.log(initial_sample_branches_sigma))
-        )
+        self.sample_branches_sigma = sample_branches_sigma
         self.static_merge_log_weights = static_merge_log_weights  # on CPU
 
     def extra_repr(self) -> str:
@@ -260,15 +257,12 @@ class EmbeddingProposal(Proposal):
                 "lookahead_merge": self.lookahead_merge,
                 "sample_merge_temp": self.sample_merge_temp,
                 "sample_branches": self.sample_branches,
-                "initial_sample_branches_sigma": self.initial_sample_branches_sigma,
+                "sample_branches_sigma": self.sample_branches_sigma,
                 "static_merge_log_weights": (
                     "provided" if self.static_merge_log_weights else None
                 ),
             }
         )
-
-    def sample_branches_sigma(self):
-        return self.log_sample_branches_sigma.exp()
 
     def uses_deterministic_branches(self) -> bool:
         return not self.sample_branches
@@ -374,8 +368,7 @@ class EmbeddingProposal(Proposal):
 
         if self.sample_branches:
             zero_D = self.zero.expand(D)
-            # TODO use self.sample_branches_sigma() instead of 0.1
-            cov_DxD = torch.eye(D, device=device) * 0.01**2
+            cov_DxD = torch.eye(D, device=device) * self.sample_branches_sigma**2
             distr = torch.distributions.MultivariateNormal(zero_D, cov_DxD)
             samples_KJxD = distr.sample(torch.Size([K * J]))
             sample_logprobs_KJ = distr.log_prob(samples_KJxD)
