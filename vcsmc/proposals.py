@@ -433,7 +433,7 @@ class EmbeddingProposal(Proposal):
             )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
 
             jacobian_KJxDx2 = torch.vmap(
-                torch.func.jacfwd(transform_samples_to_branches, argnums=0)
+                torch.func.jacfwd(transform_samples_to_branches, argnums=0)  # type: ignore
             )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
 
             # requires D=2 !
