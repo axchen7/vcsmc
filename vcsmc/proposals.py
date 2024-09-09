@@ -413,14 +413,27 @@ class EmbeddingProposal(Proposal):
                 branch1: Tensor = self.distance(child1_D, embedding_D)
                 branch2: Tensor = self.distance(child2_D, embedding_D)
 
-                branches_2 = torch.stack([branch1, branch2])
+                return branch1, branch2, embedding_D
 
-                return branches_2, (branch1, branch2, embedding_D)
-
-            jacobian_KJxDx2, (branch1_KJ, branch2_KJ, embedding_KJxD) = torch.vmap(
-                torch.func.jacfwd(
-                    samples_to_branches_and_embedding, argnums=0, has_aux=True
+            # for computing jacobian
+            def transform_samples_to_branches(
+                samples_D: Tensor,
+                embedding_D: Tensor,
+                child1_D: Tensor,
+                child2_D: Tensor,
+            ):
+                branch1, branch2, _ = samples_to_branches_and_embedding(
+                    samples_D, embedding_D, child1_D, child2_D
                 )
+                branches_2 = torch.stack([branch1, branch2])
+                return branches_2
+
+            branch1_KJ, branch2_KJ, embedding_KJxD = torch.vmap(
+                samples_to_branches_and_embedding
+            )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
+
+            jacobian_KJxDx2 = torch.vmap(
+                torch.func.jacfwd(transform_samples_to_branches, argnums=0)
             )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
 
             # requires D=2 !
