@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import torch
 from torch import Tensor, nn
 from torch.optim.adam import Adam
@@ -7,6 +8,7 @@ import wandb
 
 from .distances import Hyperbolic
 from .encoders import EmbeddingTableSequenceEncoder
+from .utils.train_utils import fig_to_wandb_image
 from .utils.wandb_utils import WANDB_PROJECT, WandbRunType
 
 __all__ = ["SequenceDistanceEmbeddingInitializer"]
@@ -74,7 +76,14 @@ class SequenceDistanceEmbeddingInitializer(nn.Module):
         # TODO use more sophisticated loss? (see sync notes)
         return nn.functional.mse_loss(hamming_dist_NxN, embedding_dist_NxN)
 
-    def fit(self, data_NxSxA: Tensor, *, epochs: int, lr: float):
+    def fit(
+        self,
+        data_NxSxA: Tensor,
+        *,
+        epochs: int = 10_000,
+        lr: float = 0.001,
+        plot_interval: int = 500,
+    ):
         optimizer = Adam(self.parameters(), lr=lr)
 
         run = wandb.init(
@@ -87,12 +96,20 @@ class SequenceDistanceEmbeddingInitializer(nn.Module):
             optimizer.step()
             optimizer.zero_grad()
 
-            run.log(
-                {
-                    "Loss": loss,
-                    "Hyperbolic scale": self.distance.scale(),
-                },
-                step=epoch,
-            )
+            log = {
+                "Loss": loss,
+                "Hyperbolic scale": self.distance.scale(),
+            }
+
+            if (epoch + 1) % plot_interval == 0 and self.seq_encoder.D == 2:
+                with torch.no_grad():
+                    embeddings_NxD = self.seq_encoder(data_NxSxA)
+                    embeddings_NxD = self.distance.normalize(embeddings_NxD)
+
+                    fig, ax = plt.subplots()
+                    ax.scatter(embeddings_NxD[:, 0], embeddings_NxD[:, 1], s=10)
+                    log["Embeddings"] = fig_to_wandb_image(fig)
+
+            run.log(log, step=epoch)
 
         run.finish()
