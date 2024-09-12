@@ -105,6 +105,7 @@ class SequenceDistanceEmbeddingInitializer(nn.Module):
                 with torch.no_grad():
                     embeddings_NxD = self.seq_encoder(data_NxSxA)
                     embeddings_NxD = self.distance.normalize(embeddings_NxD)
+                    embeddings_NxD = embeddings_NxD.cpu()
 
                     fig, ax = plt.subplots()
                     ax.scatter(embeddings_NxD[:, 0], embeddings_NxD[:, 1], s=10)
