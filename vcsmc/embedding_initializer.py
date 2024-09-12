@@ -108,6 +108,10 @@ class SequenceDistanceEmbeddingInitializer(nn.Module):
 
                     fig, ax = plt.subplots()
                     ax.scatter(embeddings_NxD[:, 0], embeddings_NxD[:, 1], s=10)
+
+                    circle = plt.Circle((0, 0), 1, color="gray", fill=False)  # type: ignore
+                    ax.add_artist(circle)
+
                     log["Embeddings"] = fig_to_wandb_image(fig)
 
             run.log(log, step=epoch)
