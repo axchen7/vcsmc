@@ -230,7 +230,9 @@ class EmbeddingProposal(Proposal):
                 Negative pairwise node distances divided by `sample_merge_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. If None, then a
                 pair of nodes will be sampled uniformly. Only used if `lookahead_merge`is false.
-                TODO bring back descriptions here
+            sample_branches: If True, samples merge embeddings from a wrapped normal distribution.
+                If False, simply use the distance between embeddings as the branch length.
+            sample_branches_sigma: sigma parameter for the wrapped normal distribution.
             static_merge_log_weights: If not None, sets the fixed merge distribution.
                 See compute_merge_log_weights_from_vcsmc(). Tensors should be on the CPU.
         """
