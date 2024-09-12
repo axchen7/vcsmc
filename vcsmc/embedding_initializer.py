@@ -112,6 +112,8 @@ class SequenceDistanceEmbeddingInitializer(nn.Module):
                     circle = plt.Circle((0, 0), 1, color="gray", fill=False)  # type: ignore
                     ax.add_artist(circle)
 
+                    ax.set_aspect("equal")
+
                     log["Embeddings"] = fig_to_wandb_image(fig)
 
             run.log(log, step=epoch)
