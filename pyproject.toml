@@ -12,6 +12,7 @@ dependencies = [
     # sort these alphabetically
     "bio",
     "drawsvg[raster]",
+    "geoopt",
     "hyperbolic",
     "ipykernel",
     "ipywidgets",
