@@ -295,12 +295,6 @@ def train(
         if isinstance(vcsmc.proposal.seq_encoder.distance, Hyperbolic):
             log["Hyperbolic scale"] = vcsmc.proposal.seq_encoder.distance.scale()
 
-        if (
-            isinstance(vcsmc.proposal, EmbeddingProposal)
-            and vcsmc.proposal.sample_branches
-        ):
-            log["Sample branches sigma"] = vcsmc.proposal.sample_branches_sigma()
-
         if (epoch + 1) % 4 == 0:
             # ===== best tree =====
 

@@ -5,7 +5,7 @@ from torch import Tensor, nn
 
 from .distances import Distance
 from .encoders import DummySequenceEncoder, MergeEncoder, SequenceEncoder
-from .utils.distance_utils import EPSILON
+from .manifolds import PoincareBall
 from .utils.repr_utils import custom_module_repr
 from .utils.vcsmc_utils import ArangeFn, gather_K, gather_K2, hash_forest_K
 
@@ -213,7 +213,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
-        initial_sample_branches_sigma: float = 0.1,
+        sample_branches_sigma: float = 0.01,
         static_merge_log_weights: dict[int, Tensor] | None = None,
     ):
         """
@@ -230,9 +230,9 @@ class EmbeddingProposal(Proposal):
                 Negative pairwise node distances divided by `sample_merge_temp` are used log weights.
                 Set to a large value to effectively sample nodes uniformly. If None, then a
                 pair of nodes will be sampled uniformly. Only used if `lookahead_merge`is false.
-            sample_branches: Whether to sample branch lengths from a log normal distribution.
-                If false, simply use the distance between embeddings as the branch length.
-            sample_branches_sigma: sigma parameter for the log normal distribution used to sample branch lengths.
+            sample_branches: If True, samples merge embeddings from a wrapped normal distribution.
+                If False, simply use the distance between embeddings as the branch length.
+            sample_branches_sigma: sigma parameter for the wrapped normal distribution.
             static_merge_log_weights: If not None, sets the fixed merge distribution.
                 See compute_merge_log_weights_from_vcsmc(). Tensors should be on the CPU.
         """
@@ -250,10 +250,7 @@ class EmbeddingProposal(Proposal):
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
-        self.initial_sample_branches_sigma = initial_sample_branches_sigma
-        self.log_sample_branches_sigma = nn.Parameter(
-            torch.tensor(math.log(initial_sample_branches_sigma))
-        )
+        self.sample_branches_sigma = sample_branches_sigma
         self.static_merge_log_weights = static_merge_log_weights  # on CPU
 
     def extra_repr(self) -> str:
@@ -262,15 +259,12 @@ class EmbeddingProposal(Proposal):
                 "lookahead_merge": self.lookahead_merge,
                 "sample_merge_temp": self.sample_merge_temp,
                 "sample_branches": self.sample_branches,
-                "initial_sample_branches_sigma": self.initial_sample_branches_sigma,
+                "sample_branches_sigma": self.sample_branches_sigma,
                 "static_merge_log_weights": (
                     "provided" if self.static_merge_log_weights else None
                 ),
             }
         )
-
-    def sample_branches_sigma(self):
-        return self.log_sample_branches_sigma.exp()
 
     def uses_deterministic_branches(self) -> bool:
         return not self.sample_branches
@@ -282,7 +276,7 @@ class EmbeddingProposal(Proposal):
 
         K = embeddings_KxtxD.shape[0]
         t = embeddings_KxtxD.shape[1]  # number of subtrees
-        r = N - t  # merge step
+        D = embeddings_KxtxD.shape[2]
 
         # ===== determine nodes to merge =====
 
@@ -371,77 +365,88 @@ class EmbeddingProposal(Proposal):
         child2_KJxD = gather_K(embeddings_KJxtxD, idx2_KJ, arange_fn)
 
         embedding_KJxD = self.merge_encoder(child1_KJxD, child2_KJxD)
-        embedding_KxJxD = embedding_KJxD.reshape(K, J, -1)
 
         # ===== sample/get branches parameters =====
 
-        dist1_KJ: Tensor = self.distance(child1_KJxD, embedding_KJxD)
-        dist2_KJ: Tensor = self.distance(child2_KJxD, embedding_KJxD)
-
-        dist1_KxJ = dist1_KJ.reshape(K, J)
-        dist2_KxJ = dist2_KJ.reshape(K, J)
-
         if self.sample_branches:
-            # branch lengths are the random variable Y = X^2, where
-            # X ~ N(sqrt(distance), sigma), with `distance` being the distance
-            # between the children and the merged embedding; Y will be centered
-            # around `distance`
+            zero_D = self.zero.expand(D)
+            cov_DxD = torch.eye(D, device=device) * self.sample_branches_sigma**2
+            distr = torch.distributions.MultivariateNormal(zero_D, cov_DxD)
+            samples_KJxD = distr.sample(torch.Size([K * J]))
+            sample_logprobs_KJ = distr.log_prob(samples_KJxD)
 
-            sigma = self.sample_branches_sigma()
+            # parallel transport and exponential map the samples to the manifold,
+            # with embedding_KJxD as the mean
 
-            # # re-parameterization trick: sample from N(0, 1) and transform to
-            # squared normal distribution (so gradients can flow through the sample)
+            def samples_to_branches_and_embedding(
+                samples_D: Tensor,
+                embedding_D: Tensor,
+                child1_D: Tensor,
+                child2_D: Tensor,
+            ):
+                manifold = PoincareBall()
 
-            normal1_KxJ = torch.randn([K, J], device=device)
-            normal2_KxJ = torch.randn([K, J], device=device)
+                # use transported samples as the new embeddings
+                embedding_normalized_D = self.distance.normalize(
+                    embedding_D.unsqueeze(0)
+                ).squeeze(0)
+                transported_D = manifold.transp0(embedding_normalized_D, samples_D)
+                # expmap only works on CPU
+                embedding_normalized_D = manifold.expmap(
+                    embedding_normalized_D.to("cpu"), transported_D.to("cpu")
+                ).to(device)
+                embedding_D = self.distance.unnormalize(
+                    embedding_normalized_D.unsqueeze(0)
+                ).squeeze(0)
 
-            dist1_sqrt_KxJ = torch.sqrt(dist1_KxJ + EPSILON)
-            dist2_sqrt_KxJ = torch.sqrt(dist2_KxJ + EPSILON)
+                branch1: Tensor = self.distance(child1_D, embedding_D)
+                branch2: Tensor = self.distance(child2_D, embedding_D)
 
-            # X ~ N(sqrt(dist), sigma)
-            X1_KxJ = dist1_sqrt_KxJ + sigma * normal1_KxJ
-            X2_KxJ = dist2_sqrt_KxJ + sigma * normal2_KxJ
+                return branch1, branch2, embedding_D
 
-            # Y = X^2
-            branch1_KxJ = X1_KxJ**2
-            branch2_KxJ = X2_KxJ**2
-
-            # compute log of the pdf of Y
-
-            X1_distr_KxJ = torch.distributions.Normal(dist1_sqrt_KxJ, sigma)
-            X2_distr_KxJ = torch.distributions.Normal(dist2_sqrt_KxJ, sigma)
-
-            # can show: pdf_Y(y) = (1/2|X|) * [pdf_X(X) + pdf_X(-X)]
-            log_branch1_prob_KxJ = (
-                -math.log(2)
-                - X1_KxJ.abs().log()
-                + torch.log(
-                    X1_distr_KxJ.log_prob(X1_KxJ).exp()
-                    + X1_distr_KxJ.log_prob(-X1_KxJ).exp()
+            # for computing jacobian
+            def transform_samples_to_branches(
+                samples_D: Tensor,
+                embedding_D: Tensor,
+                child1_D: Tensor,
+                child2_D: Tensor,
+            ):
+                branch1, branch2, _ = samples_to_branches_and_embedding(
+                    samples_D, embedding_D, child1_D, child2_D
                 )
-            )
-            log_branch2_prob_KxJ = (
-                -math.log(2)
-                - X2_KxJ.abs().log()
-                + torch.log(
-                    X2_distr_KxJ.log_prob(X2_KxJ).exp()
-                    + X2_distr_KxJ.log_prob(-X2_KxJ).exp()
-                )
-            )
+                branches_2 = torch.stack([branch1, branch2])
+                return branches_2
+
+            branch1_KJ, branch2_KJ, embedding_KJxD = torch.vmap(
+                samples_to_branches_and_embedding
+            )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
+
+            jacobian_KJxDx2 = torch.vmap(
+                torch.func.jacfwd(transform_samples_to_branches, argnums=0)  # type: ignore
+            )(samples_KJxD, embedding_KJxD, child1_KJxD, child2_KJxD)
+
+            # requires D=2 !
+            determinants_KJ = jacobian_KJxDx2.det().abs()
+            log_deteterminants_KJ = determinants_KJ.log()
+
+            # must divide by the jacobian determinant
+            log_branches_prob_KJ = sample_logprobs_KJ - log_deteterminants_KJ
+
         else:
-            branch1_KxJ = dist1_KxJ
-            branch2_KxJ = dist2_KxJ
+            branch1_KJ: Tensor = self.distance(child1_KJxD, embedding_KJxD)
+            branch2_KJ: Tensor = self.distance(child2_KJxD, embedding_KJxD)
+            log_branches_prob_KJ = self.zero.expand(K * J)
 
-            log_branch1_prob_KxJ = self.zero.expand(K, J)
-            log_branch2_prob_KxJ = self.zero.expand(K, J)
+        branch1_KxJ = branch1_KJ.reshape(K, J)
+        branch2_KxJ = branch2_KJ.reshape(K, J)
+        embedding_KxJxD = embedding_KJxD.reshape(K, J, -1)
 
         # ===== compute proposal probability =====
 
         log_merge_prob_Kx1 = log_merge_prob_K.unsqueeze(1)
+        log_branches_prob_KxJ = log_branches_prob_KJ.reshape(K, J)
 
-        log_v_plus_KxJ = (
-            log_merge_prob_Kx1 + log_branch1_prob_KxJ + log_branch2_prob_KxJ
-        )
+        log_v_plus_KxJ = log_merge_prob_Kx1 + log_branches_prob_KxJ
 
         # ===== return proposal =====
 
