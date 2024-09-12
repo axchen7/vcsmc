@@ -213,7 +213,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
-        sample_branches_sigma: float = 0.01,
+        sample_branches_sigma: float = 0.1,
         static_merge_log_weights: dict[int, Tensor] | None = None,
     ):
         """
