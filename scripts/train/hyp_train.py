@@ -64,6 +64,9 @@ def hyp_train(
     else:
         proposal = ExpBranchProposal(N=N, lookahead_merge=lookahead_merge)
 
+    # for testing!!!
+    q_matrix_decoder = DenseMLPQMatrixDecoder(distance, A=A, D=D, width=128, depth=2)
+
     vcsmc = VCSMC(
         q_matrix_decoder,
         proposal,
