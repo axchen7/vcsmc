@@ -178,8 +178,8 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__(A=A)
-        self.register_buffer("zeros_A", torch.zeros(A))
-        self.register_buffer("ones_A", torch.ones(A))
+        self.register_buffer("zeros", torch.zeros(1))
+        self.register_buffer("ones", torch.ones(1))
 
         self.distance = distance
         self.A = A
@@ -204,14 +204,18 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         Q_matrix_VxAxA = log_Q_matrix_VxAxA.exp()
 
         # exclude diagonal entry for now...
-        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(self.zeros_A, dim1=-2, dim2=-1)
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
+            self.zeros.expand(V, self.A), dim1=-2, dim2=-1
+        )
 
         # normalize off-diagonal entries within each row
         denom_VxAx1 = torch.sum(Q_matrix_VxAxA, -1, True)
         Q_matrix_VxAxA = Q_matrix_VxAxA / denom_VxAx1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(-self.ones_A, dim1=-2, dim2=-1)
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
+            -self.ones.expand(V, self.A), dim1=-2, dim2=-1
+        )
 
         Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, None]
         return Q_matrix_Vx1xAxA.expand(-1, S, -1, -1)
