@@ -62,6 +62,8 @@ class Hyperbolic(Distance):
     def __init__(self, *, initial_scale: float = 0.1, fixed_scale: bool = False):
         super().__init__()
 
+        self.register_buffer("zero", torch.zeros(1))
+
         self.initial_scale = initial_scale
         self.fixed_scale = fixed_scale
 
@@ -112,9 +114,19 @@ class Hyperbolic(Distance):
         return D + 1
 
     def feature_expand(self, vectors_VxD: Tensor) -> Tensor:
-        # append |x|^2 as a feature
-        norms_sq_V = torch.sum(vectors_VxD**2, -1)
-        return torch.cat([vectors_VxD, norms_sq_V.unsqueeze(-1)], -1)
+        # encode magnitude and direction separately
+        # - use hyperbolic distance from origin for magnitude
+        # - use unit vector for direction
+
+        V, D = vectors_VxD.shape
+
+        distances_V = self(vectors_VxD, self.zero.expand(V, D))
+        distances_Vx1 = distances_V.unsqueeze(-1)
+
+        # avoid division by zero
+        norms_V = safe_norm(vectors_VxD, -1)
+        unit_vectors_VxD = vectors_VxD / (norms_V.unsqueeze(-1) + EPSILON)
+        return torch.cat([distances_Vx1, unit_vectors_VxD], -1)
 
     def forward(self, vectors1_VxD: Tensor, vectors2_VxD: Tensor) -> Tensor:
         # see https://en.wikipedia.org/wiki/Poincaré_disk_model#Lines_and_distance
