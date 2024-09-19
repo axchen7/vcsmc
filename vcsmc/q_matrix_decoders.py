@@ -111,8 +111,8 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         """
 
         super().__init__(A=A)
-        self.register_buffer("zeros_A", torch.zeros(A))
-        self.register_buffer("ones_A", torch.ones(A))
+        self.register_buffer("zeros", torch.zeros(1))
+        self.register_buffer("ones", torch.ones(1))
 
         self.A = A
         self.t_inf = t_inf
@@ -129,14 +129,14 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         Q_matrix_AxA = self.log_Q_matrix_AxA.exp()
 
         # exclude diagonal entry for now...
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(self.zeros_A)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(self.zeros.expand(self.A))
 
         # normalize off-diagonal entries within each row
         denom_Ax1 = torch.sum(Q_matrix_AxA, -1, True)
         Q_matrix_AxA = Q_matrix_AxA / denom_Ax1
 
         # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-self.ones_A)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-self.ones.expand(self.A))
 
         return Q_matrix_AxA.expand(V, S, -1, -1)
 
