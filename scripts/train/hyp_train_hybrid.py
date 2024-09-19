@@ -18,6 +18,7 @@ def hyp_train_hybrid(
     D: int = 2,
     sites_batch_size: Optional[int] = None,
     jc69: bool = False,
+    mlp_q_matrix: bool = False,
     lookahead_merge1: bool = False,
     hash_trick1: bool = False,
     checkpoint_grads: bool = False,
@@ -35,12 +36,21 @@ def hyp_train_hybrid(
     N, _S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
 
+    distance = Hyperbolic()
+
     if jc69:
         q_matrix_decoder = JC69QMatrixDecoder(A=A)
+    elif mlp_q_matrix:
+        q_matrix_decoder = DenseMLPQMatrixDecoder(
+            distance,
+            A=A,
+            D=D,
+            width=16,
+            depth=2,
+        )
     else:
         q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
 
-    distance = Hyperbolic()
     seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
     merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
 
