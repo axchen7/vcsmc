@@ -2,8 +2,10 @@ import csv
 import os
 from datetime import datetime
 
+import typer
 import wandb
-from scripts.train.hyp_train_hybrid import hyp_train_hybrid
+
+from scripts.train.hyp_train_hybrid import QMatrixType, hyp_train_hybrid
 from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
 from vcsmc.utils.wandb_utils import WANDB_PROJECT, WandbRunType
 
@@ -13,7 +15,7 @@ DATASETS = ["DS1", "DS2", "DS3", "DS4", "DS5", "DS6", "DS8"]
 ESTIMATE_LL_SAMPLES = 100
 
 
-def train(dataset: str):
+def train(dataset: str, q_matrix: QMatrixType):
     hyp_train_hybrid(
         file=f"data/hohna/{dataset}.phy",
         # below are good parameters...
@@ -25,7 +27,7 @@ def train(dataset: str):
         K1=512,
         K2=512,
         D=2,
-        jc69=True,
+        q_matrix=q_matrix,
         lookahead_merge1=False,  # no lookahead seems to score better
         hash_trick1=True,  # free performance
         checkpoint_grads=False,  # not needed
@@ -33,7 +35,7 @@ def train(dataset: str):
     )
 
 
-def hyp_smc_benchmark():
+def hyp_smc_benchmark(q_matrix: QMatrixType = QMatrixType.JC69):
     date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_file = f"outputs/benchmarks/hyp_smc_benchmark_{date}.csv"
 
@@ -48,7 +50,7 @@ def hyp_smc_benchmark():
 
         for dataset in DATASETS:
             try:
-                train(dataset)
+                train(dataset, q_matrix)
                 ll_mean, ll_std_dev = estimate_latest_run_ll(ESTIMATE_LL_SAMPLES)
             except Exception as e:
                 print(f"Error while processing {dataset}: {e}")
@@ -74,4 +76,4 @@ def hyp_smc_benchmark():
 
 
 if __name__ == "__main__":
-    hyp_smc_benchmark()
+    typer.run(hyp_smc_benchmark)
