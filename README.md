@@ -35,9 +35,11 @@ wandb login
 
 Notes:
 
-- `--jc69`: uses the JC69 model of evolution. Without this flag, every entry in
-  the Q matrix is learned.
-- `--hyperbolic`: uses Hyperbolic SMC rather than regular VCSMC.
+- `--q-matrix`:
+  - "jc69": fixed JC69 Q matrix.
+  - "stationary": one global Q matrix with each entry free.
+  - "mlp": Q matrix is the output of a MLP that takes embeddings as input.
+- `--no-hyperbolic`: regular VCSMC rather than Hyperbolic SMC.Z
 - `--lookahead-merge`: performs nested hyperbolic SMC if `--hyperbolic` is set,
   or VNCSMC otherwise.
 - `--hash-trick`: uses the hash trick to speed up computation. Only applies when
@@ -47,13 +49,13 @@ Notes:
 Train primates, JC69:
 
 ```bash
-python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbolic --lookahead-merge --hash-trick data/primates.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix jc69 --lookahead-merge --hash-trick data/primates.phy
 ```
 
 Train DS1, JC69:
 
 ```bash
-python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --jc69 --hyperbolic --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix jc69 --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
 ```
 
 # Generate Paper Figures

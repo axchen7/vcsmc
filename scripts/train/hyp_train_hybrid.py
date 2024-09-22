@@ -1,9 +1,16 @@
+from enum import Enum
 from typing import Annotated, Optional
 
 import typer
 from torch.optim.adam import Adam
 
 from vcsmc import *
+
+
+class QMatrixType(Enum):
+    JC69 = "jc69"
+    STATIONARY = "stationary"
+    MLP = "mlp"
 
 
 def hyp_train_hybrid(
@@ -17,8 +24,7 @@ def hyp_train_hybrid(
     K2: Annotated[int, typer.Option()],
     D: int = 2,
     sites_batch_size: Optional[int] = None,
-    jc69: bool = False,
-    mlp_q_matrix: bool = False,
+    q_matrix: QMatrixType = QMatrixType.JC69,
     lookahead_merge1: bool = False,
     hash_trick1: bool = False,
     checkpoint_grads: bool = False,
@@ -37,22 +43,17 @@ def hyp_train_hybrid(
     data_NxSxA = data_NxSxA.to(device)
 
     distance = Hyperbolic()
-
-    if jc69:
-        q_matrix_decoder = JC69QMatrixDecoder(A=A)
-    elif mlp_q_matrix:
-        q_matrix_decoder = DenseMLPQMatrixDecoder(
-            distance,
-            A=A,
-            D=D,
-            width=16,
-            depth=2,
-        )
-    else:
-        q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
-
     seq_encoder = EmbeddingTableSequenceEncoder(distance, data_NxSxA, D=D)
     merge_encoder = HyperbolicGeodesicMidpointMergeEncoder(distance)
+
+    match q_matrix:
+        case QMatrixType.JC69:
+            q_matrix_decoder = JC69QMatrixDecoder(A=A)
+        case QMatrixType.STATIONARY:
+            q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
+        case QMatrixType.MLP:
+            assert distance is not None, "MLP Q-matrix requires hyperbolic distance"
+            q_matrix_decoder = DenseMLPQMatrixDecoder(distance, A=A, D=D)
 
     # ===== phase 1 =====
 

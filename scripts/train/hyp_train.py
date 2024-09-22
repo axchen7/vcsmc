@@ -1,9 +1,16 @@
+from enum import Enum
 from typing import Annotated, Optional
 
 import typer
 from torch.optim.adam import Adam
 
 from vcsmc import *
+
+
+class QMatrixType(Enum):
+    JC69 = "jc69"
+    STATIONARY = "stationary"
+    MLP = "mlp"
 
 
 def hyp_train(
@@ -14,8 +21,8 @@ def hyp_train(
     D: int = 2,
     grad_accumulation_steps: int = 1,
     sites_batch_size: Optional[int] = None,
-    jc69: bool = False,
-    hyperbolic: bool = False,
+    hyperbolic: bool = True,
+    q_matrix: QMatrixType = QMatrixType.JC69,
     sample_branches: bool = False,
     lookahead_merge: bool = False,
     hash_trick: bool = False,
@@ -28,11 +35,6 @@ def hyp_train(
 
     N, _S, A, data_NxSxA, taxa_N = load_phy(file, A4_ALPHABET)
     data_NxSxA = data_NxSxA.to(device)
-
-    if jc69:
-        q_matrix_decoder = JC69QMatrixDecoder(A=A)
-    else:
-        q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
 
     if hyperbolic:
         distance = Hyperbolic()
@@ -47,7 +49,17 @@ def hyp_train(
             sample_branches=sample_branches,
         )
     else:
+        distance = None
         proposal = ExpBranchProposal(N=N, lookahead_merge=lookahead_merge)
+
+    match q_matrix:
+        case QMatrixType.JC69:
+            q_matrix_decoder = JC69QMatrixDecoder(A=A)
+        case QMatrixType.STATIONARY:
+            q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
+        case QMatrixType.MLP:
+            assert distance is not None, "MLP Q-matrix requires hyperbolic distance"
+            q_matrix_decoder = DenseMLPQMatrixDecoder(distance, A=A, D=D)
 
     vcsmc = VCSMC(
         q_matrix_decoder,

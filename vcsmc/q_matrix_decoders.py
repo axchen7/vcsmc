@@ -164,8 +164,8 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         *,
         A: int,
         D: int,
-        width: int,
-        depth: int,
+        width: int = 16,
+        depth: int = 2,
         t_inf: float = 1e3,
     ):
         """
