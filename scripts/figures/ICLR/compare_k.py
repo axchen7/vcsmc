@@ -1,6 +1,6 @@
 from scripts.train.hyp_train import QMatrixType, hyp_train
 
-for i in range(3):
+for i in range(10):
     for K in [16, 32, 64, 128, 256, 512]:
         hyp_train(
             run_name=f"compare_k-{K}",
