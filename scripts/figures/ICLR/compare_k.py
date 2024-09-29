@@ -1,7 +1,7 @@
 from scripts.train.hyp_train import QMatrixType, hyp_train
 
 for i in range(10):
-    for K in [16, 32, 64, 128, 256, 512]:
+    for K in [1, 2, 4, 8, 16, 32]:
         hyp_train(
             run_name=f"compare_k-{K}",
             file="data/primates.phy",
