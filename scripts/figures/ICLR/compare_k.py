@@ -5,7 +5,7 @@ for i in range(10):
         hyp_train(
             run_name=f"compare_k-{K}",
             file="data/primates.phy",
-            lr=0.05,
+            lr=0.01,
             epochs=200,
             K=K,
             q_matrix=QMatrixType.MLP,
