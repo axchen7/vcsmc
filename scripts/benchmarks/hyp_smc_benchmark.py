@@ -3,8 +3,8 @@ import os
 from datetime import datetime
 
 import typer
-import wandb
 
+import wandb
 from scripts.train.hyp_train_hybrid import QMatrixType, hyp_train_hybrid
 from scripts.utils.estimate_latest_run_ll import estimate_latest_run_ll
 from vcsmc.utils.wandb_utils import WANDB_PROJECT, WandbRunType
@@ -21,16 +21,16 @@ def train(dataset: str, q_matrix: QMatrixType):
         # below are good parameters...
         lr1=0.01,
         lr2=0.01,
-        epochs1=100,
+        epochs1=200,
         epochs2=100,
         merge_samples=100,
-        K1=512,
+        K1=16,
         K2=512,
         D=2,
         q_matrix=q_matrix,
-        lookahead_merge1=False,  # no lookahead seems to score better
-        hash_trick1=True,  # free performance
-        checkpoint_grads=False,  # not needed
+        lookahead_merge1=True,
+        hash_trick1=True,
+        checkpoint_grads=True,
         run_name=dataset,
     )
 
