@@ -2,7 +2,6 @@ import torch
 from torch import Tensor, nn
 
 from .distances import Distance
-from .expm import expm
 from .site_positions_encoders import DummySitePositionsEncoder, SitePositionsEncoder
 from .utils.encoder_utils import MLP
 from .utils.repr_utils import custom_module_repr
@@ -98,26 +97,40 @@ class JC69QMatrixDecoder(QMatrixDecoder):
 
 class DenseStationaryQMatrixDecoder(QMatrixDecoder):
     """
-    Use a trainable variable for every entry in the Q matrix (except the
-    diagonal). Q matrix is the same globally, irrespective of the input
-    embeddings.
+    Parameterize the Q matrix by factoring it into A holding times and A
+    stationary probabilities, each a trainable variable. The Q matrix is the
+    same globally, irrespective of the input embeddings.
     """
 
-    def __init__(self, *, A: int, t_inf: float = 1e3):
+    def __init__(self, *, A: int):
         """
         Args:
             A: The alphabet size.
-            t_inf: Large t value used to approximate the stationary distribution.
         """
 
         super().__init__(A=A)
-        self.register_buffer("zeros", torch.zeros(1))
-        self.register_buffer("ones", torch.ones(1))
+        self.register_buffer("zero", torch.zeros(1))
 
         self.A = A
-        self.t_inf = t_inf
 
-        self.log_Q_matrix_AxA = nn.Parameter(torch.zeros(A, A))
+        self.log_holding_times_A = nn.Parameter(torch.zeros(A))
+        self.log_stat_probs_A = nn.Parameter(torch.zeros(A))
+
+    def reciprocal_holding_times_A(self):
+        """
+        Reciprocal of the expected holding times of each letter in the alphabet.
+        """
+
+        # use exp to ensure all entries are positive
+        reciprocal_holding_times_A = torch.exp(-self.log_holding_times_A)
+        # normalize to ensure mean of reciprocal holding times is 1
+        reciprocal_holding_times_A = (
+            reciprocal_holding_times_A / reciprocal_holding_times_A.mean()
+        )
+        return reciprocal_holding_times_A
+
+    def stat_probs_A(self):
+        return self.log_stat_probs_A.softmax(0)
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -125,37 +138,36 @@ class DenseStationaryQMatrixDecoder(QMatrixDecoder):
         V = embeddings_VxD.shape[0]
         S = site_positions_SxC.shape[0]
 
-        # use exp to ensure all off-diagonal entries are positive
-        Q_matrix_AxA = self.log_Q_matrix_AxA.exp()
+        reciprocal_holding_times_A = self.reciprocal_holding_times_A()
+        stat_probs_A = self.stat_probs_A()
 
-        # exclude diagonal entry for now...
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(self.zeros.expand(self.A))
+        # reciprocal holding times, repeated across each row
+        recip_times_AxA = reciprocal_holding_times_A.unsqueeze(1).repeat(1, self.A)
+        stat_probs_diag_AxA = torch.diag(stat_probs_A)
 
-        # normalize off-diagonal entries within each row
-        denom_Ax1 = torch.sum(Q_matrix_AxA, -1, True)
-        Q_matrix_AxA = Q_matrix_AxA / denom_Ax1
+        Q_matrix_AxA = torch.matmul(recip_times_AxA, stat_probs_diag_AxA)
 
-        # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-self.ones.expand(self.A))
+        # set the diagonals to the sum of the off-diagonal entries
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(self.zero.expand(self.A))
+        diag_A = torch.sum(Q_matrix_AxA, -1)
+        Q_matrix_AxA = Q_matrix_AxA.diagonal_scatter(-diag_A)
 
         return Q_matrix_AxA.expand(V, S, -1, -1)
 
     def stat_probs_VxSxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        # find e^(Qt) as t -> inf; then, stationary distribution is in every row
-        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
-        expm_limit_VxSxAxA = expm(Q_matrix_VxSxAxA * self.t_inf, "taylor")
-        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]
-        return stat_probs_VxSxA
+        V = embeddings_VxD.shape[0]
+        S = site_positions_SxC.shape[0]
+
+        return self.stat_probs_A().expand(V, S, -1)
 
 
 class DenseMLPQMatrixDecoder(QMatrixDecoder):
     """
-    Use a multi-layer perceptron to learn every entry in the Q matrix (except
-    the diagonal). Q-matrix is local to each embedding, but is the same across
-    all sites. The MLP's input dimension is the (feature-expanded) embedding
-    dimension.
+    Parameterize the Q matrix by factoring it into A holding times and A
+    stationary probabilities. Uses a single multi-layer perceptron to learn
+    these 2A parameters. The Q-matrix is local to each embedding.
     """
 
     def __init__(
@@ -166,7 +178,6 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         D: int,
         width: int = 16,
         depth: int = 2,
-        t_inf: float = 1e3,
     ):
         """
         Args:
@@ -174,19 +185,41 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
             D: Number of dimensions sequence embeddings.
             width: Width of each hidden layer.
             depth: Number of hidden layers.
-            t_inf: Large t value used to approximate the stationary distribution.
         """
 
         super().__init__(A=A)
-        self.register_buffer("zeros", torch.zeros(1))
-        self.register_buffer("ones", torch.ones(1))
+        self.register_buffer("zero", torch.zeros(1))
 
         self.distance = distance
         self.A = A
-        self.t_inf = t_inf
 
         D1 = distance.feature_expand_shape(D)
-        self.mlp = MLP(D1, A * A, width, depth)
+        self.mlp = MLP(D1, 2 * A, width, depth)
+
+    def holding_times_VxA_and_stat_probs_VxA(
+        self, embeddings_VxD: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Returns: holding_times_VxA, stat_probs_VxA
+        """
+
+        expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
+        output_Vx2A = self.mlp(expanded_VxD1)
+
+        log_holding_times_VxA = output_Vx2A[:, : self.A]
+        log_stat_probs_VxA = output_Vx2A[:, self.A :]
+
+        # use exp to ensure all entries are positive
+        reciprocal_holding_times_VxA = torch.exp(-log_holding_times_VxA)
+        # normalize to ensure mean of reciprocal holding times is 1
+        reciprocal_holding_times_VxA = (
+            reciprocal_holding_times_VxA
+            / reciprocal_holding_times_VxA.mean(dim=-1, keepdim=True)
+        )
+
+        stat_probs_VxA = log_stat_probs_VxA.softmax(-1)
+
+        return reciprocal_holding_times_VxA, stat_probs_VxA
 
     def Q_matrix_VxSxAxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
@@ -194,40 +227,34 @@ class DenseMLPQMatrixDecoder(QMatrixDecoder):
         V = embeddings_VxD.shape[0]
         S = site_positions_SxC.shape[0]
 
-        expanded_VxD1 = self.distance.feature_expand(embeddings_VxD)
-
-        # get Q matrix and reshape
-        log_Q_matrix_VxAA: Tensor = self.mlp(expanded_VxD1)
-        log_Q_matrix_VxAxA = log_Q_matrix_VxAA.view(V, self.A, self.A)
-
-        # use exp to ensure all off-diagonal entries are positive
-        Q_matrix_VxAxA = log_Q_matrix_VxAxA.exp()
-
-        # exclude diagonal entry for now...
-        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
-            self.zeros.expand(V, self.A), dim1=-2, dim2=-1
+        reciprocal_holding_times_VxA, stat_probs_VxA = (
+            self.holding_times_VxA_and_stat_probs_VxA(embeddings_VxD)
         )
 
-        # normalize off-diagonal entries within each row
-        denom_VxAx1 = torch.sum(Q_matrix_VxAxA, -1, True)
-        Q_matrix_VxAxA = Q_matrix_VxAxA / denom_VxAx1
-
-        # set diagonal to -1 (sum of off-diagonal entries)
-        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
-            -self.ones.expand(V, self.A), dim1=-2, dim2=-1
+        # reciprocal holding times, repeated across each row
+        recip_times_VxAxA = reciprocal_holding_times_VxA.unsqueeze(-1).repeat(
+            1, 1, self.A
         )
+        stat_probs_diag_VxAxA = torch.diag_embed(stat_probs_VxA)
 
-        Q_matrix_Vx1xAxA = Q_matrix_VxAxA[:, None]
-        return Q_matrix_Vx1xAxA.expand(-1, S, -1, -1)
+        Q_matrix_VxAxA = torch.matmul(recip_times_VxAxA, stat_probs_diag_VxAxA)
+
+        # set the diagonals to the sum of the off-diagonal entries
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(
+            self.zero.expand(V, self.A), dim1=-2, dim2=-1
+        )
+        diag_VxA = torch.sum(Q_matrix_VxAxA, -1)
+        Q_matrix_VxAxA = Q_matrix_VxAxA.diagonal_scatter(-diag_VxA, dim1=-2, dim2=-1)
+
+        return Q_matrix_VxAxA[:, None].expand(-1, S, -1, -1)
 
     def stat_probs_VxSxA(
         self, embeddings_VxD: Tensor, site_positions_SxC: Tensor
     ) -> Tensor:
-        # find e^(Qt) as t -> inf; then, stationary distribution is in every row
-        Q_matrix_VxSxAxA = self.Q_matrix_VxSxAxA(embeddings_VxD, site_positions_SxC)
-        expm_limit_VxSxAxA = expm(Q_matrix_VxSxAxA * self.t_inf, "taylor")
-        stat_probs_VxSxA = expm_limit_VxSxAxA[:, :, 0]
-        return stat_probs_VxSxA
+        S = site_positions_SxC.shape[0]
+
+        _, stat_probs_VxA = self.holding_times_VxA_and_stat_probs_VxA(embeddings_VxD)
+        return stat_probs_VxA[:, None].expand(-1, S, -1)
 
 
 class GT16StationaryQMatrixDecoder(QMatrixDecoder):
