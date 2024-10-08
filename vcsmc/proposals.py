@@ -213,7 +213,7 @@ class EmbeddingProposal(Proposal):
         lookahead_merge: bool = False,
         sample_merge_temp: float | None = None,
         sample_branches: bool = False,
-        sample_branches_sigma: float = 0.1,
+        initial_sample_branches_sigma: float = 0.1,
         static_merge_log_weights: dict[int, Tensor] | None = None,
     ):
         """
@@ -232,7 +232,7 @@ class EmbeddingProposal(Proposal):
                 pair of nodes will be sampled uniformly. Only used if `lookahead_merge`is false.
             sample_branches: If True, samples merge embeddings from a wrapped normal distribution.
                 If False, simply use the distance between embeddings as the branch length.
-            sample_branches_sigma: sigma parameter for the wrapped normal distribution.
+            initial_sample_branches_sigma: sigma parameter for the wrapped normal distribution.
             static_merge_log_weights: If not None, sets the fixed merge distribution.
                 See compute_merge_log_weights_from_vcsmc(). Tensors should be on the CPU.
         """
@@ -250,7 +250,10 @@ class EmbeddingProposal(Proposal):
         self.lookahead_merge = lookahead_merge
         self.sample_merge_temp = sample_merge_temp
         self.sample_branches = sample_branches
-        self.sample_branches_sigma = sample_branches_sigma
+        self.initial_sample_branches_sigma = initial_sample_branches_sigma
+        self.log_sample_branches_sigma = nn.Parameter(
+            torch.tensor(math.log(initial_sample_branches_sigma))
+        )
         self.static_merge_log_weights = static_merge_log_weights  # on CPU
 
     def extra_repr(self) -> str:
@@ -259,12 +262,15 @@ class EmbeddingProposal(Proposal):
                 "lookahead_merge": self.lookahead_merge,
                 "sample_merge_temp": self.sample_merge_temp,
                 "sample_branches": self.sample_branches,
-                "sample_branches_sigma": self.sample_branches_sigma,
+                "initial_sample_branches_sigma": self.initial_sample_branches_sigma,
                 "static_merge_log_weights": (
                     "provided" if self.static_merge_log_weights else None
                 ),
             }
         )
+
+    def sample_branches_sigma(self):
+        return self.log_sample_branches_sigma.exp()
 
     def uses_deterministic_branches(self) -> bool:
         return not self.sample_branches
@@ -369,8 +375,9 @@ class EmbeddingProposal(Proposal):
         # ===== sample/get branches parameters =====
 
         if self.sample_branches:
+            sigma = self.sample_branches_sigma()
             zero_D = self.zero.expand(D)
-            cov_DxD = torch.eye(D, device=device) * self.sample_branches_sigma**2
+            cov_DxD = torch.eye(D, device=device) * sigma**2
             distr = torch.distributions.MultivariateNormal(zero_D, cov_DxD)
             samples_KJxD = distr.sample(torch.Size([K * J]))
             sample_logprobs_KJ = distr.log_prob(samples_KJxD)
