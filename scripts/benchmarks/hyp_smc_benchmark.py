@@ -19,7 +19,7 @@ def train(dataset: str, q_matrix: QMatrixType):
     hyp_train_hybrid(
         file=f"data/hohna/{dataset}.phy",
         # below are good parameters...
-        lr1=0.01,
+        lr1=0.05,
         lr2=0.01,
         epochs1=200,
         epochs2=200,
