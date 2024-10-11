@@ -16,7 +16,6 @@ __all__ = [
     "EuclideanMidpointMergeEncoder",
     "HyperbolicGeodesicClosestMergeEncoder",
     "HyperbolicGeodesicMidpointMergeEncoder",
-    "HyperbolicGeodesicClosestMLPMergeEncoder",
 ]
 
 
@@ -364,34 +363,3 @@ class HyperbolicGeodesicMidpointMergeEncoder(MergeEncoder):
         s = torch.where(ok.unsqueeze(1), s, m)
 
         return self.distance.unnormalize(s)
-
-
-class HyperbolicGeodesicClosestMLPMergeEncoder(HyperbolicGeodesicClosestMergeEncoder):
-    """
-    Like the HyperbolicGeodesicMergeEncoder, but after computing the midpoint,
-    applies an MLP on the child embeddings to determine parent as a point along
-    the line between the midpoint and origin.
-    """
-
-    def __init__(self, distance: Distance, *, D: int, width: int, depth: int):
-        """
-        Args:
-            D: Number of dimensions sequence embeddings (must be 2).
-        """
-
-        super().__init__(distance, D=D)
-
-        D1 = distance.feature_expand_shape(D)
-        self.mlp = MLP(2 * D1, 1, width, depth)
-
-    def forward(self, children1_VxD: Tensor, children2_VxD: Tensor) -> Tensor:
-        midpoints_VxD = super().forward(children1_VxD, children2_VxD)
-
-        expanded1_VxD1 = self.distance.feature_expand(children1_VxD)
-        expanded2_VxD1 = self.distance.feature_expand(children2_VxD)
-
-        # sigmoid to ensure beta is in [0, 1]
-        beta_Vx1 = self.mlp(torch.cat([expanded1_VxD1, expanded2_VxD1], -1)).sigmoid()
-
-        parents_VxD = midpoints_VxD * beta_Vx1
-        return parents_VxD
