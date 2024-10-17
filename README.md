@@ -58,26 +58,6 @@ Train DS1, JC69:
 python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix jc69 --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
 ```
 
-# Generate Paper Figures
-
-Title: VCSMC vs Hyp SMC with Different K
-
-```bash
-python -m scripts.figures.proposal_K
-```
-
-Title: Effect of Embedding Initialization
-
-```bash
-python -m scripts.figures.hyp_smc_init_mean
-```
-
-Title: Effect of Dimensionality
-
-```bash
-python -m scripts.figures.hyp_smc_dim
-```
-
 Benchmark (output to a .csv):
 
 ```bash
