@@ -1,5 +1,6 @@
 # export everything for simplicity
 from .distances import *
+from .embedding_initializer import *
 from .encoders import *
 from .phy import *
 from .proposals import *
