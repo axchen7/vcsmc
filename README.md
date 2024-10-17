@@ -31,19 +31,19 @@ Notes:
 Run H-VCSMC on primates using K=512:
 
 ```bash
-python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 512 --q-matrix jc69 --hash-trick data/primates.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 512 --q-matrix mlp --hash-trick data/primates.phy
 ```
 
 Run H-VNCSMC (nested proposal) on primates using K=16:
 
 ```bash
-python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix jc69 --lookahead-merge --hash-trick data/primates.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix mlp --lookahead-merge --hash-trick data/primates.phy
 ```
 
 Run H-VNCSMC on a larger benchmark dataset (DS1) using K=16:
 
 ```bash
-python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix jc69 --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
+python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix mlp --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
 ```
 
 Run H-VNCSMC on benchmark datasets DS1-DS7, with deferred branch sampling to better learn the embeddings:
