@@ -10,7 +10,8 @@ from vcsmc import *
 class QMatrixType(Enum):
     JC69 = "jc69"
     STATIONARY = "stationary"
-    MLP = "mlp"
+    MLP_FACTORIZED = "mlp_factorized"
+    MLP_DENSE = "mlp_dense"
 
 
 def hyp_train_hybrid(
@@ -50,8 +51,11 @@ def hyp_train_hybrid(
         case QMatrixType.JC69:
             q_matrix_decoder = JC69QMatrixDecoder(A=A)
         case QMatrixType.STATIONARY:
-            q_matrix_decoder = DenseStationaryQMatrixDecoder(A=A)
-        case QMatrixType.MLP:
+            q_matrix_decoder = FactorizedStationaryQMatrixDecoder(A=A)
+        case QMatrixType.MLP_FACTORIZED:
+            assert distance is not None, "MLP Q-matrix requires hyperbolic distance"
+            q_matrix_decoder = FactorizedMLPQMatrixDecoder(distance, A=A, D=D)
+        case QMatrixType.MLP_DENSE:
             assert distance is not None, "MLP Q-matrix requires hyperbolic distance"
             q_matrix_decoder = DenseMLPQMatrixDecoder(distance, A=A, D=D)
 
