@@ -94,7 +94,7 @@ def train(
             "run_name": run_name,
         }
 
-    def get_checkpoint() -> TrainCheckpoint:
+    def get_checkpoint(start_epoch: int) -> TrainCheckpoint:
         return {
             "vcsmc": vcsmc,
             "optimizer": optimizer,
@@ -105,7 +105,7 @@ def train(
     def init_wandb():
         config = {
             **get_args(),
-            **get_checkpoint(),
+            **get_checkpoint(start_epoch),
             **module_to_config(vcsmc),
             "lr": optimizer.param_groups[0].get("lr"),
         }
@@ -126,7 +126,7 @@ def train(
 
     def save_checkpoint(start_epoch: int):
         filename = f"checkpoint_{start_epoch}.pt"
-        torch.save(get_checkpoint(), path.join(checkpoints_dir, filename))
+        torch.save(get_checkpoint(start_epoch), path.join(checkpoints_dir, filename))
 
     def save_results():
         results: TrainResults = {
