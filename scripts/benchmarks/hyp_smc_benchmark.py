@@ -22,7 +22,7 @@ def train(dataset: str, q_matrix: QMatrixType):
         lr1=0.05,
         lr2=0.01,
         epochs1=200,
-        epochs2=100,
+        epochs2=200,
         merge_samples=100,
         K1=16,
         K2=512,
@@ -30,7 +30,7 @@ def train(dataset: str, q_matrix: QMatrixType):
         q_matrix=q_matrix,
         lookahead_merge1=True,
         hash_trick1=True,
-        checkpoint_grads=True,
+        checkpoint_grads1=True,
         run_name=dataset,
     )
 

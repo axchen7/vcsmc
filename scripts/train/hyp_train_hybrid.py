@@ -27,7 +27,7 @@ def hyp_train_hybrid(
     q_matrix: QMatrixType = QMatrixType.JC69,
     lookahead_merge1: bool = False,
     hash_trick1: bool = False,
-    checkpoint_grads: bool = False,
+    checkpoint_grads1: bool = False,
     run_name: Optional[str] = None,
 ):
     """
@@ -74,7 +74,7 @@ def hyp_train_hybrid(
         N=N,
         K=K1,
         hash_trick=hash_trick1,
-        checkpoint_grads=checkpoint_grads,
+        checkpoint_grads=checkpoint_grads1,
     ).to(device)
 
     optimizer = Adam(vcsmc.parameters(), lr=lr1)
@@ -124,7 +124,7 @@ def hyp_train_hybrid(
         N=N,
         K=K2,
         hash_trick=False,  # no hash trick when sampling branches
-        checkpoint_grads=checkpoint_grads,
+        checkpoint_grads=False,
     ).to(device)
 
     optimizer = Adam(vcsmc.parameters(), lr=lr2)
