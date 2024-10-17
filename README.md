@@ -46,7 +46,7 @@ Run H-VNCSMC on a larger benchmark dataset (DS1) using K=16 and a factorized Q
 matrix:
 
 ```bash
-python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix mlp_factorized --lookahead-merge --hash-trick --checkpoint-grads data/hohna/DS1.phy
+python -m scripts.train.hyp_train --lr 0.05 --epochs 200 --k 16 --q-matrix mlp_factorized --lookahead-merge --hash-trick data/hohna/DS1.phy
 ```
 
 Run H-VNCSMC on benchmark datasets DS1-DS7, with deferred branch sampling to
