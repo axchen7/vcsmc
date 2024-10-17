@@ -61,5 +61,5 @@ python -m scripts.train.hyp_train --lr 0.01 --epochs 200 --k 16 --q-matrix jc69 
 Benchmark (output to a .csv):
 
 ```bash
-python -m scripts.benchmarks.hyp_smc_benchmark
+python -m scripts.benchmarks.hyp_smc_benchmark --q-matrix mlp
 ```
