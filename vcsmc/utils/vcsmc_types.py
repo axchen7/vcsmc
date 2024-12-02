@@ -17,5 +17,7 @@ class VcsmcResult(TypedDict):
     """left/right node indexes at each step"""
     best_embeddings_N1xD: Tensor
     """merged embedding at each step"""
+    log_weights_rxK: Tensor
+    """log weights at each step, for all particles"""
     ESS: float
     """effective sample size"""

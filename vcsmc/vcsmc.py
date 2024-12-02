@@ -524,5 +524,6 @@ class VCSMC(nn.Module):
             "best_newick_tree": best_newick_tree,
             "best_merge_indexes_N1x2": merge_indexes_KxN1x2[best_tree_idx],
             "best_embeddings_N1xD": ms["embeddings_KxrxD"][best_tree_idx],
+            "log_weights_rxK": log_weights_rxK,
             "ESS": float(ESS),
         }

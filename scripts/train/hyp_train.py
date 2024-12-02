@@ -87,7 +87,7 @@ def hyp_train(
 
     optimizer = Adam(vcsmc.parameters(), lr=lr)
 
-    train(
+    return train(
         vcsmc,
         optimizer,
         taxa_N,

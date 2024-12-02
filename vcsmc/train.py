@@ -260,6 +260,8 @@ def train(
     save_args()
     save_checkpoint(start_epoch)
 
+    result = None
+
     for epoch in tqdm(range(epochs - start_epoch), desc="Training"):
         epoch += start_epoch
 
@@ -347,6 +349,8 @@ def train(
 
     run.log_artifact(checkpoints_dir, name="checkpoints", type="checkpoint")
     run.finish()
+
+    return result
 
 
 def load_checkpoint(
