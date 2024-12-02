@@ -488,6 +488,13 @@ class VCSMC(nn.Module):
         log_sum_weights_r = torch.logsumexp(log_scaled_weights_rxK, 1)
         log_ZCSMC = torch.sum(log_sum_weights_r)
 
+        # ===== compute effective sample size =====
+
+        # ESS = (sum_i w_i)^2 / sum_i w_i^2
+        log_ESS_numer = 2 * torch.logsumexp(ms["log_weight_K"], 0)
+        log_ESS_denom = torch.logsumexp(2 * ms["log_weight_K"], 0)
+        ESS = torch.exp(log_ESS_numer - log_ESS_denom)
+
         # ===== collect best tree =====
 
         best_tree_idx = torch.argmax(ms["log_likelihood_K"])
@@ -517,4 +524,5 @@ class VCSMC(nn.Module):
             "best_newick_tree": best_newick_tree,
             "best_merge_indexes_N1x2": merge_indexes_KxN1x2[best_tree_idx],
             "best_embeddings_N1xD": ms["embeddings_KxrxD"][best_tree_idx],
+            "ESS": float(ESS),
         }

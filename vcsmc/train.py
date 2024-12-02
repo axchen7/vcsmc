@@ -285,6 +285,9 @@ def train(
         if log_likelihoods is not None:
             log["Log likelihoods"] = wandb.Histogram(log_likelihoods)
 
+        if result is not None:
+            log["Effective sample size"] = result["ESS"]
+
         if not isinstance(
             vcsmc.q_matrix_decoder.site_positions_encoder, DummySitePositionsEncoder
         ):
