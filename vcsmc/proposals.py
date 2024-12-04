@@ -270,7 +270,8 @@ class EmbeddingProposal(Proposal):
         )
 
     def sample_branches_sigma(self):
-        return self.log_sample_branches_sigma.exp()
+        # return self.log_sample_branches_sigma.exp()
+        return 1e-5
 
     def uses_deterministic_branches(self) -> bool:
         return not self.sample_branches
