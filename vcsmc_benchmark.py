@@ -1,7 +1,7 @@
 from scripts.train.hyp_train import QMatrixType, hyp_train
 
-for dataset in ["DS3", "DS4", "DS5", "DS6", "DS8"]:
-    for K in [1024]:
+for K in [1024]:
+    for dataset in ["DS1", "DS2", "DS3", "DS4", "DS5", "DS6", "DS8"]:
         print(f"Running {dataset}, K={K}")
         hyp_train(
             lr=0.1,
